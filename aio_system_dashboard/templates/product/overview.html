@@ -1,27 +1,15 @@
 {% extends "product/base.html" %}
-{% from "macros.html" import chip, heading_arrow %}
-{% block title %}Overview · AIO Navigation System{% endblock %}
+{% from "macros.html" import chip, annun, heading_arrow %}
+{% block title %}Overview · AIO Navigation{% endblock %}
 {% block content %}
 
-<!-- Why the system is not READY -->
-<div class="mb-2" x-show="state !== 'READY' && reasons.length" x-cloak>
-  <div class="advisory" :class="state === 'FAULT' ? 'fault' : ''">
-    <strong x-text="state === 'FAULT' ? 'Navigation not available' : (state === 'INITIALIZING' ? 'Navigation initializing' : 'Status unknown')"></strong>
-    <span class="ms-2" x-text="reasons.join(' · ')"></span>
-  </div>
-</div>
-
-<!-- NAV output strip -->
+<!-- NAV output -->
 <div class="strip mb-3">
-  <div><span class="small-caps me-2">NAV Output</span>{{ chip('udp') }}</div>
-  <div><span class="k">Rate</span><span class="num" x-text="rateText()">—</span></div>
-  <div><span class="k">Last packet</span><span class="num" x-text="fmt.age(udp.age_s)">—</span></div>
-  <div>
-    <span class="k">Destination</span>
-    <span class="num" x-text="externalDest() ? '→ ' + externalDest() : 'local only'"></span>
-    <span class="muted small ms-1">UDP / NAV</span>
-  </div>
-  <div class="muted small ms-auto">Shows that the sender is transmitting. UDP has no acknowledgement, so it cannot confirm reception.</div>
+  <div><span class="strip-title">UDP output</span>{{ chip('udp') }}</div>
+  <div><span class="k">Rate</span><span x-text="rateText()">—</span></div>
+  <div><span class="k">Last packet</span><span x-text="fmt.age(udp.age_s)">—</span></div>
+  <div><span class="k">Sending to</span><span class="mono" x-text="externalDest() || 'this device only'"></span></div>
+  <div class="strip-note ms-auto">Streaming means the device is sending. UDP has no acknowledgement, so reception by your application is not confirmed here.</div>
 </div>
 
 <div class="row g-3">
@@ -29,13 +17,13 @@
     <div class="position-relative">
       <div id="map-overview" class="map map-overview" data-navmap="short"></div>
       <div class="map-ctrl">
-        <button class="btn btn-light btn-sm shadow-sm" x-show="!follow" x-cloak @click="setFollow(true)">Re-center</button>
+        <button class="btn btn-sm" x-show="!follow" x-cloak @click="setFollow(true)">Follow vehicle</button>
       </div>
     </div>
   </div>
 
   <div class="col-lg-4">
-    <div class="panel h-100" :class="fresh ? '' : 'stale'">
+    <div class="panel h-100 readout" :class="fresh ? '' : 'stale'">
       <div class="panel-b">
         <div class="vgroup">
           <div class="small-caps mb-1">Position</div>
@@ -54,36 +42,30 @@
           <div class="vrow"><span class="k">Roll</span><span class="v"><span x-text="v('roll', 2)">—</span><span class="u">°</span></span></div>
           <div class="vrow"><span class="k">Pitch</span><span class="v"><span x-text="v('pitch', 2)">—</span><span class="u">°</span></span></div>
         </div>
-        <div class="muted small mt-3" x-show="s && s.solution && !fresh" x-cloak>Last known values (no fresh NAV data)</div>
+        <p class="muted small mt-3 mb-0" x-show="s && s.solution && !fresh" x-cloak>Showing the last known values. No fresh NAV data.</p>
       </div>
     </div>
   </div>
 </div>
 
-<!-- Status bar -->
-<div class="panel mt-3">
-  <div class="panel-b statusbar">
-    <div class="item"><span class="k">Alignment</span>{{ chip("ind('alignment')") }}</div>
-    <div class="item"><span class="k">GNSS</span>{{ chip("ind('gnss')") }}</div>
-    {% for key, dev in devices.items() %}
-    <div class="item"><span class="k">{{ dev.label }}</span>{{ chip("ind('" ~ key ~ "')") }}</div>
-    {% endfor %}
-    <div class="item"><span class="k">Network</span>{{ chip("ind('network')") }}</div>
-  </div>
+<div class="annun-row mt-3">
+  {{ annun('Alignment', "ind('alignment')") }}
+  {{ annun('GNSS', "ind('gnss')") }}
+  {% for key, dev in devices.items() %}{{ annun(dev.label, "ind('" ~ key ~ "')") }}{% endfor %}
+  {{ annun('Network', "ind('network')") }}
 </div>
 
-<!-- Advisories: informative, they do not change READY -->
+<!-- Advisories inform; they never change Ready -->
 <template x-if="connected && s && s.advisories && s.advisories.length">
   <div class="mt-2 d-flex flex-column gap-1">
     <template x-for="a in s.advisories" :key="a.title">
-      <div class="advisory"><strong x-text="'⚠ ' + a.title"></strong><span class="ms-2 muted" x-text="a.detail"></span></div>
+      <div class="advisory"><strong x-text="a.title"></strong><span class="ms-2 muted" x-text="a.detail"></span></div>
     </template>
   </div>
 </template>
 
-<div class="d-flex justify-content-between muted small mt-3">
-  <span>Storage <span class="num" x-text="storageText()">—</span></span>
-  <span>Nav session <span class="num" x-text="fmt.duration(s && s.session_uptime_s)">—</span>
-    · Uptime <span class="num" x-text="fmt.duration(s && s.uptime_s)">—</span></span>
+<div class="page-foot mt-3">
+  <span>Storage: <span x-text="storageText()">—</span></span>
+  <span>Device uptime <span x-text="fmt.duration(s && s.uptime_s)">—</span></span>
 </div>
 {% endblock %}

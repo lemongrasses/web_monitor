@@ -1,30 +1,28 @@
+{% from "macros.html" import brand_mark, master_strip %}
 <!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>{% block title %}AIO Navigation System{% endblock %}</title>
+  <title>{% block title %}AIO Navigation{% endblock %}</title>
+  <link rel="preload" href="{{ url_for('static', filename='vendor/fonts/barlow-latin-500-normal.woff2') }}" as="font" type="font/woff2" crossorigin>
   <link rel="stylesheet" href="{{ url_for('static', filename='vendor/bootstrap.min.css') }}">
   <link rel="stylesheet" href="{{ url_for('static', filename='vendor/leaflet.css') }}">
   <link rel="stylesheet" href="{{ url_for('static', filename='css/dashboard.css') }}">
 </head>
 <body x-data="productPage()">
-  {% if fake_mode %}<div class="fake-banner">FAKE MODE — subsystem state from dev/fake_state.json</div>{% endif %}
-  <div class="conn-lost" x-show="!connected" x-cloak>Dashboard connection lost — values below are not live</div>
-
   <header class="topbar">
-    <div class="container-fluid px-4 pt-2 d-flex justify-content-between align-items-center flex-wrap gap-2">
-      <div class="brand">AIO Navigation System<small>{{ hostname }}</small></div>
-      <span class="state-badge" :class="'state-' + state" role="status" :aria-label="'System state ' + state">
-        <span class="dot"></span><span x-text="state">UNKNOWN</span>
-      </span>
+    <div class="topbar-row">
+      <div class="brand">{{ brand_mark() }}AIO Navigation <small>{{ hostname }}</small></div>
+      <nav class="topnav" aria-label="Pages">
+        <a href="/" class="{{ 'active' if page == 'overview' }}" {{ 'aria-current=page' if page == 'overview' }}>Overview</a>
+        <a href="/navigation" class="{{ 'active' if page == 'navigation' }}" {{ 'aria-current=page' if page == 'navigation' }}>Navigation</a>
+        <a href="/data" class="{{ 'active' if page == 'data' }}" {{ 'aria-current=page' if page == 'data' }}>Data</a>
+      </nav>
+      {% if fake_mode %}<span class="fake-tag" title="Subsystem state comes from dev/fake_state.json">Fake data</span>{% endif %}
     </div>
-    <nav class="container-fluid px-4 topnav">
-      <a href="/" class="{{ 'active' if page == 'overview' }}">Overview</a>
-      <a href="/navigation" class="{{ 'active' if page == 'navigation' }}">Navigation</a>
-      <a href="/data" class="{{ 'active' if page == 'data' }}">Data</a>
-    </nav>
   </header>
+  {{ master_strip(compact=(page == 'data'), meta='<span x-show="s &amp;&amp; s.session_uptime_s != null" x-cloak>Nav session <span x-text="fmt.duration(s &amp;&amp; s.session_uptime_s)"></span></span>') }}
 
   <main class="container-fluid px-4 py-3">
     {% block content %}{% endblock %}

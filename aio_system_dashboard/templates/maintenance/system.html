@@ -70,7 +70,7 @@
 </div>
 
 <div class="panel mt-3">
-  <div class="panel-h"><strong>Ethernet interfaces</strong><a href="/network" class="small">Network details →</a></div>
+  <div class="panel-h"><strong>Ethernet interfaces</strong><a href="/network" class="small">Open network page</a></div>
   <div class="panel-b d-flex flex-wrap gap-4">
     <template x-for="i in (net.interfaces || [])" :key="i.name">
       <div><span class="mono me-2" x-text="i.name"></span>{{ chip("ifaceChip(i)") }}

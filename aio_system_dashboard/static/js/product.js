@@ -2,6 +2,7 @@
 (function () {
   "use strict";
   const fmt = AIO.fmt;
+  const STATE_LABEL = { READY: "Ready", INITIALIZING: "Initializing", FAULT: "Fault", UNKNOWN: "Unknown" };
 
   window.productPage = function () {
     let navMap = null;            // Leaflet objects stay outside Alpine's reactive proxy
@@ -40,6 +41,12 @@
       // ----- derived values
       get state() { return this.connected && this.s && this.s.health ? this.s.health.state : "UNKNOWN"; },
       get reasons() { return (this.connected && this.s && this.s.health) ? this.s.health.reasons : ["Dashboard connection lost"]; },
+      get stateLabel() { return STATE_LABEL[this.state] || "Unknown"; },
+      get stateReasons() {
+        if (!this.connected) return ["Lost connection to the dashboard. Values on this page are not live."];
+        if (this.state === "READY") return ["Navigation solution available"];
+        return this.reasons.length ? this.reasons : ["Waiting for NAV data"];
+      },
       get fresh() { return !!(this.s && this.s.nav && this.s.nav.fresh); },
       v(key, digits) {
         const sol = this.s && this.s.solution;

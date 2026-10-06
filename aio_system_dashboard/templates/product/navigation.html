@@ -1,6 +1,6 @@
 {% extends "product/base.html" %}
-{% from "macros.html" import chip, heading_arrow %}
-{% block title %}Navigation · AIO Navigation System{% endblock %}
+{% from "macros.html" import chip, annun, heading_arrow %}
+{% block title %}Navigation · AIO Navigation{% endblock %}
 
 {% macro row(label, key, digits, unit, sd_key=None, sd_unit=None) -%}
 <div class="vrow"><span class="k">{{ label }}</span>
@@ -14,15 +14,15 @@
     <div class="position-relative">
       <div id="map-large" class="map map-large" data-navmap="full"></div>
       <div class="map-ctrl d-flex gap-1">
-        <button class="btn btn-light btn-sm shadow-sm" @click="fitAll()">Whole trajectory</button>
-        <button class="btn btn-light btn-sm shadow-sm" x-show="!follow" x-cloak @click="setFollow(true)">Follow vehicle</button>
+        <button class="btn btn-sm" @click="fitAll()">Show whole trajectory</button>
+        <button class="btn btn-sm" x-show="!follow" x-cloak @click="setFollow(true)">Follow vehicle</button>
       </div>
     </div>
     <div class="muted small mt-1">Trajectory covers the current aio_nav_node session: last 60 s at 10 Hz, older points at 1 Hz.</div>
   </div>
 
   <div class="col-lg-4">
-    <div class="panel" :class="fresh ? '' : 'stale'">
+    <div class="panel readout" :class="fresh ? '' : 'stale'">
       <div class="panel-b">
         <div class="vgroup">
           <div class="small-caps mb-1">Position</div>
@@ -53,24 +53,22 @@
   </div>
 </div>
 
-<div class="panel mt-3">
-  <div class="panel-b statusbar">
-    <div class="item"><span class="k">Alignment</span>{{ chip("ind('alignment')") }}</div>
-    <div class="item"><span class="k">GNSS</span>{{ chip("ind('gnss')") }}</div>
-    <div class="item"><span class="k">ZUPT</span>{{ chip("aid('zupt')") }}</div>
-    <div class="item"><span class="k">ZIHR</span>{{ chip("aid('zihr')") }}</div>
-    <div class="item"><span class="k">NHC</span>{{ chip("aid('nhc')") }}</div>
-    <div class="item"><span class="k">VUPT</span>{{ chip("aid('vupt')") }}</div>
-  </div>
+<div class="annun-row mt-3">
+  {{ annun('Alignment', "ind('alignment')") }}
+  {{ annun('GNSS', "ind('gnss')") }}
+  {{ annun('ZUPT', "aid('zupt')") }}
+  {{ annun('ZIHR', "aid('zihr')") }}
+  {{ annun('NHC', "aid('nhc')") }}
+  {{ annun('VUPT', "aid('vupt')") }}
 </div>
 
 <div class="strip mt-2">
-  <div><span class="small-caps me-2">UDP</span>{{ chip('udp') }}</div>
-  <div><span class="k">Rate</span><span class="num" x-text="rateText()">—</span></div>
-  <div><span class="k">Freshness</span><span class="num" x-text="fmt.age(udp.age_s)">—</span></div>
-  <div><span class="k">Destination</span><span class="num" x-text="externalDest() || 'local only'"></span></div>
-  <div><span class="k">Local monitor</span><span class="num" x-text="localDest()"></span></div>
-  <div><span class="k">Packets</span><span class="num" x-text="s && s.nav ? s.nav.packets : '—'"></span>
+  <div><span class="strip-title">UDP output</span>{{ chip('udp') }}</div>
+  <div><span class="k">Rate</span><span x-text="rateText()">—</span></div>
+  <div><span class="k">Last packet</span><span x-text="fmt.age(udp.age_s)">—</span></div>
+  <div><span class="k">Sending to</span><span class="mono" x-text="externalDest() || 'this device only'"></span></div>
+  <div><span class="k">Local monitor</span><span class="mono" x-text="localDest()"></span></div>
+  <div><span class="k">Packets</span><span x-text="s && s.nav ? s.nav.packets.toLocaleString() : '—'"></span>
     <span class="muted small" x-show="s && s.nav && s.nav.bad_packets" x-text="'(' + (s && s.nav ? s.nav.bad_packets : 0) + ' invalid)'"></span></div>
 </div>
 {% endblock %}

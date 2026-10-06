@@ -31,6 +31,14 @@
       // ---------- generic
       lvl(level, label) { return { level: level || "unknown", label: label || AIO.LEVEL_TEXT[level] || "Unknown" }; },
       get productState() { return this.connected && this.d && this.d.maint ? this.d.maint.product_state : "UNKNOWN"; },
+      get state() { return this.productState; },
+      get stateLabel() { return { READY: "Ready", INITIALIZING: "Initializing", FAULT: "Fault" }[this.productState] || "Unknown"; },
+      get stateReasons() {
+        if (!this.connected) return ["Lost connection to the dashboard. Values on this page are not live."];
+        const h = this.d && this.d.product && this.d.product.health;
+        if (this.productState === "READY") return ["AIO NAV is available"];
+        return (h && h.reasons && h.reasons.length) ? h.reasons : ["Waiting for NAV data"];
+      },
       get issues() { return (this.d && this.d.maint && this.d.maint.issues) || []; },
       layer(name) {
         const l = this.d && this.d.maint && this.d.maint.layers ? this.d.maint.layers[name] : null;

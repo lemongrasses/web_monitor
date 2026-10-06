@@ -6,7 +6,7 @@
   const TILE_PROBE = "https://tile.openstreetmap.org/0/0/0.png";
   const ARROW_SVG =
     '<svg viewBox="0 0 24 24" width="30" height="30" style="transition:transform .2s linear">' +
-    '<path d="M12 2 L20 21 L12 16.5 L4 21 Z" fill="#0f4c81" stroke="#fff" stroke-width="1.6" stroke-linejoin="round"/></svg>';
+    '<path d="M12 2 L20 21 L12 16.5 L4 21 Z" fill="#102a43" stroke="#fff" stroke-width="1.6" stroke-linejoin="round"/></svg>';
 
   class NavMap {
     /* opts.full: draw the whole session (older 1 Hz + recent 10 Hz); otherwise only the recent window. */
@@ -15,8 +15,8 @@
       this.el = document.getElementById(elId);
       this.map = L.map(this.el, { zoomControl: true, attributionControl: true, worldCopyJump: false })
         .setView([23.7, 120.9], 7);
-      this.olderLine = L.polyline([], { color: "#64748b", weight: 2, opacity: 0.75 }).addTo(this.map);
-      this.recentLine = L.polyline([], { color: "#0f4c81", weight: 3.5, opacity: 0.9 }).addTo(this.map);
+      this.olderLine = L.polyline([], { color: "#7b8794", weight: 2, opacity: 0.8 }).addTo(this.map);
+      this.recentLine = L.polyline([], { color: "#1d6fa3", weight: 4, opacity: 0.95 }).addTo(this.map);
       this.marker = null;
       this.follow = true;
       this.rot = AIO.rotator();

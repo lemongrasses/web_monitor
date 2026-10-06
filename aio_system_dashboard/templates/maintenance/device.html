@@ -47,8 +47,35 @@
   </div>
 </div>
 
+{% set pv = previews.get(device_key) %}
+{% if pv %}
+<div class="panel mt-3 preview" data-preview="{{ pv.kind }}" data-url="/api/maint/preview/{{ device_key }}">
+  <div class="panel-h">
+    <span><strong>Live view</strong> <span class="mono small muted ms-2">{{ pv.topic }}</span></span>
+    {% if pv.kind == 'pointcloud' %}
+    <span class="d-flex gap-1 align-items-center">
+      <button class="btn btn-sm btn-outline-secondary" data-view="top">Top</button>
+      <button class="btn btn-sm btn-outline-secondary" data-view="3d">3D</button>
+      <select class="form-select form-select-sm" style="width:auto" data-color aria-label="Colour points by">
+        <option value="height">Colour: height</option>
+        <option value="intensity">Colour: intensity</option>
+      </select>
+    </span>
+    {% endif %}
+  </div>
+  <div class="preview-stage">
+    {% if pv.kind == 'image' %}<img alt="{{ label }} live image">{% else %}<canvas aria-label="{{ label }} point cloud"></canvas>{% endif %}
+    <div class="preview-status" data-status>Connecting…</div>
+  </div>
+  <div class="panel-b border-top small muted d-flex justify-content-between flex-wrap gap-2">
+    <span class="preview-info" data-info></span>
+    <span>{% if pv.kind == 'pointcloud' %}Drag to rotate, scroll to zoom. {% endif %}The topic is only read while this page is open.</span>
+  </div>
+</div>
+{% endif %}
+
 <div class="panel mt-3">
-  <div class="panel-h"><strong>Actions</strong><span class="muted small">Whitelisted operations only. Every run is logged on the Diagnostics page.</span></div>
+  <div class="panel-h"><strong>Actions</strong><span class="muted small">Every run is logged on the Diagnostics page.</span></div>
   <div class="panel-b">
     <div class="d-flex gap-2 flex-wrap">
       <button class="btn btn-outline-primary" :disabled="isRunning('run_diagnostic', '{{ device_key }}')"
@@ -85,3 +112,4 @@
 </div>
 {% endif %}
 {% endblock %}
+{% block scripts %}<script src="{{ url_for('static', filename='js/preview.js') }}"></script>{% endblock %}

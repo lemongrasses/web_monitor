@@ -1,9 +1,31 @@
-{# Status chip bound to an Alpine expression returning {level, label}. Color is always paired with text. #}
+{# Inline lamp bound to an Alpine expression returning {level, label}. Color is always paired with text. #}
 {% macro chip(expr) -%}
 <span class="st" :class="'st-' + ({{ expr }}).level"><i aria-hidden="true"></i><span class="st-label" x-text="({{ expr }}).label">Unknown</span></span>
+{%- endmacro %}
+
+{# Annunciator tile: fixed legend, lit with the lamp color, state text underneath. #}
+{% macro annun(legend, expr) -%}
+<div class="annun" :class="'annun-' + ({{ expr }}).level" role="status" :aria-label="'{{ legend }}: ' + ({{ expr }}).label">
+  <span class="annun-legend">{{ legend }}</span>
+  <span class="annun-state" x-text="({{ expr }}).label">Unknown</span>
+</div>
 {%- endmacro %}
 
 {# Heading arrow: 0° = up (north). Rotation is accumulated for shortest-angle turns. #}
 {% macro heading_arrow(rot_expr) -%}
 <svg class="hdg-arrow" viewBox="0 0 24 24" :style="'transform: rotate(' + {{ rot_expr }} + 'deg)'" aria-hidden="true"><path d="M12 2 L19 20 L12 15.5 L5 20 Z" fill="currentColor"/></svg>
+{%- endmacro %}
+
+{# Brand mark: heading arrow inside a ring, the same shape as the map marker. #}
+{% macro brand_mark() -%}
+<svg class="brand-mark" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="10.5" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M12 4.5 L16.5 17 L12 14.2 L7.5 17 Z" fill="currentColor"/></svg>
+{%- endmacro %}
+
+{# Master state strip. Expects Alpine getters: state (READY|INITIALIZING|FAULT|UNKNOWN), stateLabel, stateReasons. #}
+{% macro master_strip(compact=False, meta='') -%}
+<section class="master{{ ' compact' if compact }}" :class="'master-' + state" role="status" aria-live="polite">
+  <div class="master-state" x-text="stateLabel">Unknown</div>
+  <div class="master-text"><template x-for="r in stateReasons" :key="r"><span class="reason" x-text="r"></span></template></div>
+  <div class="master-meta">{{ meta|safe }}</div>
+</section>
 {%- endmacro %}

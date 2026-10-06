@@ -1,41 +1,39 @@
-{% from "macros.html" import chip %}
+{% from "macros.html" import chip, brand_mark, master_strip %}
 <!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>{% block title %}Maintenance{% endblock %} · AIO Maintenance</title>
+  <link rel="preload" href="{{ url_for('static', filename='vendor/fonts/barlow-latin-500-normal.woff2') }}" as="font" type="font/woff2" crossorigin>
   <link rel="stylesheet" href="{{ url_for('static', filename='vendor/bootstrap.min.css') }}">
   <link rel="stylesheet" href="{{ url_for('static', filename='css/dashboard.css') }}">
 </head>
 <body x-data="maintPage()">
-  {% if fake_mode %}<div class="fake-banner">FAKE MODE — subsystem state from dev/fake_state.json</div>{% endif %}
-  <div class="conn-lost" x-show="!connected" x-cloak>Dashboard connection lost — values below are not live</div>
   <div class="mlayout">
     <aside class="sidebar">
-      <div class="brand">AIO Maintenance<small>{{ hostname }}</small></div>
+      <div class="brand">{{ brand_mark() }}<span class="brand-text">AIO Maintenance</span><small>{{ hostname }}</small></div>
       {% set items = [('overview', 'Overview', '/'), ('system', 'System', '/system'), ('ros', 'ROS 2', '/ros'),
                       ('camera', 'Camera', '/camera'), ('lidar', 'LiDAR', '/lidar'),
                       ('network', 'Network', '/network'), ('diagnostics', 'Diagnostics', '/diagnostics')] %}
+      <nav aria-label="Maintenance pages">
       {% for key, label, href in items %}
-      <a href="{{ href }}" class="{{ 'active' if page == key }}">
+      <a href="{{ href }}" class="{{ 'active' if page == key }}" {{ 'aria-current=page' if page == key }}>
         <span class="lbl">{{ label }}</span>
-        <span class="st" :class="'st-' + pageLevel('{{ key }}')" :title="pageLevel('{{ key }}')"><i aria-hidden="true"></i></span>
+        <span class="st" :class="'st-' + pageLevel('{{ key }}')" :title="'{{ label }}: ' + pageLevel('{{ key }}')"><i aria-hidden="true"></i></span>
       </a>
       {% endfor %}
+      </nav>
     </aside>
 
+    <div class="mwrap">
+    {{ master_strip(compact=True, meta='<a :href="productUrl()" class="text-white">Open product view</a>' ~ ('<span class="fake-tag ms-3">Fake data</span>' if fake_mode else '')) }}
     <div class="mmain">
       <div class="mtitle">
         <h1>{% block heading %}{% endblock %}</h1>
-        <div class="d-flex align-items-center gap-3">
-          <span class="muted small">Product state</span>
-          <span class="state-badge" :class="'state-' + productState" style="font-size:.85rem">
-            <span class="dot"></span><span x-text="productState">UNKNOWN</span></span>
-          <a :href="productUrl()" class="small">Product UI ↗</a>
-        </div>
       </div>
       {% block content %}{% endblock %}
+    </div>
     </div>
   </div>
 
@@ -59,6 +57,7 @@
 
   <script src="{{ url_for('static', filename='js/common.js') }}"></script>
   <script src="{{ url_for('static', filename='js/maint.js') }}"></script>
+  {% block scripts %}{% endblock %}
   <script defer src="{{ url_for('static', filename='vendor/alpine.min.js') }}"></script>
 </body>
 </html>
