@@ -60,7 +60,7 @@ cd ~/web_monitor && sudo deploy/install.sh --user jetson
 - 一律用**空白**縮排，不可使用 Tab。子項目要縮排在上層項目之下。
 - 省略的數值與選項會使用內建預設值。但 `services`、`devices`、`ros.topics` 與 `ros.nodes` **沒有**內建項目：刪除這些區段就等於移除那些項目。請直接修改隨附的設定檔，不要從頭寫一份新的。
 - **清單會整個取代預設值。** 如果寫了 `ros.topics`，就要寫出所有需要的 topic，而不是只寫新增的那一個。`ready_requires`、`nodes`、`disk_paths` 也一樣。
-- 含有 `:` 或 `#` 的文字請加上引號，例如 `host: "192.168.1.20"`。
+- 含有 `:` 或 `#` 的文字請加上引號，例如 `host: "192.0.2.20"`。
 - `auto` 是關鍵字，代表該項設定使用自動偵測。
 
 設定檔有語法錯誤時儀表板無法啟動，systemd 會每隔幾秒重試一次。可用以下指令檢查設定檔：
@@ -310,11 +310,11 @@ data:
 devices:
   camera:
     label: Camera
-    host: 192.168.50.10
+    host: 192.0.2.10
     ...
   lidar:
     label: LiDAR
-    host: 192.168.50.20
+    host: 192.0.2.20
     ...
 ```
 

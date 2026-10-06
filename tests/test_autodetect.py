@@ -42,7 +42,7 @@ class DiscoveryTest(unittest.TestCase):
         os.makedirs(self.cfg_dir)
         self.yaml = os.path.join(self.cfg_dir, "aio_nav.yaml")
         with open(self.yaml, "w") as f:
-            f.write("aio_nav_node:\n  ros__parameters:\n    output_udp: '192.168.1.5:9000'\n"
+            f.write("aio_nav_node:\n  ros__parameters:\n    output_udp: '192.0.2.5:9000'\n"
                     "    output_rate: 50.0\n")
         self.root = root
 
@@ -62,7 +62,7 @@ class DiscoveryTest(unittest.TestCase):
         self.assertTrue(cfg.aio_nav["loaded"])
         self.assertTrue(cfg.aio_nav["auto"])
         self.assertEqual(cfg.expected_nav_rate, 50.0)
-        self.assertEqual(cfg.nav_destinations()[0]["host"], "192.168.1.5")
+        self.assertEqual(cfg.nav_destinations()[0]["host"], "192.0.2.5")
         self.assertEqual(cfg["data"]["roots"][0]["path"], os.path.join(self.root, "output"))
 
     def test_nothing_found(self):

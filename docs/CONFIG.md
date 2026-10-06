@@ -80,7 +80,7 @@ never overwrites your installed config.
 - **Lists replace the default as a whole.** If you write `ros.topics`, write every
   topic you want, not just the new one. The same goes for `ready_requires`, `nodes` and
   `disk_paths`.
-- Put text containing `:` or `#` in quotes: `host: "192.168.1.20"`.
+- Put text containing `:` or `#` in quotes: `host: "192.0.2.20"`.
 - `auto` is a keyword: it turns on auto-detection for that setting.
 
 If the file has a syntax error, the dashboard cannot start, and systemd retries every
@@ -347,11 +347,11 @@ the `host` lines and leave the other lines as they are:
 devices:
   camera:
     label: Camera
-    host: 192.168.50.10
+    host: 192.0.2.10
     ...
   lidar:
     label: LiDAR
-    host: 192.168.50.20
+    host: 192.0.2.20
     ...
 ```
 
