@@ -42,7 +42,7 @@ devices:
     host: 192.168.116.82           # Basler camera (MAC 00:30:53:..) on eno1
     service: camera
     topic_group: camera
-    preview: { kind: image, topic: /basler/image_raw, max_width: 960 }
+    preview: { kind: image, topic: auto, max_width: 960 }
   lidar:
     label: LiDAR
     host: ""
@@ -51,7 +51,7 @@ devices:
     preview: { kind: pointcloud, topic: auto, max_points: 30000 }
 
 network:
-  sensor_interface: eno1         # auto = interface used to reach the sensors / default route
+  sensor_interface: auto         # auto = interface used to reach the sensors / default route
   ping_interval_s: 5
 
 system:
@@ -69,7 +69,7 @@ ros:
   nodes: [/basler/pylon_ros2_camera_node, /openrtk330_driver]
   topics:
     - { name: /openrtk330/imu/data_raw, group: nav, label: INS IMU, expected_hz: 100 }
-    - { name: /basler/camera_info, group: camera, label: Camera, expected_hz: 20 }
+    - { name: auto, type: sensor_msgs/msg/CameraInfo,  group: camera, label: Camera, expected_hz: 20 }
     - { name: auto, type: sensor_msgs/msg/PointCloud2, group: lidar,  label: LiDAR points, hint: ouster }
     - { name: auto, type: sensor_msgs/msg/Imu,         group: lidar,  label: Ouster IMU,   hint: ouster, strict: true }
 
