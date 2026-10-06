@@ -4,29 +4,40 @@
 {% block content %}
 
 <!-- AIO NAV control: only shown when nav.allow_control is on -->
-<section class="strip ctl mb-3" x-show="ctl.enabled" x-cloak aria-label="AIO NAV control">
-  <div><span class="strip-title">AIO NAV</span>{{ chip('ctlChip()') }}</div>
+<section class="strip ctl mb-3" x-show="ctl.enabled" x-cloak aria-labelledby="ctl-title"
+         @keydown.escape.window="ctlConfirm = null">
+  <div class="ctl-id">
+    <span class="strip-title" id="ctl-title">AIO NAV</span>{{ chip('ctlChip()') }}
+  </div>
+  <div class="ctl-hint muted" x-text="ctlHint"></div>
   <div class="ctl-actions" role="group" aria-label="AIO NAV actions">
     <template x-if="!ctlConfirm">
-      <div class="d-flex gap-2">
-        <button class="btn btn-sm btn-primary" x-show="ctl.state !== 'running'" :disabled="ctlBusy || !ctl.installed" @click="runCtl('start')">Start</button>
-        <button class="btn btn-sm btn-outline-primary" x-show="ctl.state === 'running'" :disabled="ctlBusy" @click="askCtl('restart')">Restart</button>
-        <button class="btn btn-sm btn-outline-danger" x-show="ctl.state === 'running'" :disabled="ctlBusy" @click="askCtl('stop')">Stop</button>
+      <div class="ctl-btns">
+        <button type="button" class="btn btn-sm btn-primary" x-show="ctl.state !== 'running'"
+                :disabled="ctlBusy || !ctl.installed" @click="runCtl('start')">
+          <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M4 2.5v11l9-5.5z" fill="currentColor"/></svg>Start
+        </button>
+        <button type="button" class="btn btn-sm btn-outline-primary" x-show="ctl.state === 'running'"
+                :disabled="ctlBusy" @click="askCtl('restart')">
+          <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M13 8a5 5 0 1 1-1.5-3.55M13 2.5v3h-3" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg>Restart
+        </button>
+        <button type="button" class="btn btn-sm btn-outline-danger" x-show="ctl.state === 'running'"
+                :disabled="ctlBusy" @click="askCtl('stop')">
+          <svg viewBox="0 0 16 16" aria-hidden="true"><rect x="3.5" y="3.5" width="9" height="9" rx="1" fill="currentColor"/></svg>Stop
+        </button>
       </div>
     </template>
     <template x-if="ctlConfirm">
-      <div class="d-flex align-items-center gap-2">
-        <span class="ctl-ask" x-text="ctlConfirm === 'stop' ? 'Stop AIO NAV? Navigation output ends.' : 'Restart AIO NAV? Alignment starts over.'"></span>
-        <button class="btn btn-sm btn-danger" @click="runCtl(ctlConfirm)" x-text="ctlConfirm === 'stop' ? 'Stop' : 'Restart'"></button>
-        <button class="btn btn-sm btn-outline-secondary" @click="ctlConfirm = null">Cancel</button>
+      <div class="ctl-confirm" role="alertdialog" aria-labelledby="ctl-ask">
+        <span class="ctl-ask" id="ctl-ask" x-text="ctlConfirm === 'stop' ? 'Stop AIO NAV? Navigation output ends.' : 'Restart AIO NAV? Alignment starts over.'"></span>
+        <div class="ctl-btns">
+          <button type="button" class="btn btn-sm btn-danger" @click="runCtl(ctlConfirm)" x-text="ctlConfirm === 'stop' ? 'Stop now' : 'Restart now'"></button>
+          <button type="button" class="btn btn-sm btn-outline-secondary" id="ctl-cancel" @click="ctlConfirm = null">Cancel</button>
+        </div>
       </div>
     </template>
   </div>
-  <div class="ctl-msg" role="status" aria-live="polite">
-    <span x-show="ctlBusy">Working…</span>
-    <span x-show="!ctlBusy && ctlResult" :class="ctlResult && ctlResult.success ? 'ok' : 'bad'" x-text="ctlResult && ctlResult.summary"></span>
-    <span x-show="!ctlBusy && !ctlResult && !ctl.installed" class="muted">Service <span class="mono" x-text="ctl.unit"></span> is not installed. Run deploy/install.sh.</span>
-  </div>
+  <div class="ctl-msg" :class="ctlMsgClass" role="status" aria-live="polite" x-text="ctlMsg"></div>
 </section>
 
 <!-- NAV output -->

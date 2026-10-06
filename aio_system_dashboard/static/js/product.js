@@ -79,9 +79,27 @@
         const e = m[this.ctl.state] || ["unknown", "Unknown"];
         return { level: e[0], label: e[1] };
       },
+      get ctlHint() {
+        if (this.ctlBusy) return "Waiting for the service to change state…";
+        const st = this.ctl.state;
+        if (st === "running") return "Navigation filter is running.";
+        if (st === "failed") return "The service stopped with an error. Start it again, or check the logs.";
+        if (st === "not_installed") return "aio-nav.service is not installed on this device.";
+        if (st === "stopped") return "Not running. No navigation output until it is started.";
+        return "";
+      },
+      get ctlMsg() {
+        if (this.ctlBusy) return "";
+        if (this.ctlResult) return this.ctlResult.summary || "";
+        return "";
+      },
+      get ctlMsgClass() {
+        return this.ctlResult && !this.ctlBusy ? (this.ctlResult.success ? "ok" : "bad") : "";
+      },
       askCtl(verb) {
         this.ctlResult = null;
         this.ctlConfirm = verb;
+        setTimeout(() => { const b = document.getElementById("ctl-cancel"); if (b) b.focus(); }, 50);  // safe default; x-if renders async
         clearTimeout(this._ctlTimer);
         this._ctlTimer = setTimeout(() => { this.ctlConfirm = null; }, 8000);  // confirmation lapses
       },
