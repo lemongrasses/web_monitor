@@ -142,8 +142,33 @@ def aio_nav_output_dir(config_path: str, fusion_txt_path: str = "") -> Optional[
     return None
 
 
+_PARAMS_CACHE: Dict[Any, Dict[str, Any]] = {}
+
+
 def read_aio_nav_params(path: str) -> Dict[str, Any]:
-    """Read output_udp / output_rate from an aio_nav.yaml (ROS 2 params file)."""
+    """Read output_udp / output_rate / ROS domain ... from an aio_nav.yaml (ROS 2 params file).
+
+    The parsed result is cached by file (path, modification time, size): the pure-Python YAML
+    parser costs tens of milliseconds, and this is asked for several times a second. Editing the
+    file changes its time or size, so the next call parses it again."""
+    p = Path(discover_aio_nav_config() if path in ("", "auto", None) else str(resolve_path(path)))
+    try:
+        st = p.stat()
+        key = (str(p), st.st_mtime_ns, st.st_size, path in ("", "auto", None))
+    except OSError:
+        key = None
+    if key is not None and key in _PARAMS_CACHE:
+        return copy.deepcopy(_PARAMS_CACHE[key])
+    result = _read_aio_nav_params(path)
+    if key is not None:
+        for old in [k for k in _PARAMS_CACHE if k[0] == key[0]]:
+            del _PARAMS_CACHE[old]          # drop the outdated version of this file
+        _PARAMS_CACHE[key] = copy.deepcopy(result)
+    return result
+
+
+def _read_aio_nav_params(path: str) -> Dict[str, Any]:
+    """Uncached reader behind read_aio_nav_params."""
     auto = path in ("", "auto", None)
     if auto:
         path = discover_aio_nav_config()

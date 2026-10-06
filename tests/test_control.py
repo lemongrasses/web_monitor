@@ -2,6 +2,7 @@ import copy
 import os
 import stat
 import tempfile
+import time
 import unittest
 from pathlib import Path
 from unittest import mock
@@ -252,6 +253,91 @@ class UserUnitTest(unittest.TestCase):
 def types_ns(**kw):
     import types
     return types.SimpleNamespace(**kw)
+
+
+
+class PgrepTest(unittest.TestCase):
+    """pgrep() scans /proc itself (no child process) and must behave like `pgrep -f`."""
+
+    def test_finds_a_real_process_by_command_line_and_not_a_mention_of_it(self):
+        import subprocess
+        from aio_system_dashboard.collectors import services
+        p = subprocess.Popen(["bash", "-c", 'exec -a "zzpgr""ep" sleep 20'])
+        self.addCleanup(p.wait)
+        self.addCleanup(p.kill)
+        time.sleep(0.3)
+        self.assertEqual(services.pgrep("^[^ ]*zzpgre[p]", max_age_s=0), [p.pid])
+        self.assertEqual(services.pgrep("^[^ ]*zzpgre[p]x", max_age_s=0), [])       # no match
+        # a shell that merely mentions the name does not match the anchored pattern
+        q = subprocess.Popen(["bash", "-c", "sleep 20 # zzpgrep"])
+        self.addCleanup(q.wait)
+        self.addCleanup(q.kill)
+        time.sleep(0.3)
+        self.assertNotIn(q.pid, services.pgrep("^[^ ]*zzpgre[p]", max_age_s=0))
+
+    def test_cache_is_bypassed_when_asked(self):
+        import subprocess
+        from aio_system_dashboard.collectors import services
+        services.pgrep("^[^ ]*zzcach[e]", max_age_s=5)                              # warm the cache
+        p = subprocess.Popen(["bash", "-c", 'exec -a "zzcac""he" sleep 20'])
+        self.addCleanup(p.wait)
+        self.addCleanup(p.kill)
+        time.sleep(0.3)
+        self.assertEqual(services.pgrep("^[^ ]*zzcach[e]", max_age_s=0), [p.pid])   # fresh scan sees it
+
+
+class ParamsCacheTest(unittest.TestCase):
+    def test_edited_file_is_read_again_and_unchanged_file_is_not(self):
+        from unittest import mock
+        from aio_system_dashboard import config as config_mod
+        with tempfile.TemporaryDirectory() as d:
+            f = os.path.join(d, "aio_nav.yaml")
+            with open(f, "w") as fh:
+                fh.write("aio_nav_node:\n  ros__parameters:\n    ros_domain_id: 10\n")
+            self.assertEqual(config_mod.read_aio_nav_params(f)["ros_domain_id"], 10)
+            with mock.patch.object(config_mod, "_read_aio_nav_params") as raw:
+                self.assertEqual(config_mod.read_aio_nav_params(f)["ros_domain_id"], 10)
+                raw.assert_not_called()                                              # served from the cache
+            with open(f, "w") as fh:
+                fh.write("aio_nav_node:\n  ros__parameters:\n    ros_domain_id: 13\n    use_sim_time: true\n")
+            self.assertEqual(config_mod.read_aio_nav_params(f)["ros_domain_id"], 13)  # edit seen
+            first = config_mod.read_aio_nav_params(f)
+            first["ros_domain_id"] = 99                                              # callers may change it
+            self.assertEqual(config_mod.read_aio_nav_params(f)["ros_domain_id"], 13)
+
+
+
+class ConcurrentStartTest(unittest.TestCase):
+    def test_two_simultaneous_starts_launch_one_process(self):
+        import threading as th
+        with tempfile.TemporaryDirectory() as root:
+            cfgdir = os.path.join(root, "install", "aio_nav_ros", "share", "aio_nav_ros", "config")
+            libdir = os.path.join(root, "install", "aio_nav_ros", "lib", "aio_nav_ros")
+            os.makedirs(cfgdir)
+            os.makedirs(libdir)
+            yml = os.path.join(cfgdir, "aio_nav.yaml")
+            with open(yml, "w") as f:
+                f.write("aio_nav_node:\n  ros__parameters:\n    output_rate: 100.0\n")
+            log = os.path.join(root, "launches.txt")
+            wrapper = os.path.join(libdir, "aio-nav")
+            with open(wrapper, "w") as f:
+                f.write(f'#!/bin/bash\necho x >> {log}\nexec -a "zzconcu""rrent" sleep 30\n')
+            os.chmod(wrapper, 0o755)
+            _isolate_state(self)
+            cfg = make(aio_nav_path=yml)
+            cfg.data["fake"]["enabled"] = False
+            cfg.data["services"]["aio_nav"]["process_pattern"] = "^[^ ]*zzconcurren[t]"
+            self.addCleanup(process_control.stop_many, cfg, ["aio_nav"], 2)
+            results = []
+            ts = [th.Thread(target=lambda: results.append(process_control.start_one(cfg, "aio_nav", stable_s=0.5)))
+                  for _ in range(2)]
+            for t in ts:
+                t.start()
+            for t in ts:
+                t.join(15)
+            self.assertTrue(all(r["ok"] for r in results), results)
+            with open(log) as f:
+                self.assertEqual(len(f.read().split()), 1)       # launched once, not twice
 
 
 if __name__ == "__main__":

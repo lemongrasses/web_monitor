@@ -1,7 +1,9 @@
 """systemd unit status for configured services (plus process fallback)."""
 
 import os
+import re
 import subprocess
+import time
 from typing import Dict, List, Optional
 
 from .base import PeriodicCollector
@@ -38,13 +40,47 @@ def systemd_unit_state(unit: str, timeout: float = 3.0, user: bool = False) -> D
     }
 
 
-def pgrep(pattern: str, timeout: float = 2.0) -> List[int]:
+_PROC_CACHE: Dict = {"t": 0.0, "procs": []}
+
+
+def _command_lines(max_age_s: float = 1.0) -> List:
+    """(pid, command line) of every process, read from /proc at most once per max_age_s.
+
+    Replaces `pgrep -f`: each call used to start a child process, and the services collector asks
+    for several patterns every two seconds."""
+    now = time.monotonic()
+    if now - _PROC_CACHE["t"] < max_age_s and _PROC_CACHE["procs"]:
+        return _PROC_CACHE["procs"]
+    procs = []
+    me = os.getpid()
     try:
-        out = subprocess.run(["pgrep", "-f", pattern], capture_output=True, text=True,
-                             timeout=timeout, check=False)
-    except (OSError, subprocess.TimeoutExpired):
+        names = os.listdir("/proc")
+    except OSError:
         return []
-    return [int(x) for x in out.stdout.split() if x.isdigit()]
+    for name in names:
+        if not name.isdigit() or int(name) == me:
+            continue
+        try:
+            with open(f"/proc/{name}/cmdline", "rb") as f:
+                raw = f.read()
+        except OSError:
+            continue            # the process ended while we were looking
+        if raw:                 # kernel threads have no command line
+            procs.append((int(name), raw.replace(b"\0", b" ").decode(errors="replace").strip()))
+    _PROC_CACHE["t"], _PROC_CACHE["procs"] = now, procs
+    return procs
+
+
+def pgrep(pattern: str, timeout: float = 2.0, max_age_s: float = 1.0) -> List[int]:
+    """PIDs whose command line matches the regular expression (like `pgrep -f`).
+
+    max_age_s: how old the shared /proc scan may be. Use 0 when a decision depends on it (start /
+    stop), so a process that just started or ended is seen."""
+    try:
+        rx = re.compile(pattern)
+    except re.error:
+        return []
+    return [pid for pid, cmd in _command_lines(max_age_s) if rx.search(cmd)]
 
 
 def summarize(unit_state: Dict, pids: Optional[List[int]]) -> str:

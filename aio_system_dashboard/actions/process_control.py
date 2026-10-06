@@ -65,7 +65,7 @@ def running_pids(cfg, key: str) -> List[int]:
 def _pids(cfg, key: str) -> List[int]:
     pattern = cfg["services"][key].get("process_pattern")
     me = os.getpid()
-    return [p for p in pgrep(pattern) if p != me] if pattern else []
+    return [p for p in pgrep(pattern, max_age_s=0.0) if p != me] if pattern else []
 
 
 def _reap(proc: subprocess.Popen) -> None:
@@ -123,7 +123,21 @@ def set_wanted(cfg, key: str, value: bool) -> None:
         logger.warning("cannot record that %s should %srun: %s", key, "" if value else "not ", e)
 
 
+_START_LOCKS: Dict[str, threading.Lock] = {}
+_START_LOCKS_GUARD = threading.Lock()
+
+
 def start_one(cfg, key: str, wait_s: float = 4.0, stable_s: float = 3.0) -> Dict:
+    """Start one program unless it already runs. Only one start per program at a time: a manual
+    Start and the DSO watchdog's retry can arrive together, and without this both would see "not
+    running" and launch it twice. The second caller waits, then finds it running."""
+    with _START_LOCKS_GUARD:
+        lock = _START_LOCKS.setdefault(key, threading.Lock())
+    with lock:
+        return _start_one(cfg, key, wait_s, stable_s)
+
+
+def _start_one(cfg, key: str, wait_s: float, stable_s: float) -> Dict:
     svc = cfg["services"][key]
     label = svc.get("label", key)
     set_wanted(cfg, key, True)
