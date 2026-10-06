@@ -21,12 +21,14 @@ nav:
   ready_requires: [alignment, heading_valid]
   trajectory: { recent_window_s: 60, recent_hz: 10, older_hz: 1 }
 
+# ROS domain follows aio_nav.yaml (ros_domain_id 13, ros_localhost_only 0), set in deploy/aio-dashboard.service.
+# Topics published on another domain (e.g. the Basler driver on domain 10) are not visible here.
 # systemd units. A unit that does not exist shows "Not installed" and raises no warning.
 # AIO NAV is also detected by process name, so the desktop app start works too.
 # Units with restartable: true get a Restart button (re-run install.sh after changing).
 services:
   aio_nav:   { label: AIO NAV, unit: aio-nav.service, process_pattern: lib/aio_nav_ros/aio_nav_node }
-  camera:    { label: Camera driver, unit: camera.service, restartable: true }   # optional
+  camera:    { label: Camera driver, unit: camera.service, restartable: true, process_pattern: pylon_ros2_camera_wrapper }   # Basler, started by ros2 launch
   ouster:    { label: Ouster driver, unit: ouster.service, restartable: true }   # optional
   dashboard: { label: Dashboard, unit: aio-dashboard.service }
 
@@ -36,7 +38,7 @@ services:
 devices:
   camera:
     label: Camera
-    host: ""
+    host: 192.168.116.82           # Basler camera (MAC 00:30:53:..) on eno1
     service: camera
     topic_group: camera
     preview: { kind: image, topic: auto, max_width: 960 }
@@ -48,7 +50,7 @@ devices:
     preview: { kind: pointcloud, topic: auto, max_points: 30000 }
 
 network:
-  sensor_interface: auto         # auto = interface used to reach the sensors / default route
+  sensor_interface: eno1         # auto = interface used to reach the sensors / default route
   ping_interval_s: 5
 
 system:
