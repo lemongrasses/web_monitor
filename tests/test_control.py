@@ -115,5 +115,19 @@ class StartStabilityTest(unittest.TestCase):
                 process_control.stop_many(cfg, ["aio_nav"], 2)
 
 
+
+class WorkDirTest(unittest.TestCase):
+    def test_programs_run_next_to_the_output_folder(self):
+        with tempfile.TemporaryDirectory() as root:
+            cfgdir = os.path.join(root, "install", "aio_nav_ros", "share", "aio_nav_ros", "config")
+            os.makedirs(cfgdir)
+            os.makedirs(os.path.join(root, "output"))
+            yml = os.path.join(cfgdir, "aio_nav.yaml")
+            with open(yml, "w") as f:
+                f.write("aio_nav_node:\n  ros__parameters:\n    output_rate: 100.0\n")
+            self.assertEqual(os.path.realpath(process_control.work_dir(make(aio_nav_path=yml))),
+                             os.path.realpath(root))
+
+
 if __name__ == "__main__":
     unittest.main()

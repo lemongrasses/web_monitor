@@ -22,7 +22,7 @@ from pathlib import Path
 from typing import Dict, List, Optional
 
 from ..collectors.services import pgrep
-from ..config import resolve_path
+from ..config import aio_nav_output_dir, resolve_path
 
 logger = logging.getLogger(__name__)
 
@@ -79,6 +79,15 @@ def _tail(path: Path, n: int = 3) -> str:
     return " | ".join(lines[-n:])
 
 
+def work_dir(cfg) -> str:
+    """Folder the programs run in. AIO NAV writes its logs to a relative output/, so this is the
+    folder that holds output/ (next to install/), where the Data page looks."""
+    out = aio_nav_output_dir(cfg.aio_nav.get("path", ""), cfg.aio_nav.get("fusion_txt_path", ""))
+    if out and os.path.isdir(os.path.dirname(out)):
+        return os.path.dirname(out)
+    return str(Path.home())
+
+
 def start_one(cfg, key: str, wait_s: float = 4.0, stable_s: float = 3.0) -> Dict:
     svc = cfg["services"][key]
     label = svc.get("label", key)
@@ -94,7 +103,7 @@ def start_one(cfg, key: str, wait_s: float = 4.0, stable_s: float = 3.0) -> Dict
         with open(log, "wb") as out:
             proc = subprocess.Popen([launcher], stdin=subprocess.DEVNULL, stdout=out,
                                     stderr=subprocess.STDOUT, start_new_session=True,
-                                    env=child_env(cfg), cwd=str(Path.home()))
+                                    env=child_env(cfg), cwd=work_dir(cfg))
     except OSError as e:
         return {"ok": False, "text": f"{label}: cannot start ({e})"}
     _reap(proc)
