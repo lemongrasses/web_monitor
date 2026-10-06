@@ -12,6 +12,11 @@ The main data source is the **AIO NAV 0x04 binary packet** that `aio_nav_node`
 (`../aio-nav-ros`) always sends to `127.0.0.1:9000`. The dashboard only monitors
 the system. It does not start navigation or sensor processes, so a dashboard crash never stops them.
 
+
+**Manuals:** operation, alignment SOP and UDP output format:
+[English](docs/OPERATION.md) · [繁體中文](docs/OPERATION.zh-TW.md).
+Settings: [English](docs/CONFIG.md) · [繁體中文](docs/CONFIG.zh-TW.md).
+
 ## Architecture
 
 ```
