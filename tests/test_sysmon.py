@@ -225,7 +225,8 @@ class KmsgTest(unittest.TestCase):
         seen = []
         r = kmsg.KmsgReader(lambda k, d: seen.append(d), max_per_min=10)
         for i in range(500):
-            r.handle(f"3,{i},{i},-;nvme error {i}")
+            word = chr(97 + i // 26 % 26) + chr(97 + i % 26)          # 500 different messages (digits do not count)
+            r.handle(f"3,{i},{i},-;nvme error {word}")
         self.assertEqual(len(seen), 10)
 
 
@@ -370,3 +371,42 @@ class CommandLineTest(unittest.TestCase):
         self.assertEqual(p.parse_args(["status", "--config", "/b", "--dir", "/d"]).config, "/b")
         self.assertEqual(p.parse_args(["status"]).dir, None)
         self.assertEqual(p.parse_args(["report", "--hours", "2"]).hours, 2.0)
+
+
+class KmsgRepeatTest(unittest.TestCase):
+    def reader(self, **kw):
+        self.seen = []
+        self.t = 0.0
+        return kmsg.KmsgReader(lambda k, d: self.seen.append((k, d)), clock=lambda: self.t, **kw)
+
+    def test_only_the_first_line_of_a_record_is_kept(self):
+        r = self.reader()
+        r.handle("3,1,100,-;nvme timeout\n SUBSYSTEM=pci\n DEVICE=+pci:0000")
+        self.assertEqual(self.seen[0][1]["msg"], "nvme timeout")
+
+    def test_the_same_message_is_logged_once_and_counted(self):
+        r = self.reader()
+        for i in range(50):
+            self.t += 1
+            r.handle(f"4,{i + 1},{i},-;systemd-fstab-generator[{100 + i}]: Failed to create unit file, duplicate entry")
+        self.assertEqual(sum(1 for k, _ in self.seen if k == "kernel"), 1)
+        r.flush_repeats()
+        rep = [d for k, d in self.seen if k == "kernel_repeats"]
+        self.assertEqual(rep[0]["count"], 49)
+
+    def test_it_logs_again_after_the_window_and_reports_the_count(self):
+        r = self.reader(repeat_window_s=60)
+        for i in range(5):
+            r.handle(f"3,{i + 1},{i},-;disk error {i}")
+        self.t += 120
+        r.handle("3,10,10,-;disk error 99")
+        kinds = [k for k, _ in self.seen]
+        self.assertEqual(kinds, ["kernel", "kernel_repeats", "kernel"])
+
+    def test_restart_resumes_after_the_last_sequence_number(self):
+        r = self.reader(min_seq=40)
+        r.handle("3,39,1,-;old problem")
+        r.handle("3,40,2,-;also old")
+        r.handle("3,41,3,-;new problem")
+        self.assertEqual([d["msg"] for k, d in self.seen], ["new problem"])
+        self.assertEqual(r.last_seq, 41)

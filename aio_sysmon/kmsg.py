@@ -39,9 +39,19 @@ def parse(line: str):
         return None
 
 
+def _normalise(msg: str) -> str:
+    """The message without process ids and numbers, so 'the same thing again' is recognised."""
+    return re.sub(r"\d+", "N", msg)[:160]
+
+
 class KmsgReader:
-    def __init__(self, on_event, keep: int = 400, path: str = "/dev/kmsg", max_per_min: int = 120):
+    def __init__(self, on_event, keep: int = 400, path: str = "/dev/kmsg", max_per_min: int = 120,
+                 min_seq: int = 0, repeat_window_s: float = 600.0, clock=time.monotonic):
         self.on_event, self.path, self.max_per_min = on_event, path, max_per_min
+        self.min_seq = min_seq                    # messages up to this sequence number were already recorded
+        self.last_seq = min_seq
+        self.repeat_window_s, self._clock = repeat_window_s, clock
+        self._seen: dict = {}                     # normalised text -> [first time, suppressed count, first message]
         self.recent: Deque[Tuple[int, str]] = deque(maxlen=keep)
         self._stop = threading.Event()
         self._thread = None
@@ -66,14 +76,37 @@ class KmsgReader:
         if not p:
             return
         level, seq, ts_us, msg = p
+        msg = msg.split("\n", 1)[0]                              # the first line; the rest is key=value detail
+        self.last_seq = max(self.last_seq, seq)
+        if seq <= self.min_seq:                                  # recorded before the recorder restarted
+            return
         self.recent.append((level, f"[{ts_us / 1e6:10.3f}] {msg}"))
         if (level <= 4 or IMPORTANT.search(msg)) and not NOISE.search(msg):
-            now = time.monotonic()
+            now = self._clock()
+            key = _normalise(msg)
+            seen = self._seen.get(key)
+            if seen and now - seen[0] < self.repeat_window_s:    # the same message again: count it, do not log it
+                seen[1] += 1
+                return
+            if seen and seen[1]:
+                self._emit_repeats(key, seen)
+            self._seen[key] = [now, 0, msg]
             if now - self._window[0] > 60:
                 self._window = [now, 0]
             self._window[1] += 1
             if self._window[1] <= self.max_per_min:             # a message storm must not fill the disk
                 self.on_event("kernel", {"level": level, "seq": seq, "kt": round(ts_us / 1e6, 3), "msg": msg[:300]})
+
+    def _emit_repeats(self, key: str, seen) -> None:
+        self.on_event("kernel_repeats", {"msg": seen[2][:200], "count": seen[1],
+                                         "window_s": round(self._clock() - seen[0])})
+        seen[1] = 0
+
+    def flush_repeats(self) -> None:
+        """Write the 'N more times' summaries (called when stopping)."""
+        for key, seen in list(self._seen.items()):
+            if seen[1]:
+                self._emit_repeats(key, seen)
 
     def tail(self, n: int = 40):
         return [m for _, m in list(self.recent)[-n:]]

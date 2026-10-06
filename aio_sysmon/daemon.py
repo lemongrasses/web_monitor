@@ -37,7 +37,10 @@ class Daemon:
         self.ring = RingFile(self.store.path("ring.bin"), int(cfg["ring_mb"] * 1048576))
         self.engine = TriggerEngine(self.limits, float(cfg["cooldown_s"]))
         self.probe = probe or LatencyProbe()
-        self.kmsg = kmsg if kmsg is not None else (KmsgReader(self.store.write_event) if cfg.get("kmsg") else None)
+        prev = self._read_json(self.store.path("run.json")) or {}
+        resume = int(prev.get("kmsg_seq", 0)) if prev.get("boot_id") == sources.boot_id() else 0   # same boot: continue
+        self.kmsg = kmsg if kmsg is not None else (
+            KmsgReader(self.store.write_event, min_seq=resume) if cfg.get("kmsg") else None)
         # samplers: one set for the 1 s light record, one for the longer full sample
         self.cpu1, self.disk1 = sources.CpuSampler(), sources.DiskSampler()
         self.swap1 = sources.SwapSampler()
@@ -104,9 +107,22 @@ class Daemon:
             pass
         return out[-15:]
 
+    def _persist_run(self, **extra) -> None:
+        """Keep run.json current (the position in the kernel log, so a restart does not replay it)."""
+        run_path = self.store.path("run.json")
+        run = self._read_json(run_path) or {}
+        if self.kmsg:
+            run["kmsg_seq"] = self.kmsg.last_seq
+        run.update(extra)
+        with open(run_path + ".tmp", "w") as f:
+            json.dump(run, f)
+        os.replace(run_path + ".tmp", run_path)
+
     def mark_clean_stop(self) -> None:
         run_path = self.store.path("run.json")
         run = self._read_json(run_path) or {}
+        if self.kmsg:
+            run["kmsg_seq"] = self.kmsg.last_seq
         run.update({"clean": True, "stop": self.wall()})
         with open(run_path + ".tmp", "w") as f:
             json.dump(run, f)
@@ -230,6 +246,7 @@ class Daemon:
             self._last_fsync_ms = self.store.write_sample(full)
             if m >= self._next_known:                    # the ring already has the newest records: this is a backstop
                 self.store.write_last_known(dict(light, load=full.get("ld"), up=light.get("u")))
+                self._persist_run()
                 self._next_known = m + 30.0
             self._next_full = m + interval
             if with_top:
@@ -268,6 +285,7 @@ class Daemon:
         self.probe.stop()
         if self.kmsg:
             self.kmsg.stop()
+            self.kmsg.flush_repeats()
         try:
             self.ring.append_many(self._pending)
             self.ring.sync()
