@@ -257,6 +257,7 @@ class UncleanAnalysisTest(unittest.TestCase):
         v = self.verdict(boot="b1")
         self.assertTrue(v["same_boot"])
         self.assertIn("recorder was killed", v["summary"])
+        self.assertNotIn("power loss", v["hint"])                 # no machine-level guess when only the recorder died
 
 
 class DaemonTest(TmpTest):

@@ -324,6 +324,8 @@ def analyze_unclean(run: Dict, last_known: Optional[Dict], ring: List[Dict], boo
             hint = "the disk was stalling (long waits, tasks stuck on disk)"
         elif (L.get("stall_max_ms") or 0) > 800:
             hint = "the system was stalling right before the end"
+    if same_boot:
+        hint = "not applicable: the machine itself kept running"
     summary = ("the recorder was killed but the machine kept running" if same_boot else
                f"the machine stopped without a clean shutdown; {hint}")
     return {"same_boot": same_boot, "last_record_t": last_t,
