@@ -1,0 +1,87 @@
+{% extends "maintenance/base.html" %}
+{% from "macros.html" import chip %}
+{% set dev = devices.get(device_key, {}) %}
+{% set label = dev.label or device_key %}
+{% block title %}{{ label }}{% endblock %}
+{% block heading %}{{ label }}{% endblock %}
+{% block content %}
+{% if not dev %}
+<div class="alert alert-secondary">No {{ device_key }} device is configured in dashboard.yaml.</div>
+{% else %}
+{% set group = dev.topic_group or device_key %}
+<div class="row g-3">
+  <div class="col-lg-5">
+    <div class="panel h-100">
+      <div class="panel-h"><strong>Status</strong><span class="mono small muted">{{ dev.host or 'no host configured' }}</span></div>
+      <div class="panel-b">
+        <div class="vrow"><span class="k">Device</span>{{ chip("reachChip('" ~ device_key ~ "')") }}</div>
+        <div class="vrow"><span class="k">Round trip</span><span class="v" x-text="device('{{ device_key }}').rtt_ms != null ? device('{{ device_key }}').rtt_ms.toFixed(2) + ' ms' : '—'"></span></div>
+        {% if dev.service %}
+        <div class="vrow"><span class="k">Driver <span class="mono small muted">{{ services_cfg.get(dev.service, {}).get('unit', dev.service) }}</span></span>{{ chip("serviceChip('" ~ dev.service ~ "')") }}</div>
+        {% endif %}
+        <template x-for="t in topicsFor('{{ group }}')" :key="t.name">
+          <div class="vrow"><span class="k" x-text="t.label"></span>{{ chip("topicChip(t)") }}</div>
+        </template>
+      </div>
+    </div>
+  </div>
+  <div class="col-lg-7">
+    <div class="panel h-100">
+      <div class="panel-h"><strong>ROS data</strong></div>
+      <div class="table-responsive">
+        <table class="table table-sm mb-0">
+          <thead><tr><th>Topic</th><th class="text-end">Rate</th><th class="text-end">Freshness</th><th class="text-end">Pub</th><th class="text-end">Sub</th></tr></thead>
+          <tbody>
+            <template x-for="t in topicsFor('{{ group }}')" :key="t.name">
+              <tr><td class="mono small" x-text="t.name"></td>
+                  <td class="text-end num" x-text="rateText(t.rate_hz, t.expected_hz)"></td>
+                  <td class="text-end num" x-text="fmt.age(t.age_s)"></td>
+                  <td class="text-end num" x-text="t.publishers"></td>
+                  <td class="text-end num" x-text="t.subscribers"></td></tr>
+            </template>
+            <tr x-show="d && !topicsFor('{{ group }}').length"><td colspan="5" class="muted small" x-text="ros.available ? 'No topics configured for group {{ group }}.' : 'ROS 2 monitoring unavailable.'"></td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="panel mt-3">
+  <div class="panel-h"><strong>Actions</strong><span class="muted small">Whitelisted operations only. Every run is logged on the Diagnostics page.</span></div>
+  <div class="panel-b">
+    <div class="d-flex gap-2 flex-wrap">
+      <button class="btn btn-outline-primary" :disabled="isRunning('run_diagnostic', '{{ device_key }}')"
+              @click="ask('run_diagnostic', '{{ device_key }}', 'Run {{ label }} diagnostic', false)">
+        <span x-show="isRunning('run_diagnostic', '{{ device_key }}')" class="spinner-border spinner-border-sm me-1"></span>Run diagnostic
+      </button>
+      {% if dev.service and services_cfg.get(dev.service, {}).get('restartable') %}
+      <button class="btn btn-outline-danger" :disabled="isRunning('restart_service', '{{ dev.service }}')"
+              @click="ask('restart_service', '{{ dev.service }}', 'Restart {{ services_cfg[dev.service].label or dev.service }} ({{ services_cfg[dev.service].unit }})', true)">
+        <span x-show="isRunning('restart_service', '{{ dev.service }}')" class="spinner-border spinner-border-sm me-1"></span>Restart driver
+      </button>
+      {% endif %}
+    </div>
+
+    {% for action, target in [('run_diagnostic', device_key), ('restart_service', dev.service or '')] %}
+    <template x-if="result('{{ action }}', '{{ target }}')">
+      <div class="mt-3">
+        <div :class="result('{{ action }}', '{{ target }}').success ? 'check-ok' : 'check-fail'"
+             x-text="(result('{{ action }}', '{{ target }}').outcome || (result('{{ action }}', '{{ target }}').success ? 'SUCCESS' : 'FAILED')) + ' — ' + (result('{{ action }}', '{{ target }}').summary || '')"></div>
+        <template x-if="result('{{ action }}', '{{ target }}').checks">
+          <table class="table table-sm mt-2 mb-0" style="max-width:640px">
+            <tbody>
+              <template x-for="c in result('{{ action }}', '{{ target }}').checks" :key="c.name">
+                <tr><td x-text="c.name"></td><td :class="c.ok ? 'check-ok' : 'check-fail'" x-text="c.ok ? 'PASS' : 'FAIL'"></td>
+                    <td class="muted small mono" x-text="c.detail"></td></tr>
+              </template>
+            </tbody>
+          </table>
+        </template>
+      </div>
+    </template>
+    {% endfor %}
+  </div>
+</div>
+{% endif %}
+{% endblock %}

@@ -1,0 +1,76 @@
+{% extends "maintenance/base.html" %}
+{% from "macros.html" import chip %}
+{% block title %}Network{% endblock %}
+{% block heading %}Network{% endblock %}
+{% block content %}
+<div class="row g-3">
+  <div class="col-lg-7">
+    <div class="panel h-100">
+      <div class="panel-h"><strong>Interfaces</strong>
+        <span class="small">Sensor LAN <span class="mono" x-text="net.sensor_interface || 'not configured'"></span> {{ chip("linkChip()") }}</span></div>
+      <div class="table-responsive">
+        <table class="table table-sm mb-0 align-middle">
+          <thead><tr><th>Interface</th><th>Link</th><th>IPv4</th><th class="text-end">Speed</th><th class="text-end">MTU</th></tr></thead>
+          <tbody>
+            <template x-for="i in (net.interfaces || [])" :key="i.name">
+              <tr :class="i.name === net.sensor_interface ? 'table-active' : ''">
+                <td class="mono" x-text="i.name"></td>
+                <td>{{ chip("ifaceChip(i)") }}</td>
+                <td class="mono small" x-text="(i.ipv4 || []).map(a => a.address + '/' + a.netmask).join(', ') || '—'"></td>
+                <td class="text-end num" x-text="i.speed_mbps ? i.speed_mbps + ' Mb/s' : '—'"></td>
+                <td class="text-end num" x-text="i.mtu"></td>
+              </tr>
+            </template>
+          </tbody>
+        </table>
+      </div>
+      <div class="panel-b border-top small">
+        Default route:
+        <span class="mono" x-text="net.default_route ? net.default_route.gateway + ' via ' + net.default_route.interface : 'none'"></span>
+        <span class="muted ms-3">Host <span class="mono" x-text="net.hostname"></span></span>
+      </div>
+    </div>
+  </div>
+
+  <div class="col-lg-5">
+    <div class="panel h-100">
+      <div class="panel-h"><strong>Devices</strong><span class="muted small">ICMP ping</span></div>
+      <div class="panel-b">
+        {% for key, dev in devices.items() %}
+        <div class="vrow">
+          <span class="k"><a href="/{{ key }}" class="text-decoration-none">{{ dev.label }}</a> <span class="mono small">{{ dev.host }}</span></span>
+          <span class="d-flex gap-2 align-items-center">
+            <span class="num small muted" x-text="device('{{ key }}').rtt_ms != null ? device('{{ key }}').rtt_ms.toFixed(2) + ' ms' : ''"></span>
+            {{ chip("reachChip('" ~ key ~ "')") }}
+          </span>
+        </div>
+        {% endfor %}
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="panel mt-3">
+  <div class="panel-h"><strong>NAV UDP output</strong><span class="muted small">Display only. Edit output_udp in aio_nav.yaml.</span></div>
+  <div class="table-responsive">
+    <table class="table table-sm mb-0 align-middle">
+      <thead><tr><th>Destination</th><th>Role</th><th>Route</th><th>Status</th></tr></thead>
+      <tbody>
+        <template x-for="dst in ((product.udp || {}).destinations || [])" :key="dst.host + dst.port">
+          <tr>
+            <td class="mono" x-text="dst.host + ':' + dst.port"></td>
+            <td x-text="dst.kind === 'local' ? 'Local monitor (this dashboard)' : 'External (user application)'"></td>
+            <td class="mono small" x-text="dst.kind === 'local' ? 'loopback' : (dst.route ? (dst.route.ok ? 'dev ' + dst.route.interface + ' src ' + dst.route.source + (dst.route.via ? ' via ' + dst.route.via : '') : 'no route: ' + dst.route.error) : '—')"></td>
+            <td>{{ chip("udpChip()") }}</td>
+          </tr>
+        </template>
+      </tbody>
+    </table>
+  </div>
+  <div class="panel-b border-top small muted">
+    Config <span class="mono" x-text="d && d.config ? d.config.aio_nav.path : ''"></span>
+    <span x-show="d && d.config && !d.config.aio_nav.loaded" class="text-danger ms-2">not loaded</span>.
+    "Streaming" means aio_nav_node is sending packets. UDP has no acknowledgement, so reception by the remote application is not confirmed.
+  </div>
+</div>
+{% endblock %}

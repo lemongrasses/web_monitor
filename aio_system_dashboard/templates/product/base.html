@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}AIO Navigation System{% endblock %}</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='vendor/bootstrap.min.css') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='vendor/leaflet.css') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/dashboard.css') }}">
+</head>
+<body x-data="productPage()">
+  {% if fake_mode %}<div class="fake-banner">FAKE MODE — subsystem state from dev/fake_state.json</div>{% endif %}
+  <div class="conn-lost" x-show="!connected" x-cloak>Dashboard connection lost — values below are not live</div>
+
+  <header class="topbar">
+    <div class="container-fluid px-4 pt-2 d-flex justify-content-between align-items-center flex-wrap gap-2">
+      <div class="brand">AIO Navigation System<small>{{ hostname }}</small></div>
+      <span class="state-badge" :class="'state-' + state" role="status" :aria-label="'System state ' + state">
+        <span class="dot"></span><span x-text="state">UNKNOWN</span>
+      </span>
+    </div>
+    <nav class="container-fluid px-4 topnav">
+      <a href="/" class="{{ 'active' if page == 'overview' }}">Overview</a>
+      <a href="/navigation" class="{{ 'active' if page == 'navigation' }}">Navigation</a>
+      <a href="/data" class="{{ 'active' if page == 'data' }}">Data</a>
+    </nav>
+  </header>
+
+  <main class="container-fluid px-4 py-3">
+    {% block content %}{% endblock %}
+  </main>
+
+  <script src="{{ url_for('static', filename='vendor/leaflet.js') }}"></script>
+  <script src="{{ url_for('static', filename='js/common.js') }}"></script>
+  <script src="{{ url_for('static', filename='js/map.js') }}"></script>
+  <script src="{{ url_for('static', filename='js/product.js') }}"></script>
+  <script defer src="{{ url_for('static', filename='vendor/alpine.min.js') }}"></script>
+</body>
+</html>

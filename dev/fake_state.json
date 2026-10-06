@@ -1,0 +1,29 @@
+{
+  "_help": "Edit while the dashboard runs (fake mode). services: running|stopped|failed|not_installed. devices: true/false reachable. ros.topics: healthy|low_rate|stale|missing or {state, hz}. pids: change aio_nav pid to simulate a node restart.",
+  "services": {
+    "aio_nav": "running",
+    "camera": "running",
+    "ouster": "running",
+    "dashboard": "running"
+  },
+  "pids": {
+    "aio_nav": 4242
+  },
+  "devices": {
+    "camera": true,
+    "lidar": true
+  },
+  "ros": {
+    "nodes": {
+      "/aio_nav_node": true,
+      "/camera_driver": true,
+      "/ouster_driver": true
+    },
+    "topics": {
+      "/nav/odometry": "healthy",
+      "/camera/camera_info": "healthy",
+      "/ouster/points": "healthy",
+      "/ouster/imu": "healthy"
+    }
+  }
+}

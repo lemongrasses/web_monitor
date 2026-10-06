@@ -1,0 +1,55 @@
+{% extends "product/base.html" %}
+{% block title %}Data · AIO Navigation System{% endblock %}
+{% block content %}
+<div x-data="dataPage()">
+  <div class="d-flex align-items-center gap-2 mb-3 flex-wrap">
+    <span class="small-caps me-1">Location</span>
+    <template x-for="r in roots" :key="r.id">
+      <button class="btn btn-sm" :class="r.id === root ? 'btn-primary' : 'btn-outline-secondary'"
+              @click="open(r.id, '')" :disabled="!r.exists" :title="r.exists ? r.path : 'not available on this device'">
+        <span x-text="r.name"></span><span x-show="!r.exists"> (missing)</span>
+      </button>
+    </template>
+    <span class="muted small ms-auto">Read-only. Files are downloaded from the device to this computer.</span>
+  </div>
+
+  <div class="alert alert-warning" x-show="error" x-text="error" x-cloak></div>
+  <div class="muted" x-show="!roots.length && !error" x-cloak>No data locations are configured.</div>
+
+  <template x-if="listing">
+    <div class="panel">
+      <div class="panel-h">
+        <nav aria-label="breadcrumb">
+          <ol class="breadcrumb mb-0">
+            <li class="breadcrumb-item"><a href="#" @click.prevent="open(root, '')" x-text="listing.root.name"></a></li>
+            <template x-for="c in listing.breadcrumbs" :key="c.path">
+              <li class="breadcrumb-item"><a href="#" @click.prevent="open(root, c.path)" x-text="c.name"></a></li>
+            </template>
+          </ol>
+        </nav>
+        <span class="muted small" x-text="listing.entries.length + ' items'"></span>
+      </div>
+      <div class="table-responsive">
+        <table class="table table-hover table-sm mb-0 align-middle">
+          <thead><tr><th>Name</th><th class="text-end">Size</th><th>Modified</th><th></th></tr></thead>
+          <tbody>
+            <tr x-show="listing.parent !== null"><td colspan="4"><a href="#" @click.prevent="open(root, listing.parent)">⬑ Parent folder</a></td></tr>
+            <template x-for="e in listing.entries" :key="e.path">
+              <tr>
+                <td>
+                  <template x-if="e.is_dir"><a href="#" @click.prevent="open(root, e.path)">📁 <span x-text="e.name"></span></a></template>
+                  <template x-if="!e.is_dir"><span class="mono" x-text="e.name"></span></template>
+                </td>
+                <td class="text-end num" x-text="e.is_dir ? '' : fmt.bytes(e.size)"></td>
+                <td class="num" x-text="fmt.datetime(e.mtime)"></td>
+                <td class="text-end"><a x-show="!e.is_dir" class="btn btn-sm btn-outline-primary py-0" :href="downloadUrl(e)">Download</a></td>
+              </tr>
+            </template>
+            <tr x-show="!listing.entries.length"><td colspan="4" class="muted">This folder is empty.</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </template>
+</div>
+{% endblock %}

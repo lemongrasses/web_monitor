@@ -1,0 +1,144 @@
+"""Dashboard configuration: built-in defaults deep-merged with a YAML file."""
+
+import copy
+import logging
+import os
+from pathlib import Path
+from typing import Any, Dict, List, Optional
+
+import yaml
+
+logger = logging.getLogger(__name__)
+
+PROJECT_ROOT = Path(__file__).resolve().parent.parent
+
+DEFAULTS: Dict[str, Any] = {
+    "product": {"host": "0.0.0.0", "port": 8080},
+    "maintenance": {"host": "0.0.0.0", "port": 8081},
+    "nav": {
+        "udp_bind": "127.0.0.1:9000",
+        "aio_nav_config": "",
+        "expected_rate_hz": None,  # None: take output_rate from aio_nav_config
+        "service": "aio_nav",
+        "startup_grace_s": 3.0,
+        "stale_warn_s": 0.5,
+        "stale_fault_s": 2.0,
+        "low_rate_ratio": 0.8,
+        "gnss_timeout_s": 3.0,
+        "flag_active_s": 1.0,
+        "ready_requires": ["alignment", "heading_valid"],
+        "trajectory": {"recent_window_s": 60.0, "recent_hz": 10.0, "older_hz": 1.0},
+    },
+    "services": {},
+    "devices": {},
+    "network": {"sensor_interface": "", "ping_interval_s": 5.0},
+    "system": {"interval_s": 2.0, "disk_paths": ["/"], "disk_warn_percent": 90, "temp_warn_c": 85},
+    "ros": {"enabled": True, "graph_interval_s": 2.0, "rate_window_s": 2.0, "nodes": [], "topics": []},
+    "data": {"roots": []},
+    "events": {"log_file": "logs/events.jsonl", "max_memory": 500},
+    "actions": {"restart_timeout_s": 30.0, "diagnostic_timeout_s": 15.0},
+    "fake": {"enabled": False, "state_file": "dev/fake_state.json"},
+}
+
+
+def _deep_merge(base: Dict, override: Dict) -> Dict:
+    out = copy.deepcopy(base)
+    for k, v in (override or {}).items():
+        if isinstance(v, dict) and isinstance(out.get(k), dict):
+            out[k] = _deep_merge(out[k], v)
+        else:
+            out[k] = copy.deepcopy(v)
+    return out
+
+
+def resolve_path(p: str) -> Path:
+    """Expand ~ and resolve relative paths against the project root."""
+    path = Path(os.path.expanduser(str(p)))
+    return path if path.is_absolute() else PROJECT_ROOT / path
+
+
+def parse_host_port(value: str, default_host: str = "127.0.0.1") -> Optional[tuple]:
+    if not value or ":" not in value:
+        return None
+    host, _, port = value.rpartition(":")
+    try:
+        port_i = int(port)
+    except ValueError:
+        return None
+    if not 0 < port_i < 65536:
+        return None
+    if host in ("", "localhost"):
+        host = default_host
+    return host, port_i
+
+
+def read_aio_nav_params(path: str) -> Dict[str, Any]:
+    """Read output_udp / output_rate from an aio_nav.yaml (ROS 2 params file)."""
+    result: Dict[str, Any] = {"path": path, "loaded": False, "output_udp": "", "output_rate": None}
+    if not path:
+        return result
+    p = resolve_path(path)
+    result["path"] = str(p)
+    try:
+        doc = yaml.safe_load(p.read_text(encoding="utf-8")) or {}
+    except (OSError, yaml.YAMLError) as e:
+        result["error"] = str(e)
+        return result
+    for section in doc.values():
+        params = section.get("ros__parameters") if isinstance(section, dict) else None
+        if isinstance(params, dict):
+            result["loaded"] = True
+            result["output_udp"] = str(params.get("output_udp") or "")
+            rate = params.get("output_rate")
+            result["output_rate"] = float(rate) if isinstance(rate, (int, float)) else None
+            break
+    return result
+
+
+class Config:
+    def __init__(self, data: Dict[str, Any], source: Optional[Path] = None):
+        self.data = data
+        self.source = source
+        self.aio_nav = read_aio_nav_params(data["nav"].get("aio_nav_config", ""))
+
+    def __getitem__(self, key: str) -> Any:
+        return self.data[key]
+
+    @property
+    def fake(self) -> bool:
+        return bool(self.data["fake"]["enabled"])
+
+    @property
+    def expected_nav_rate(self) -> Optional[float]:
+        rate = self.data["nav"].get("expected_rate_hz")
+        return float(rate) if rate else self.aio_nav.get("output_rate")
+
+    def nav_destinations(self) -> List[Dict[str, Any]]:
+        """Configured NAV UDP outputs (display only; v1 does not edit them)."""
+        bind = parse_host_port(self.data["nav"]["udp_bind"])
+        dests = []
+        extra = parse_host_port(self.aio_nav.get("output_udp", ""))
+        if extra and extra != ("127.0.0.1", 9000):
+            dests.append({"host": extra[0], "port": extra[1], "kind": "external"})
+        dests.append({"host": "127.0.0.1", "port": 9000, "kind": "local",
+                      "monitored": bool(bind and bind[1] == 9000)})
+        return dests
+
+    def service_label(self, key: str) -> str:
+        return self.data["services"].get(key, {}).get("label", key)
+
+
+def load_config(path: Optional[str], force_fake: bool = False) -> Config:
+    data = copy.deepcopy(DEFAULTS)
+    source = None
+    if path:
+        source = resolve_path(path)
+        with open(source, encoding="utf-8") as f:
+            data = _deep_merge(data, yaml.safe_load(f) or {})
+    if force_fake:
+        data["fake"]["enabled"] = True
+    cfg = Config(data, source)
+    if not cfg.aio_nav.get("loaded"):
+        logger.warning("aio_nav config not loaded (%s): %s", cfg.aio_nav.get("path"),
+                       cfg.aio_nav.get("error", "no path or no ros__parameters"))
+    return cfg

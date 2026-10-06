@@ -1,0 +1,68 @@
+{% extends "maintenance/base.html" %}
+{% from "macros.html" import chip %}
+{% block title %}Diagnostics{% endblock %}
+{% block heading %}Diagnostics{% endblock %}
+{% block content %}
+<div class="row g-3">
+  <div class="col-lg-6">
+    <div class="panel h-100">
+      <div class="panel-h"><strong>Active faults &amp; warnings</strong><span class="muted small" x-text="issues.length + ' active'"></span></div>
+      <div class="panel-b">
+        <div class="muted" x-show="d && !issues.length">No active faults or warnings.</div>
+        <template x-for="(i, idx) in issues" :key="idx + i.title">
+          <div class="vrow">
+            <span>{{ chip("lvl(i.level)") }} <span class="ms-2" x-text="i.title"></span>
+              <span class="muted small mono ms-1" x-text="i.detail"></span></span>
+            <a :href="'/' + (i.link || '')" x-show="i.link" class="small">Details →</a>
+          </div>
+        </template>
+      </div>
+    </div>
+  </div>
+  <div class="col-lg-6">
+    <div class="panel h-100">
+      <div class="panel-h"><strong>Action &amp; diagnostic results</strong></div>
+      <div class="panel-b" style="max-height: 320px; overflow:auto">
+        <div class="muted" x-show="!actionEvents().length">No actions run yet.</div>
+        <template x-for="e in actionEvents()" :key="e.id">
+          <div class="vrow"><span><span class="mono small muted me-2" x-text="fmt.time(e.ts)"></span><span x-text="e.title"></span></span>
+            <span class="small muted" x-text="e.detail"></span></div>
+        </template>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="panel mt-3">
+  <div class="panel-h"><strong>Recent events</strong>
+    <select class="form-select form-select-sm" style="width:auto" x-model="eventFilter">
+      <option value="">All categories</option>
+      <option value="health">Health</option>
+      <option value="dataflow">Data flow</option>
+      <option value="gnss">GNSS</option>
+      <option value="service">Services</option>
+      <option value="ros">ROS</option>
+      <option value="network">Network</option>
+      <option value="action">Actions</option>
+      <option value="diagnostic">Diagnostics</option>
+      <option value="nav">NAV session</option>
+      <option value="system">System</option>
+    </select>
+  </div>
+  <div class="table-responsive" style="max-height: 520px">
+    <table class="table table-sm mb-0">
+      <thead><tr><th>Time</th><th>Level</th><th>Category</th><th>Event</th><th>Detail</th></tr></thead>
+      <tbody>
+        <template x-for="e in filteredEvents()" :key="e.id">
+          <tr><td class="mono small" x-text="fmt.time(e.ts)"></td>
+              <td class="small text-uppercase" :class="'lvl-' + e.level" x-text="e.level"></td>
+              <td class="small" x-text="e.category"></td>
+              <td x-text="e.title"></td>
+              <td class="small muted" x-text="e.detail"></td></tr>
+        </template>
+      </tbody>
+    </table>
+  </div>
+  <div class="panel-b border-top small muted">Events are also appended to logs/events.jsonl on the device.</div>
+</div>
+{% endblock %}

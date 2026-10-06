@@ -1,0 +1,112 @@
+# AIO System Dashboard v1
+
+Web dashboard for the Jetson AIO navigation system, implementing
+[`docs/AIO System Dashboard v1 — Implementation Specification.md`](docs/).
+
+| UI | Port | Audience | Pages |
+|----|------|----------|-------|
+| Product | `:8080` | Operators (no login, read-only) | Overview · Navigation · Data |
+| Maintenance | `:8081` | Engineers (closed LAN, no login) | Overview · System · ROS 2 · Camera · LiDAR · Network · Diagnostics |
+
+The main data source is the **AIO NAV 0x04 binary packet** that `aio_nav_node`
+(`../aio-nav-ros`) always sends to `127.0.0.1:9000`. The dashboard only monitors
+the system. It does not start navigation or sensor processes, so a dashboard crash never stops them.
+
+## Architecture
+
+```
+aio_system_dashboard/
+  __main__.py          one process, shared state, two HTTP servers (:8080, :8081)
+  config.py            config/dashboard.yaml + read-only output_udp/output_rate from aio_nav.yaml
+  nav/decoder.py       0x04 packet decoder (from setup_env, with the VUPT + velocity_up fixes)
+  nav/trajectory.py    session trajectory: last 60 s @10 Hz + older @1 Hz, incremental fetch
+  collectors/          read-only: nav_udp (raw rate), system, services, network, ros2, fake
+  state/indicator.py   debounced status (raise/clear hold, no flicker on a single miss)
+  state/health.py      5 Hz evaluator → READY / INITIALIZING / FAULT, advisories, issues, events
+  actions/             whitelisted actions only: run_diagnostic(device), restart_service(unit)
+  data_access/         read-only browse/download inside configured roots
+  web/                 Flask apps (product.py, maintenance.py)
+  templates/, static/  Bootstrap + Alpine.js + Leaflet (vendored, offline)
+```
+
+Packet processing runs at the raw rate (100 Hz). Health is evaluated at 5 Hz. The browser
+polls `/api/state` at 5 Hz and the trajectory every 2 s.
+
+### Health model
+
+| State | Condition |
+|-------|-----------|
+| **FAULT** | AIO NAV process/service down, or no NAV packet for `stale_fault_s` (2 s) |
+| **INITIALIZING** | Packets fresh but `ready_requires` flags (default `alignment`, `heading_valid`) not all set |
+| **READY** | Process up, packets fresh, alignment complete |
+
+GNSS loss, camera/LiDAR not connected, sensor-LAN link down and low disk are
+**advisories**: they never change READY. A state only changes after the new condition has held
+for a while (fault about 0.5–1 s, recovery about 2 s).
+
+"UDP Output: Streaming" means `aio_nav_node` is sending packets. UDP has no ACK,
+so the dashboard never claims that the remote receiver got the data.
+
+### Decoder fixes compared with setup_env
+
+- After the wire bit reversal, wire flag bit 3 is **VUPT** (odometry update), not `imu_valid`.
+- The third velocity on the wire is **Up** (`-vel_d`). It is exposed as `velocity_up`.
+- The packet is 156 bytes: 5 header, 150 payload `<Qdd28fH3f`, 1 checksum.
+
+## Development (x86, no ROS, no sensors)
+
+```bash
+python3 -m pip install --target .devdeps flask pyyaml psutil   # once (no venv needed)
+tools/dev.sh start all        # dashboard (fake mode) + fake NAV sender cycling all scenarios
+# open http://127.0.0.1:8080 and http://127.0.0.1:8081
+tools/dev.sh stop
+PYTHONPATH=.devdeps python3 -m unittest discover -s tests -t .
+```
+
+- `tools/fake_nav_sender.py --scenario NAME` sends real 0x04 packets. The scenarios are `normal`, `align`,
+  `gnss_loss`, `flags`, `pause`, `loss`, `heading_wrap`, `restart` and `all`.
+- `dev/fake_state.json` is hot-reloaded. Edit it while the dashboard runs to stop services,
+  make devices unreachable, mark ROS topics as `low_rate` / `stale` / `missing`, or change the
+  `aio_nav` PID to simulate a node restart.
+- `config/dashboard.dev.yaml` is the dev config. Set `network.sensor_interface` to a real NIC on your machine.
+- Templates are cached, so restart the dashboard after editing them (`tools/dev.sh start`).
+
+## Deployment (Jetson, offline)
+
+```bash
+sudo deploy/install.sh --user nvidia
+# optional: also run aio_nav_node as a systemd service
+sudo deploy/install.sh --user nvidia \
+  --with-aio-nav /home/nvidia/aio-nav-ros/install/aio_nav_ros/lib/aio_nav_ros/aio-nav
+```
+
+`install.sh` does the following:
+- copies the app to `/opt/aio-dashboard`, keeping an existing config
+- installs the bundled aarch64/cp310 wheels from `wheels/` (pip if present, otherwise it unpacks them)
+- installs and starts `aio-dashboard.service`, which runs as the ROS user with ROS 2 Humble sourced so `rclpy` works
+- writes `/etc/sudoers.d/aio-dashboard`, which allows only `systemctl restart <unit>` for units with `restartable: true`
+
+Then fill in the `TODO` items in `/opt/aio-dashboard/config/dashboard.yaml`:
+- camera and Ouster IP addresses
+- systemd unit names
+- the sensor NIC
+- ROS node and topic names (prefer light topics such as `camera_info` over `image_raw`)
+- the data root path
+- the `aio_nav.yaml` path
+
+After editing, run `sudo systemctl restart aio-dashboard`. Re-run `install.sh` if you change which
+units are restartable.
+
+## Security notes (closed sensor LAN, spec §4)
+
+- There is no shell access, and no command strings are accepted. Actions are fixed IDs, and each target must be in a whitelist built from config.
+- Restarts need confirmation in the UI, have a timeout, and are logged (Diagnostics page and `logs/events.jsonl`).
+- Action POSTs require JSON and the header `X-Requested-With: aio-dashboard`, which blocks plain cross-site form posts.
+- Downloads are limited to the configured roots: realpath containment rejects `..`, absolute paths and escaping symlinks. There is no upload, delete or rename.
+- Each port serves only its own routes. Maintenance APIs are not reachable on :8080.
+- There is no authentication in v1. Add it before exposing the dashboard beyond the closed LAN.
+
+## Not in v1 (spec §39)
+
+AIO NAV stop/restart buttons, editable NAV destination, recording, offline map tiles,
+trend charts, deep IMU/camera/LiDAR diagnostics, and ROS message browsing.

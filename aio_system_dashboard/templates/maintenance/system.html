@@ -1,0 +1,81 @@
+{% extends "maintenance/base.html" %}
+{% from "macros.html" import chip %}
+{% block title %}System{% endblock %}
+{% block heading %}System{% endblock %}
+{% block content %}
+<div class="row g-3">
+  <div class="col-lg-4">
+    <div class="panel h-100">
+      <div class="panel-h"><strong>Resources</strong></div>
+      <div class="panel-b">
+        <div class="vrow"><span class="k">CPU (<span x-text="sys.cpu_count"></span> cores)</span>{{ chip("lvl(levelFor(sys.cpu_percent, 90, 98), pct(sys.cpu_percent))") }}</div>
+        <div class="vrow"><span class="k">GPU</span>{{ chip("lvl(levelFor(sys.gpu_percent, 95, 101), sys.gpu_percent != null ? pct(sys.gpu_percent) : 'n/a')") }}</div>
+        <div class="vrow"><span class="k">RAM</span>{{ chip("lvl(levelFor(sys.mem_percent, 90, 97), memText())") }}</div>
+        <div class="vrow"><span class="k">Load avg</span><span class="v" x-text="(sys.load_avg || []).map(x => x.toFixed(2)).join('  ')"></span></div>
+        <div class="vrow"><span class="k">System uptime</span><span class="v" x-text="fmt.duration(sys.uptime_s)"></span></div>
+        <div class="vrow"><span class="k">Dashboard uptime</span><span class="v" x-text="fmt.duration(sys.dashboard_uptime_s)"></span></div>
+      </div>
+    </div>
+  </div>
+  <div class="col-lg-4">
+    <div class="panel h-100">
+      <div class="panel-h"><strong>Storage</strong></div>
+      <div class="panel-b">
+        <table class="table table-sm mb-0">
+          <thead><tr><th>Path</th><th class="text-end">Free</th><th class="text-end">Used</th></tr></thead>
+          <tbody>
+            <template x-for="dk in (sys.disks || [])" :key="dk.path">
+              <tr><td class="mono small" x-text="dk.path"></td>
+                  <td class="text-end num" x-text="fmt.bytes(dk.free)"></td>
+                  <td class="text-end">{{ chip("lvl(levelFor(dk.percent, 90, 97), pct(dk.percent))") }}</td></tr>
+            </template>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+  <div class="col-lg-4">
+    <div class="panel h-100">
+      <div class="panel-h"><strong>Temperatures</strong></div>
+      <div class="panel-b">
+        <div class="muted small" x-show="!(sys.temps || []).length">No thermal zones found.</div>
+        <template x-for="z in (sys.temps || [])" :key="z.name">
+          <div class="vrow"><span class="k" x-text="z.name"></span>{{ chip("lvl(levelFor(z.temp_c, 80, 95), z.temp_c.toFixed(1) + ' °C')") }}</div>
+        </template>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="panel mt-3">
+  <div class="panel-h"><strong>systemd services</strong><span class="muted small">Status only. Driver restarts are on the Camera / LiDAR pages.</span></div>
+  <div class="table-responsive">
+    <table class="table table-sm mb-0 align-middle">
+      <thead><tr><th>Service</th><th>Unit</th><th>State</th><th>systemd</th><th>PID</th><th>Active since</th><th>Restarts</th></tr></thead>
+      <tbody>
+        {% for key, svc in services_cfg.items() %}
+        <tr>
+          <td>{{ svc.label or key }}</td>
+          <td class="mono small">{{ svc.unit }}</td>
+          <td>{{ chip("serviceChip('" ~ key ~ "')") }}</td>
+          <td class="mono small" x-text="services['{{ key }}'] ? (services['{{ key }}'].unit_state.active || '') + ' ' + (services['{{ key }}'].unit_state.sub || '') : '—'"></td>
+          <td class="mono small" x-text="services['{{ key }}'] ? (services['{{ key }}'].pids || []).join(', ') : ''"></td>
+          <td class="small" x-text="services['{{ key }}'] ? (services['{{ key }}'].unit_state.since || '') : ''"></td>
+          <td class="num small" x-text="services['{{ key }}'] ? (services['{{ key }}'].unit_state.restarts || '') : ''"></td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<div class="panel mt-3">
+  <div class="panel-h"><strong>Ethernet interfaces</strong><a href="/network" class="small">Network details →</a></div>
+  <div class="panel-b d-flex flex-wrap gap-4">
+    <template x-for="i in (net.interfaces || [])" :key="i.name">
+      <div><span class="mono me-2" x-text="i.name"></span>{{ chip("ifaceChip(i)") }}
+        <span class="mono small muted ms-2" x-text="(i.ipv4 || []).map(a => a.address).join(', ')"></span></div>
+    </template>
+  </div>
+</div>
+{% endblock %}

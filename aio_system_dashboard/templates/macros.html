@@ -1,0 +1,9 @@
+{# Status chip bound to an Alpine expression returning {level, label}. Color is always paired with text. #}
+{% macro chip(expr) -%}
+<span class="st" :class="'st-' + ({{ expr }}).level"><i aria-hidden="true"></i><span class="st-label" x-text="({{ expr }}).label">Unknown</span></span>
+{%- endmacro %}
+
+{# Heading arrow: 0° = up (north). Rotation is accumulated for shortest-angle turns. #}
+{% macro heading_arrow(rot_expr) -%}
+<svg class="hdg-arrow" viewBox="0 0 24 24" :style="'transform: rotate(' + {{ rot_expr }} + 'deg)'" aria-hidden="true"><path d="M12 2 L19 20 L12 15.5 L5 20 Z" fill="currentColor"/></svg>
+{%- endmacro %}

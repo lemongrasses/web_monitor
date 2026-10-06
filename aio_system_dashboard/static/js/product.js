@@ -1,0 +1,120 @@
+/* Product UI Alpine components. UI refresh (~5 Hz) is decoupled from the raw NAV rate. */
+(function () {
+  "use strict";
+  const fmt = AIO.fmt;
+
+  window.productPage = function () {
+    let navMap = null;            // Leaflet objects stay outside Alpine's reactive proxy
+    const headingRot = AIO.rotator();
+    let lastOk = 0;
+
+    return {
+      s: null,
+      connected: true,
+      hdgRot: 0,
+      follow: true,
+      fmt,
+
+      init() {
+        const el = document.querySelector("[data-navmap]");
+        if (el) {
+          navMap = new NavMap(el.id, { full: el.dataset.navmap === "full" });
+          navMap.startTrajectory(2000);
+          el.addEventListener("follow-changed", (e) => { this.follow = e.detail; });
+        }
+        AIO.poll("/api/state", 200, (d) => {
+          lastOk = Date.now();
+          this.connected = true;
+          this.s = d;
+          const sol = d.solution;
+          if (sol) {
+            const r = headingRot(sol.heading);
+            if (r !== null) this.hdgRot = r;
+            if (navMap) navMap.setPosition(sol.latitude, sol.longitude, sol.heading, !d.nav.fresh);
+          }
+        }, () => {
+          if (Date.now() - lastOk > 3000) this.connected = false;
+        });
+      },
+
+      // ----- derived values
+      get state() { return this.connected && this.s && this.s.health ? this.s.health.state : "UNKNOWN"; },
+      get reasons() { return (this.connected && this.s && this.s.health) ? this.s.health.reasons : ["Dashboard connection lost"]; },
+      get fresh() { return !!(this.s && this.s.nav && this.s.nav.fresh); },
+      v(key, digits) {
+        const sol = this.s && this.s.solution;
+        return sol ? fmt.num(sol[key], digits) : "—";
+      },
+      latlon(key) {
+        const sol = this.s && this.s.solution;
+        return sol ? fmt.deg(sol[key], 8) : "—";
+      },
+      heading360() {
+        const sol = this.s && this.s.solution;
+        if (!sol || !AIO.isNum(sol.heading)) return "—";
+        return (((sol.heading % 360) + 360) % 360).toFixed(1);
+      },
+      ind(key) {
+        const i = this.s && this.s.indicators && this.s.indicators[key];
+        return this.connected && i ? i : { level: "unknown", label: "Unknown" };
+      },
+      aid(key) {
+        const on = this.connected && this.s && this.s.aiding && this.s.aiding[key];
+        return on ? { level: "active", label: "Active" } : { level: "idle", label: "Idle" };
+      },
+      get udp() {
+        return this.connected && this.s && this.s.udp ? this.s.udp
+          : { level: "unknown", label: "Unknown", destinations: [] };
+      },
+      udpLevel() { return this.udp.level; },
+      externalDest() {
+        const d = (this.udp.destinations || []).find((x) => x.kind === "external");
+        return d ? d.host + ":" + d.port : null;
+      },
+      localDest() {
+        const d = (this.udp.destinations || []).find((x) => x.kind === "local");
+        return d ? d.host + ":" + d.port : "127.0.0.1:9000";
+      },
+      rateText() {
+        const u = this.udp;
+        if (!AIO.isNum(u.rate_hz)) return "—";
+        return fmt.hz(u.rate_hz) + (AIO.isNum(u.expected_rate_hz) ? " / " + fmt.hz(u.expected_rate_hz) : "");
+      },
+      storageText() {
+        const st = this.s && this.s.storage;
+        return st ? fmt.bytes(st.free) + " free of " + fmt.bytes(st.total) : "—";
+      },
+      setFollow(on) { this.follow = on; if (navMap) navMap.setFollow(on); },
+      fitAll() { if (navMap) navMap.fitTrajectory(); },
+    };
+  };
+
+  window.dataPage = function () {
+    return {
+      roots: [], root: null, listing: null, error: null, loading: false, fmt,
+      async init() {
+        try {
+          this.roots = await (await fetch("/api/data/roots")).json();
+        } catch (e) { this.error = "Cannot load data locations"; return; }
+        const params = new URLSearchParams(location.search);
+        const rid = params.get("root") || (this.roots.find((r) => r.exists) || this.roots[0] || {}).id;
+        if (rid) this.open(rid, params.get("path") || "");
+      },
+      async open(rootId, path) {
+        this.loading = true; this.error = null; this.root = rootId;
+        try {
+          const r = await fetch("/api/data/list?root=" + encodeURIComponent(rootId) + "&path=" + encodeURIComponent(path || ""));
+          const d = await r.json();
+          if (!r.ok) throw new Error(d.error || ("HTTP " + r.status));
+          this.listing = d;
+          history.replaceState(null, "", "?root=" + encodeURIComponent(rootId) + (d.path ? "&path=" + encodeURIComponent(d.path) : ""));
+        } catch (e) {
+          this.listing = null; this.error = e.message;
+        } finally { this.loading = false; }
+      },
+      downloadUrl(entry) {
+        return "/data/download/" + encodeURIComponent(this.root) + "/" + entry.path.split("/").map(encodeURIComponent).join("/");
+      },
+    };
+  };
+})();

@@ -1,0 +1,25 @@
+# AIO System Dashboard (Product :8080, Maintenance :8081).
+# Installed by deploy/install.sh, which replaces @USER@ and @PREFIX@.
+# The dashboard only monitors; it is not the parent of navigation or sensor processes.
+[Unit]
+Description=AIO System Dashboard
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=@USER@
+WorkingDirectory=@PREFIX@
+Environment=PYTHONPATH=@PREFIX@/lib
+Environment=PYTHONUNBUFFERED=1
+Environment=ROS_DOMAIN_ID=13
+Environment=ROS_LOCALHOST_ONLY=0
+# ROS 2 is sourced so the ROS collector can import rclpy; without it the dashboard still runs.
+ExecStart=/bin/bash -c 'if [ -f /opt/ros/humble/setup.bash ]; then source /opt/ros/humble/setup.bash; fi; exec /usr/bin/python3 -m aio_system_dashboard --config @PREFIX@/config/dashboard.yaml'
+Restart=always
+RestartSec=3
+KillSignal=SIGTERM
+TimeoutStopSec=10
+
+[Install]
+WantedBy=multi-user.target

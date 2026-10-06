@@ -1,0 +1,84 @@
+{% extends "maintenance/base.html" %}
+{% from "macros.html" import chip %}
+{% block title %}Overview{% endblock %}
+{% block heading %}Overview{% endblock %}
+{% block content %}
+<div class="row g-3">
+  <!-- SYSTEM -->
+  <div class="col-xl-3 col-md-6">
+    <div class="panel layer-card h-100">
+      <div class="panel-h"><a href="/system" class="text-reset text-decoration-none">System</a>{{ chip("layer('system')") }}</div>
+      <div class="panel-b">
+        <div class="vrow"><span class="k">CPU</span><span class="v" x-text="pct(sys.cpu_percent)"></span></div>
+        <div class="vrow"><span class="k">GPU</span><span class="v" x-text="pct(sys.gpu_percent)"></span></div>
+        <div class="vrow"><span class="k">RAM</span><span class="v" x-text="memText()"></span></div>
+        <div class="vrow"><span class="k">Temp</span><span class="v" x-text="sys.max_temp_c != null ? sys.max_temp_c.toFixed(0) + ' °C' : '—'"></span></div>
+        <div class="vrow"><span class="k">Disk</span><span class="v" x-text="rootDisk() ? pct(rootDisk().percent) : '—'"></span></div>
+        <div class="vrow"><span class="k">Uptime</span><span class="v" x-text="fmt.duration(sys.uptime_s)"></span></div>
+      </div>
+    </div>
+  </div>
+  <!-- SERVICES -->
+  <div class="col-xl-3 col-md-6">
+    <div class="panel layer-card h-100">
+      <div class="panel-h"><a href="/system" class="text-reset text-decoration-none">Services</a>{{ chip("layer('services')") }}</div>
+      <div class="panel-b">
+        {% for key, svc in services_cfg.items() %}
+        <div class="vrow"><span class="k">{{ svc.label or key }}</span>{{ chip("serviceChip('" ~ key ~ "')") }}</div>
+        {% endfor %}
+      </div>
+    </div>
+  </div>
+  <!-- DATA FLOW -->
+  <div class="col-xl-3 col-md-6">
+    <div class="panel layer-card h-100">
+      <div class="panel-h"><a href="/ros" class="text-reset text-decoration-none">Data flow</a>{{ chip("layer('dataflow')") }}</div>
+      <div class="panel-b">
+        <template x-for="f in dataflow" :key="f.name + (f.topic || '')">
+          <div class="vrow">
+            <a class="k text-decoration-none" :href="f.link ? '/' + f.link : '/'" x-text="f.name"></a>
+            <span class="d-flex align-items-center gap-2">
+              <span class="num small" x-text="f.rate_hz != null ? fmt.hz(f.rate_hz) : (f.detail || '')"></span>
+              <span class="st" :class="'st-' + f.level" :title="f.state || f.level"><i aria-hidden="true"></i></span>
+            </span>
+          </div>
+        </template>
+      </div>
+    </div>
+  </div>
+  <!-- NETWORK -->
+  <div class="col-xl-3 col-md-6">
+    <div class="panel layer-card h-100">
+      <div class="panel-h"><a href="/network" class="text-reset text-decoration-none">Network</a>{{ chip("layer('network')") }}</div>
+      <div class="panel-b">
+        <div class="vrow"><span class="k">Sensor LAN <span class="muted small" x-text="net.sensor_interface"></span></span>{{ chip("linkChip()") }}</div>
+        {% for key, dev in devices.items() %}
+        <div class="vrow"><a class="k text-decoration-none" href="/{{ key }}">{{ dev.label }}</a>{{ chip("reachChip('" ~ key ~ "')") }}</div>
+        {% endfor %}
+        <div class="vrow"><span class="k">NAV UDP out</span>{{ chip("udpChip()") }}</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="panel mt-3">
+  <div class="panel-h"><strong>Active issues</strong><span class="muted small" x-text="issues.length + ' active'"></span></div>
+  <div class="panel-b">
+    <div class="muted" x-show="d && !issues.length">No active issues.</div>
+    <table class="table table-sm mb-0" x-show="issues.length">
+      <thead><tr><th>Level</th><th>Layer</th><th>Issue</th><th>Detail</th><th></th></tr></thead>
+      <tbody>
+        <template x-for="(i, idx) in issues" :key="idx + i.title">
+          <tr class="issue-row">
+            <td>{{ chip("lvl(i.level)") }}</td>
+            <td class="text-capitalize" x-text="i.layer === 'dataflow' ? 'data flow' : i.layer"></td>
+            <td x-text="i.title"></td>
+            <td class="muted small mono" x-text="i.detail"></td>
+            <td class="text-end"><a :href="'/' + (i.link || '')" x-show="i.link">Details →</a></td>
+          </tr>
+        </template>
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}

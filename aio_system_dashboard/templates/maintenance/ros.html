@@ -1,0 +1,64 @@
+{% extends "maintenance/base.html" %}
+{% from "macros.html" import chip %}
+{% block title %}ROS 2{% endblock %}
+{% block heading %}ROS 2{% endblock %}
+{% block content %}
+<div class="alert alert-secondary py-2" x-show="d && !ros.available" x-cloak>
+  ROS 2 monitoring unavailable: <span class="mono" x-text="ros.error || 'starting'"></span>
+</div>
+
+<div class="row g-3">
+  <div class="col-lg-4">
+    <div class="panel h-100">
+      <div class="panel-h"><strong>Nodes</strong><span class="muted small">configured</span></div>
+      <div class="panel-b">
+        <template x-for="n in (ros.nodes || [])" :key="n.name">
+          <div class="vrow"><span class="mono small" x-text="n.name"></span>{{ chip("n.present ? lvl('healthy', 'Present') : lvl('fault', 'Not found')") }}</div>
+        </template>
+        <div class="muted small" x-show="!(ros.nodes || []).length">No nodes configured.</div>
+        <details class="mt-3" x-show="(ros.all_nodes || []).length">
+          <summary class="small muted">All discovered nodes (<span x-text="(ros.all_nodes || []).length"></span>)</summary>
+          <div class="mono small mt-1"><template x-for="n in (ros.all_nodes || [])" :key="n"><div x-text="n"></div></template></div>
+        </details>
+      </div>
+    </div>
+  </div>
+  <div class="col-lg-8">
+    <div class="panel h-100">
+      <div class="panel-h"><strong>Watched topics</strong><span class="muted small">raw subscription, no deserialization</span></div>
+      <div class="table-responsive">
+        <table class="table table-sm mb-0 align-middle">
+          <thead><tr><th>Topic</th><th>State</th><th class="text-end">Rate</th><th class="text-end">Freshness</th><th class="text-end">Pub</th><th class="text-end">Sub</th></tr></thead>
+          <tbody>
+            <template x-for="t in (ros.watched || [])" :key="t.name">
+              <tr>
+                <td><span class="mono small" x-text="t.name"></span> <span class="muted small" x-text="t.group"></span></td>
+                <td>{{ chip("topicChip(t)") }}</td>
+                <td class="text-end num" x-text="rateText(t.rate_hz, t.expected_hz)"></td>
+                <td class="text-end num" x-text="fmt.age(t.age_s)"></td>
+                <td class="text-end num" x-text="t.publishers"></td>
+                <td class="text-end num" x-text="t.subscribers"></td>
+              </tr>
+            </template>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="panel mt-3">
+  <div class="panel-h"><strong>All topics</strong><span class="muted small" x-text="(ros.graph || []).length + ' topics'"></span></div>
+  <div class="table-responsive" style="max-height: 420px">
+    <table class="table table-sm mb-0">
+      <thead><tr><th>Topic</th><th>Type</th><th class="text-end">Publishers</th><th class="text-end">Subscribers</th></tr></thead>
+      <tbody>
+        <template x-for="t in (ros.graph || [])" :key="t.name">
+          <tr><td class="mono small" x-text="t.name"></td><td class="mono small muted" x-text="(t.types || []).join(', ')"></td>
+              <td class="text-end num" x-text="t.publishers"></td><td class="text-end num" x-text="t.subscribers"></td></tr>
+        </template>
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}

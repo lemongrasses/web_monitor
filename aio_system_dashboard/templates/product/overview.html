@@ -1,0 +1,89 @@
+{% extends "product/base.html" %}
+{% from "macros.html" import chip, heading_arrow %}
+{% block title %}Overview · AIO Navigation System{% endblock %}
+{% block content %}
+
+<!-- Why the system is not READY -->
+<div class="mb-2" x-show="state !== 'READY' && reasons.length" x-cloak>
+  <div class="advisory" :class="state === 'FAULT' ? 'fault' : ''">
+    <strong x-text="state === 'FAULT' ? 'Navigation not available' : (state === 'INITIALIZING' ? 'Navigation initializing' : 'Status unknown')"></strong>
+    <span class="ms-2" x-text="reasons.join(' · ')"></span>
+  </div>
+</div>
+
+<!-- NAV output strip -->
+<div class="strip mb-3">
+  <div><span class="small-caps me-2">NAV Output</span>{{ chip('udp') }}</div>
+  <div><span class="k">Rate</span><span class="num" x-text="rateText()">—</span></div>
+  <div><span class="k">Last packet</span><span class="num" x-text="fmt.age(udp.age_s)">—</span></div>
+  <div>
+    <span class="k">Destination</span>
+    <span class="num" x-text="externalDest() ? '→ ' + externalDest() : 'local only'"></span>
+    <span class="muted small ms-1">UDP / NAV</span>
+  </div>
+  <div class="muted small ms-auto">Shows that the sender is transmitting. UDP has no acknowledgement, so it cannot confirm reception.</div>
+</div>
+
+<div class="row g-3">
+  <div class="col-lg-8">
+    <div class="position-relative">
+      <div id="map-overview" class="map map-overview" data-navmap="short"></div>
+      <div class="map-ctrl">
+        <button class="btn btn-light btn-sm shadow-sm" x-show="!follow" x-cloak @click="setFollow(true)">Re-center</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="col-lg-4">
+    <div class="panel h-100" :class="fresh ? '' : 'stale'">
+      <div class="panel-b">
+        <div class="vgroup">
+          <div class="small-caps mb-1">Position</div>
+          <div class="vrow"><span class="k">Latitude</span><span class="v"><span x-text="latlon('latitude')">—</span><span class="u">°</span></span></div>
+          <div class="vrow"><span class="k">Longitude</span><span class="v"><span x-text="latlon('longitude')">—</span><span class="u">°</span></span></div>
+          <div class="vrow"><span class="k">Height</span><span class="v"><span x-text="v('height', 2)">—</span><span class="u">m</span></span></div>
+        </div>
+        <div class="vgroup">
+          <div class="small-caps mb-1">Motion</div>
+          <div class="vrow"><span class="k">Heading</span>
+            <span class="v"><span x-text="heading360()">—</span><span class="u">°</span>{{ heading_arrow('hdgRot') }}</span></div>
+          <div class="vrow"><span class="k">Speed</span><span class="v"><span x-text="v('speed', 2)">—</span><span class="u">m/s</span></span></div>
+        </div>
+        <div class="vgroup">
+          <div class="small-caps mb-1">Attitude</div>
+          <div class="vrow"><span class="k">Roll</span><span class="v"><span x-text="v('roll', 2)">—</span><span class="u">°</span></span></div>
+          <div class="vrow"><span class="k">Pitch</span><span class="v"><span x-text="v('pitch', 2)">—</span><span class="u">°</span></span></div>
+        </div>
+        <div class="muted small mt-3" x-show="s && s.solution && !fresh" x-cloak>Last known values (no fresh NAV data)</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Status bar -->
+<div class="panel mt-3">
+  <div class="panel-b statusbar">
+    <div class="item"><span class="k">Alignment</span>{{ chip("ind('alignment')") }}</div>
+    <div class="item"><span class="k">GNSS</span>{{ chip("ind('gnss')") }}</div>
+    {% for key, dev in devices.items() %}
+    <div class="item"><span class="k">{{ dev.label }}</span>{{ chip("ind('" ~ key ~ "')") }}</div>
+    {% endfor %}
+    <div class="item"><span class="k">Network</span>{{ chip("ind('network')") }}</div>
+  </div>
+</div>
+
+<!-- Advisories: informative, they do not change READY -->
+<template x-if="connected && s && s.advisories && s.advisories.length">
+  <div class="mt-2 d-flex flex-column gap-1">
+    <template x-for="a in s.advisories" :key="a.title">
+      <div class="advisory"><strong x-text="'⚠ ' + a.title"></strong><span class="ms-2 muted" x-text="a.detail"></span></div>
+    </template>
+  </div>
+</template>
+
+<div class="d-flex justify-content-between muted small mt-3">
+  <span>Storage <span class="num" x-text="storageText()">—</span></span>
+  <span>Nav session <span class="num" x-text="fmt.duration(s && s.session_uptime_s)">—</span>
+    · Uptime <span class="num" x-text="fmt.duration(s && s.uptime_s)">—</span></span>
+</div>
+{% endblock %}

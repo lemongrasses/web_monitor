@@ -1,0 +1,76 @@
+{% extends "product/base.html" %}
+{% from "macros.html" import chip, heading_arrow %}
+{% block title %}Navigation · AIO Navigation System{% endblock %}
+
+{% macro row(label, key, digits, unit, sd_key=None, sd_unit=None) -%}
+<div class="vrow"><span class="k">{{ label }}</span>
+  <span class="v"><span x-text="v('{{ key }}', {{ digits }})">—</span><span class="u">{{ unit }}</span>
+  {%- if sd_key %}<span class="sd">± <span x-text="v('{{ sd_key }}', 2)"></span> {{ sd_unit or unit }}</span>{% endif %}</span></div>
+{%- endmacro %}
+
+{% block content %}
+<div class="row g-3">
+  <div class="col-lg-8">
+    <div class="position-relative">
+      <div id="map-large" class="map map-large" data-navmap="full"></div>
+      <div class="map-ctrl d-flex gap-1">
+        <button class="btn btn-light btn-sm shadow-sm" @click="fitAll()">Whole trajectory</button>
+        <button class="btn btn-light btn-sm shadow-sm" x-show="!follow" x-cloak @click="setFollow(true)">Follow vehicle</button>
+      </div>
+    </div>
+    <div class="muted small mt-1">Trajectory covers the current aio_nav_node session: last 60 s at 10 Hz, older points at 1 Hz.</div>
+  </div>
+
+  <div class="col-lg-4">
+    <div class="panel" :class="fresh ? '' : 'stale'">
+      <div class="panel-b">
+        <div class="vgroup">
+          <div class="small-caps mb-1">Position</div>
+          <div class="vrow"><span class="k">Latitude</span><span class="v"><span x-text="latlon('latitude')">—</span><span class="u">°</span><span class="sd">± <span x-text="v('position_north_std', 2)"></span> m</span></span></div>
+          <div class="vrow"><span class="k">Longitude</span><span class="v"><span x-text="latlon('longitude')">—</span><span class="u">°</span><span class="sd">± <span x-text="v('position_east_std', 2)"></span> m</span></span></div>
+          {{ row('Height', 'height', 2, 'm', 'height_std') }}
+        </div>
+        <div class="vgroup">
+          <div class="small-caps mb-1">Velocity</div>
+          {{ row('North', 'velocity_north', 2, 'm/s', 'velocity_north_std') }}
+          {{ row('East', 'velocity_east', 2, 'm/s', 'velocity_east_std') }}
+          {{ row('Up', 'velocity_up', 2, 'm/s', 'velocity_up_std') }}
+          {{ row('Speed', 'speed', 2, 'm/s') }}
+        </div>
+        <div class="vgroup">
+          <div class="small-caps mb-1">Attitude</div>
+          {{ row('Roll', 'roll', 2, '°', 'roll_std') }}
+          {{ row('Pitch', 'pitch', 2, '°', 'pitch_std') }}
+          <div class="vrow"><span class="k">Heading</span>
+            <span class="v"><span x-text="heading360()">—</span><span class="u">°</span>{{ heading_arrow('hdgRot') }}<span class="sd">± <span x-text="v('heading_std', 2)"></span> °</span></span></div>
+        </div>
+        <div class="vgroup">
+          <div class="small-caps mb-1">Time</div>
+          <div class="vrow"><span class="k">NAV time</span><span class="v"><span x-text="v('time_s', 3)">—</span><span class="u">s</span></span></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="panel mt-3">
+  <div class="panel-b statusbar">
+    <div class="item"><span class="k">Alignment</span>{{ chip("ind('alignment')") }}</div>
+    <div class="item"><span class="k">GNSS</span>{{ chip("ind('gnss')") }}</div>
+    <div class="item"><span class="k">ZUPT</span>{{ chip("aid('zupt')") }}</div>
+    <div class="item"><span class="k">ZIHR</span>{{ chip("aid('zihr')") }}</div>
+    <div class="item"><span class="k">NHC</span>{{ chip("aid('nhc')") }}</div>
+    <div class="item"><span class="k">VUPT</span>{{ chip("aid('vupt')") }}</div>
+  </div>
+</div>
+
+<div class="strip mt-2">
+  <div><span class="small-caps me-2">UDP</span>{{ chip('udp') }}</div>
+  <div><span class="k">Rate</span><span class="num" x-text="rateText()">—</span></div>
+  <div><span class="k">Freshness</span><span class="num" x-text="fmt.age(udp.age_s)">—</span></div>
+  <div><span class="k">Destination</span><span class="num" x-text="externalDest() || 'local only'"></span></div>
+  <div><span class="k">Local monitor</span><span class="num" x-text="localDest()"></span></div>
+  <div><span class="k">Packets</span><span class="num" x-text="s && s.nav ? s.nav.packets : '—'"></span>
+    <span class="muted small" x-show="s && s.nav && s.nav.bad_packets" x-text="'(' + (s && s.nav ? s.nav.bad_packets : 0) + ' invalid)'"></span></div>
+</div>
+{% endblock %}

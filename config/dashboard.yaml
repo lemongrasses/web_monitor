@@ -1,0 +1,90 @@
+# AIO System Dashboard v1 — Jetson configuration.
+# Relative paths resolve against the web_monitor project root.
+# Items marked TODO must be checked on the real vehicle.
+
+product:      { host: 0.0.0.0, port: 8080 }
+maintenance:  { host: 0.0.0.0, port: 8081 }
+
+nav:
+  # aio_nav_node always sends the 0x04 NAV packet to 127.0.0.1:9000.
+  udp_bind: 127.0.0.1:9000
+  # Read-only: output_udp (external destination) and output_rate are displayed from here.
+  aio_nav_config: /home/nvidia/aio-nav-ros/install/aio_nav_ros/share/aio_nav_ros/config/aio_nav.yaml  # TODO
+  expected_rate_hz: null        # null = use output_rate from aio_nav_config
+  service: aio_nav              # key in `services` below
+  stale_warn_s: 0.5             # UDP "Stale" after this packet age
+  stale_fault_s: 2.0            # UDP "Lost" / product FAULT after this packet age
+  gnss_timeout_s: 3.0           # GNSS "Unavailable" if no GNSS update flag for this long
+  ready_requires: [alignment, heading_valid]
+  trajectory: { recent_window_s: 60, recent_hz: 10, older_hz: 1 }
+
+# systemd units the dashboard monitors. Only `restartable: true` units can be
+# restarted from Maintenance (also add them to deploy/aio-dashboard.sudoers).
+services:
+  aio_nav:
+    label: AIO NAV
+    unit: aio-nav.service
+    process_pattern: lib/aio_nav_ros/aio_nav_node   # also detects a manual / desktop-app start
+  camera:
+    label: Camera driver
+    unit: camera.service          # TODO
+    restartable: true
+  ouster:
+    label: Ouster driver
+    unit: ouster.service          # TODO
+    restartable: true
+  dashboard:
+    label: Dashboard
+    unit: aio-dashboard.service
+
+# Sensors: reachability by ping (config hosts only), driver service, ROS topic group.
+devices:
+  camera:
+    label: Camera
+    host: 192.168.50.10           # TODO
+    service: camera
+    topic_group: camera
+  lidar:
+    label: LiDAR
+    host: 192.168.50.20           # TODO: Ouster IP
+    service: ouster
+    topic_group: lidar
+
+network:
+  sensor_interface: eth0          # TODO: NIC on the sensor LAN
+  ping_interval_s: 5
+
+system:
+  interval_s: 2
+  disk_paths: ["/"]
+  disk_warn_percent: 90
+  temp_warn_c: 85
+
+ros:
+  enabled: true
+  graph_interval_s: 2
+  rate_window_s: 2
+  nodes: [/aio_nav_node]          # TODO: add camera / ouster driver node names
+  # Watched topics are subscribed raw (no deserialization). Prefer light topics
+  # (camera_info instead of image_raw) to avoid pulling large payloads.
+  topics:
+    - { name: /nav/odometry,        group: nav,    label: NAV odometry, expected_hz: 100 }
+    - { name: /camera/camera_info,  group: camera, label: Camera,       expected_hz: 15 }   # TODO
+    - { name: /ouster/points,       group: lidar,  label: LiDAR points, expected_hz: 10 }   # TODO
+    - { name: /ouster/imu,          group: lidar,  label: Ouster IMU,   expected_hz: 100 }  # TODO
+
+data:
+  roots:
+    - { id: aio-nav-logs, name: AIO NAV logs, path: /home/nvidia/aio-nav-ros/output }  # TODO
+
+events:
+  log_file: logs/events.jsonl
+  max_memory: 500
+
+actions:
+  restart_timeout_s: 30
+  diagnostic_timeout_s: 15
+
+fake:
+  enabled: false
+  state_file: dev/fake_state.json

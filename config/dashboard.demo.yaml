@@ -1,0 +1,40 @@
+# Demo config: same as dashboard.dev.yaml (fake mode) but reachable from other machines on the LAN.
+# Run:  CONFIG=config/dashboard.demo.yaml tools/dev.sh start normal
+
+product:      { host: 0.0.0.0, port: 8080 }
+maintenance:  { host: 0.0.0.0, port: 8081 }
+
+nav:
+  udp_bind: 127.0.0.1:9000
+  aio_nav_config: ../aio-nav-ros/src/aio_nav_ros/config/aio_nav.yaml
+  trajectory: { recent_window_s: 60, recent_hz: 10, older_hz: 1 }
+
+services:
+  aio_nav:   { label: AIO NAV, unit: aio-nav.service, process_pattern: lib/aio_nav_ros/aio_nav_node }
+  camera:    { label: Camera driver, unit: camera.service, restartable: true }
+  ouster:    { label: Ouster driver, unit: ouster.service, restartable: true }
+  dashboard: { label: Dashboard, unit: aio-dashboard.service }
+
+devices:
+  camera: { label: Camera, host: 192.168.50.10, service: camera, topic_group: camera }
+  lidar:  { label: LiDAR,  host: 192.168.50.20, service: ouster, topic_group: lidar }
+
+network:
+  sensor_interface: enp6s0     # set to a real NIC on your dev machine (ip -br link)
+  ping_interval_s: 3
+
+ros:
+  nodes: [/aio_nav_node, /camera_driver, /ouster_driver]
+  topics:
+    - { name: /nav/odometry,       group: nav,    label: NAV odometry, expected_hz: 100 }
+    - { name: /camera/camera_info, group: camera, label: Camera,       expected_hz: 15 }
+    - { name: /ouster/points,      group: lidar,  label: LiDAR points, expected_hz: 10 }
+    - { name: /ouster/imu,         group: lidar,  label: Ouster IMU,   expected_hz: 100 }
+
+data:
+  roots:
+    - { id: aio-nav-logs, name: AIO NAV logs, path: dev/sample_data }
+
+fake:
+  enabled: true
+  state_file: dev/fake_state.json
