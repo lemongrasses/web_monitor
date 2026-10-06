@@ -1,5 +1,7 @@
 #!/usr/bin/env bash
 # Install the AIO System Dashboard on the Jetson (offline).
+# Works from a source checkout (deploy/install.sh) or from a compiled release package
+# made by tools/build_release.sh (./install.sh), which contains no Python source.
 #
 #   sudo deploy/install.sh [--user nvidia] [--prefix /opt/aio-dashboard] [--with-aio-nav PATH_TO_aio-nav]
 #                          [--reset-config]
@@ -10,10 +12,13 @@
 #   available, otherwise by unpacking the wheels (no Internet, no venv needed)
 # - installs aio-dashboard.service and a sudoers rule that allows ONLY
 #   `systemctl restart <unit>` for units marked `restartable: true` in the config
+# - installs the `aio-dashboard` command (start/stop/status/logs/config)
 # - optionally installs aio-nav.service (--with-aio-nav)
 set -euo pipefail
 
-SRC="$(cd "$(dirname "$0")/.." && pwd)"
+HERE="$(cd "$(dirname "$0")" && pwd)"
+# release package: install.sh sits next to wheels/; source checkout: deploy/install.sh
+if [[ -d "$HERE/wheels" ]]; then SRC="$HERE"; else SRC="$(cd "$HERE/.." && pwd)"; fi
 PREFIX=/opt/aio-dashboard
 RUN_USER="${SUDO_USER:-nvidia}"
 AIO_NAV_BIN=""
@@ -25,7 +30,7 @@ while [[ $# -gt 0 ]]; do
     --prefix) PREFIX="$2"; shift 2 ;;
     --with-aio-nav) AIO_NAV_BIN="$2"; shift 2 ;;
     --reset-config) RESET_CONFIG=1; shift ;;
-    -h|--help) sed -n '2,13p' "$0"; exit 0 ;;
+    -h|--help) sed -n '2,16p' "$0"; exit 0 ;;
     *) echo "unknown option: $1" >&2; exit 1 ;;
   esac
 done
@@ -35,10 +40,32 @@ id "$RUN_USER" >/dev/null 2>&1 || { echo "user $RUN_USER does not exist" >&2; ex
 python3 -c 'import sys; assert sys.version_info >= (3, 8)' || { echo "python3 >= 3.8 required" >&2; exit 1; }
 
 echo "==> installing to $PREFIX (service user: $RUN_USER)"
-mkdir -p "$PREFIX"/{config,logs,lib,dev}
-cp -r "$SRC/aio_system_dashboard" "$PREFIX/"
-find "$PREFIX/aio_system_dashboard" -name __pycache__ -type d -prune -exec rm -rf {} +
-cp "$SRC/dev/fake_state.json" "$PREFIX/dev/"
+mkdir -p "$PREFIX"/{config,logs,lib,dev,bin,docs}
+# Replace the app completely, so switching from source to a compiled release leaves no .py behind.
+rm -rf "$PREFIX/aio_system_dashboard" "$PREFIX"/aio_system_dashboard*.so
+shopt -s nullglob
+COMPILED=("$SRC"/aio_system_dashboard*.so)
+shopt -u nullglob
+if (( ${#COMPILED[@]} )); then
+  echo "    compiled release (no Python source)"
+  cp "${COMPILED[@]}" "$PREFIX/"
+  mkdir -p "$PREFIX/aio_system_dashboard"
+  cp -r "$SRC/aio_system_dashboard/templates" "$SRC/aio_system_dashboard/static" "$PREFIX/aio_system_dashboard/"
+else
+  echo "    from source checkout"
+  cp -r "$SRC/aio_system_dashboard" "$PREFIX/"
+  find "$PREFIX/aio_system_dashboard" -name __pycache__ -type d -prune -exec rm -rf {} +
+fi
+if [[ -f "$SRC/dev/fake_state.json" ]]; then cp "$SRC/dev/fake_state.json" "$PREFIX/dev/"; fi
+if [[ -f "$SRC/VERSION" ]]; then
+  cp "$SRC/VERSION" "$PREFIX/VERSION"
+else
+  git -c safe.directory="$SRC" -C "$SRC" describe --tags --always --dirty 2>/dev/null > "$PREFIX/VERSION" \
+    || echo "source" > "$PREFIX/VERSION"
+fi
+cp "$SRC"/docs/CONFIG*.md "$PREFIX/docs/" 2>/dev/null || true
+install -m 0755 "$SRC/deploy/aio-dashboard" "$PREFIX/bin/aio-dashboard"
+ln -sf "$PREFIX/bin/aio-dashboard" /usr/local/bin/aio-dashboard
 if [[ -f "$PREFIX/config/dashboard.yaml" && $RESET_CONFIG -eq 1 ]]; then
   cp "$PREFIX/config/dashboard.yaml" "$PREFIX/config/dashboard.yaml.bak"
   cp "$SRC/config/dashboard.yaml" "$PREFIX/config/dashboard.yaml"
@@ -113,9 +140,9 @@ systemctl enable aio-dashboard.service
 systemctl restart aio-dashboard.service
 
 echo
-echo "Done. Settings are detected automatically; to pin anything down edit"
-echo "  $PREFIX/config/dashboard.yaml  then: sudo systemctl restart aio-dashboard"
-echo "  Product UI      http://<jetson-ip>:8080"
-echo "  Maintenance UI  http://<jetson-ip>:8081"
-echo "  Logs            journalctl -u aio-dashboard -f"
+echo "Done ($(cat "$PREFIX/VERSION")). Settings are detected automatically."
+echo "  aio-dashboard status    service state and web addresses"
+echo "  aio-dashboard config    edit settings ($PREFIX/config/dashboard.yaml) and restart"
+echo "  aio-dashboard logs      follow the log"
+"$PREFIX/bin/aio-dashboard" urls
 echo "Re-run install.sh after changing restartable units so the sudoers rule is regenerated."

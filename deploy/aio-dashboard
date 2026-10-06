@@ -1,0 +1,104 @@
+#!/usr/bin/env bash
+# aio-dashboard — control the AIO System Dashboard. Installed by install.sh.
+set -euo pipefail
+
+APP_DIR="$(cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")/.." && pwd)"
+CONFIG="$APP_DIR/config/dashboard.yaml"
+UNIT=aio-dashboard.service
+
+usage() {
+  cat <<EOF
+AIO System Dashboard $(cat "$APP_DIR/VERSION" 2>/dev/null || echo "")
+
+Usage: aio-dashboard <command>
+
+  start | stop | restart   control the background service
+  status                   service state and web addresses
+  logs                     follow the service log (Ctrl+C to quit)
+  config                   edit the settings, check them, and offer a restart
+  check                    check the settings file for mistakes
+  urls                     print the web addresses
+  version                  print the installed version
+  run [args]               run in the foreground (used by systemd; also for debugging)
+
+Settings: $CONFIG
+EOF
+}
+
+urls() {
+  local ip
+  for ip in $(hostname -I 2>/dev/null); do
+    [[ "$ip" == *:* ]] && continue
+    echo "  Product view      http://$ip:8080"
+    echo "  Maintenance view  http://$ip:8081"
+  done
+}
+
+check_config() {
+  python3 - "$CONFIG" <<'EOF'
+import sys
+try:
+    import yaml
+except ImportError:
+    sys.path.insert(0, sys.argv[1].rsplit("/config/", 1)[0] + "/lib")
+    import yaml
+try:
+    yaml.safe_load(open(sys.argv[1]))
+except Exception as e:
+    print(f"Settings file has an error:\n{e}")
+    sys.exit(1)
+print("Settings file OK")
+EOF
+}
+
+case "${1:-}" in
+  run)
+    shift
+    if [[ -f /opt/ros/humble/setup.bash ]]; then
+      set +u
+      # shellcheck disable=SC1091
+      source /opt/ros/humble/setup.bash
+      set -u
+    fi
+    # Keep the ROS environment set by the systemd unit; defaults only when unset.
+    export ROS_DOMAIN_ID="${ROS_DOMAIN_ID:-13}" ROS_LOCALHOST_ONLY="${ROS_LOCALHOST_ONLY:-0}" PYTHONUNBUFFERED=1
+    export PYTHONPATH="$APP_DIR/lib:$APP_DIR${PYTHONPATH:+:$PYTHONPATH}"
+    cd "$APP_DIR"
+    exec /usr/bin/python3 -c 'from aio_system_dashboard.__main__ import main; raise SystemExit(main())' \
+      --config "$CONFIG" "$@"
+    ;;
+  start|stop|restart)
+    sudo systemctl "$1" "$UNIT"
+    [[ "$1" == stop ]] || { sleep 2; systemctl is-active --quiet "$UNIT" && { echo "Running."; urls; } || \
+      echo "Not running. See: aio-dashboard logs"; }
+    ;;
+  status)
+    systemctl status "$UNIT" --no-pager -n 5 || true
+    echo; urls
+    ;;
+  logs)
+    journalctl -u "$UNIT" -f -n 50
+    ;;
+  config)
+    sudo "${EDITOR:-nano}" "$CONFIG"
+    if check_config; then
+      read -r -p "Restart the dashboard to apply? [Y/n] " ans
+      [[ "${ans:-y}" =~ ^[Yy]$ ]] && sudo systemctl restart "$UNIT" && echo "Restarted."
+    fi
+    ;;
+  check)
+    check_config
+    ;;
+  urls)
+    urls
+    ;;
+  version)
+    cat "$APP_DIR/VERSION" 2>/dev/null || echo "unknown"
+    ;;
+  -h|--help|help|"")
+    usage
+    ;;
+  *)
+    echo "Unknown command: $1" >&2; usage; exit 1
+    ;;
+esac

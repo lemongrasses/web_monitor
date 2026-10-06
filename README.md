@@ -90,6 +90,39 @@ PYTHONPATH=.devdeps python3 -m unittest discover -s tests -t .
 
 ## Deployment (Jetson, offline)
 
+### Release package without source code (recommended for devices)
+
+Build once on an Orin (same CPU architecture and Python version as the target devices):
+
+```bash
+sudo apt install -y gcc python3-dev && python3 -m pip install --user nuitka   # build machine only
+tools/build_release.sh            # -> dist/aio-dashboard-<version>-aarch64-py3.10.tar.gz
+```
+
+The backend is compiled with Nuitka into one native module (`aio_system_dashboard*.so`).
+The package contains no `.py` files. The HTML, JS and CSS stay readable, because browsers
+download them anyway. Copy the package to each device, then:
+
+```bash
+tar xzf aio-dashboard-*.tar.gz && cd aio-dashboard-*/
+sudo ./install.sh --user jetson
+cd .. && rm -rf aio-dashboard-*          # nothing with source code is left on the device
+```
+
+Installing a release over a source install removes the old `.py` files from
+`/opt/aio-dashboard`. Day-to-day control uses the installed `aio-dashboard` command:
+
+| Command | Does |
+|---------|------|
+| `aio-dashboard status` | service state and web addresses |
+| `aio-dashboard start` / `stop` / `restart` | control the service |
+| `aio-dashboard logs` | follow the log |
+| `aio-dashboard config` | edit settings, check them, offer a restart |
+| `aio-dashboard check` | check the settings file for mistakes |
+| `aio-dashboard version` | installed version |
+
+### From a source checkout
+
 ```bash
 sudo deploy/install.sh --user nvidia
 # optional: also run aio_nav_node as a systemd service

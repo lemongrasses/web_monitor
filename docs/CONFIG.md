@@ -37,6 +37,8 @@ afterwards changes nothing unless you re-install with `--reset-config` (see belo
    ```bash
    sudo nano /opt/aio-dashboard/config/dashboard.yaml
    ```
+   (Or run `aio-dashboard config`, which opens the editor, checks the file, and offers
+   to restart in one step.)
 2. Restart the dashboard. Settings are only read at start-up:
    ```bash
    sudo systemctl restart aio-dashboard

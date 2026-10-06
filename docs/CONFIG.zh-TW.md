@@ -31,6 +31,7 @@
    ```bash
    sudo nano /opt/aio-dashboard/config/dashboard.yaml
    ```
+   （也可以執行 `aio-dashboard config`，一次完成開啟編輯器、檢查設定檔與詢問是否重新啟動。）
 2. 重新啟動儀表板（設定只在啟動時讀取）：
    ```bash
    sudo systemctl restart aio-dashboard
