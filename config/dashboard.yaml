@@ -44,11 +44,16 @@ devices:
     host: 192.168.50.10           # TODO
     service: camera
     topic_group: camera
+    # Maintenance "Live view": subscribed only while the Camera page is open.
+    # A CompressedImage topic is passed through as-is; a raw Image is downscaled to max_width.
+    preview: { kind: image, topic: /camera/image_raw/compressed, max_width: 960 }   # TODO
   lidar:
     label: LiDAR
     host: 192.168.50.20           # TODO: Ouster IP
     service: ouster
     topic_group: lidar
+    # Maintenance "Live view" (PointCloud2), randomly down-sampled to max_points for the browser.
+    preview: { kind: pointcloud, topic: /ouster/points, max_points: 30000 }        # TODO
 
 network:
   sensor_interface: eth0          # TODO: NIC on the sensor LAN

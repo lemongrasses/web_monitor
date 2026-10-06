@@ -17,8 +17,10 @@ services:
   dashboard: { label: Dashboard, unit: aio-dashboard.service }
 
 devices:
-  camera: { label: Camera, host: 192.168.50.10, service: camera, topic_group: camera }
-  lidar:  { label: LiDAR,  host: 192.168.50.20, service: ouster, topic_group: lidar }
+  camera: { label: Camera, host: 192.168.50.10, service: camera, topic_group: camera,
+            preview: { kind: image, topic: /camera/image_raw/compressed } }
+  lidar:  { label: LiDAR,  host: 192.168.50.20, service: ouster, topic_group: lidar,
+            preview: { kind: pointcloud, topic: /ouster/points, max_points: 30000 } }
 
 network:
   sensor_interface: enp6s0     # set to a real NIC on your dev machine (ip -br link)

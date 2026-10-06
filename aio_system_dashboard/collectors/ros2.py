@@ -74,8 +74,9 @@ class Ros2Collector:
     name = "ros2"
     section = "ros"
 
-    def __init__(self, store, cfg, fake=None):
+    def __init__(self, store, cfg, fake=None, preview=None):
         self.store = store
+        self.preview = preview  # PreviewTap: on-demand camera/LiDAR subscriptions
         self.rcfg = cfg["ros"]
         self.fake = fake
         self.watched: List[Dict] = list(self.rcfg.get("topics", []))
@@ -154,6 +155,8 @@ class Ros2Collector:
         executor = SingleThreadedExecutor(context=ctx)
         executor.add_node(node)
         node.create_timer(float(self.rcfg["graph_interval_s"]), self._refresh_graph)
+        if self.preview is not None and self.preview.sources:
+            node.create_timer(0.5, self._sync_preview)
         self._refresh_graph()
         logger.info("ROS 2 monitor started (watching %d topics)", len(self.watched))
         try:
@@ -166,6 +169,12 @@ class Ros2Collector:
                 rclpy.shutdown(context=ctx)
             except Exception:
                 pass
+
+    def _sync_preview(self) -> None:
+        try:
+            self.preview.sync(self._node, dict(self._node.get_topic_names_and_types()))
+        except Exception:
+            logger.exception("preview subscription sync failed")
 
     def _ensure_subscription(self, name: str, type_name: str) -> None:
         if name in self._subs:

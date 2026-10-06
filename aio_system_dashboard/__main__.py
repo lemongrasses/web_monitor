@@ -22,6 +22,7 @@ from .collectors.services import ServicesCollector
 from .collectors.system import SystemCollector
 from .config import load_config, resolve_path
 from .data_access.files import DataRoots
+from .media.tap import PreviewTap
 from .state.health import HealthEngine
 from .state.store import EventLog, StateStore
 from .web.maintenance import create_maintenance_app
@@ -48,7 +49,8 @@ class DashboardContext:
         self.system = SystemCollector(self.store, cfg)
         self.services = ServicesCollector(self.store, cfg, self.fake)
         self.network = NetworkCollector(self.store, cfg, self.fake)
-        self.ros = Ros2Collector(self.store, cfg, self.fake)
+        self.preview = PreviewTap(cfg, fake=cfg.fake, fake_state=self.fake)
+        self.ros = Ros2Collector(self.store, cfg, self.fake, self.preview)
         self.health = HealthEngine(cfg, self.store, self.nav, self.events)
         self.actions = ActionRegistry(cfg, self.store, self.events, self.network.check_device)
         self.data = DataRoots(cfg["data"]["roots"])

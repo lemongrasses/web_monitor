@@ -21,6 +21,7 @@ aio_system_dashboard/
   nav/decoder.py       0x04 packet decoder (from setup_env, with the VUPT + velocity_up fixes)
   nav/trajectory.py    session trajectory: last 60 s @10 Hz + older @1 Hz, incremental fetch
   collectors/          read-only: nav_udp (raw rate), system, services, network, ros2, fake
+  media/               on-demand camera image / point-cloud preview (tap.py), decoders, fake frames
   state/indicator.py   debounced status (raise/clear hold, no flicker on a single miss)
   state/health.py      5 Hz evaluator → READY / INITIALIZING / FAULT, advisories, issues, events
   actions/             whitelisted actions only: run_diagnostic(device), restart_service(unit)
@@ -52,6 +53,22 @@ so the dashboard never claims that the remote receiver got the data.
 - After the wire bit reversal, wire flag bit 3 is **VUPT** (odometry update), not `imu_valid`.
 - The third velocity on the wire is **Up** (`-vel_d`). It is exposed as `velocity_up`.
 - The packet is 156 bytes: 5 header, 150 payload `<Qdd28fH3f`, 1 checksum.
+
+### Live view (Maintenance → Camera / LiDAR)
+
+The Camera and LiDAR pages each have a view-only live preview of the ROS topic set in
+`devices.<name>.preview`:
+
+- **Camera** (`kind: image`): about 2 frames/s. `sensor_msgs/CompressedImage` is passed through unchanged.
+  `sensor_msgs/Image` is downscaled to `max_width` and sent as JPEG (with OpenCV) or PNG.
+- **LiDAR** (`kind: pointcloud`): `sensor_msgs/PointCloud2` is randomly downsampled to `max_points`
+  and drawn on a canvas, with a top view or a tilted 3D view (drag to rotate, scroll to zoom),
+  colored by height or intensity.
+
+The dashboard subscribes only while a page is requesting frames, and unsubscribes
+10 s after the last request. Messages are received without deserialization; only the
+latest one is converted, at the rate the browser asks for it. This keeps the dashboard
+from being a permanent consumer of heavy sensor streams (spec §15). The preview needs numpy, which ships with ROS 2.
 
 ## Development (x86, no ROS, no sensors)
 

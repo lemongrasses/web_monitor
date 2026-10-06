@@ -4,3 +4,4 @@ __pycache__/
 .venv/
 logs/
 dev/sample_data/
+.claude/

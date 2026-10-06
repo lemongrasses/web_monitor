@@ -1,8 +1,9 @@
 """Maintenance UI (:8081): engineering pages and whitelisted actions."""
 
-from flask import abort, jsonify, render_template, request
+from flask import Response, abort, jsonify, render_template, request
 
 from ..actions.registry import ActionError
+from ..media.tap import PreviewError, meta_header
 from .common import create_base_app
 
 PAGES = ("overview", "system", "ros", "camera", "lidar", "network", "diagnostics")
@@ -16,6 +17,7 @@ def create_maintenance_app(ctx):
             "devices": ctx.cfg["devices"],
             "services_cfg": ctx.cfg["services"],
             "actions": ctx.actions.describe(),
+            "previews": ctx.preview.describe(),
         }
 
     @app.route("/")
@@ -47,6 +49,20 @@ def create_maintenance_app(ctx):
                 "fake": ctx.cfg.fake,
             },
         })
+
+    @app.route("/api/maint/preview/<device>")
+    def api_preview(device):
+        """Latest camera image or down-sampled point cloud (view only)."""
+        ros = ctx.store.get("ros", {}) or {}
+        try:
+            payload, ctype, meta = ctx.preview.frame(device, bool(ros.get("available")),
+                                                     ros.get("error") or "")
+        except PreviewError as e:
+            return jsonify({"error": str(e)}), e.status
+        resp = Response(payload, mimetype=ctype)
+        resp.headers["X-Preview-Meta"] = meta_header(meta)
+        resp.headers["Cache-Control"] = "no-store"
+        return resp
 
     @app.route("/api/maint/events")
     def api_events():
