@@ -15,7 +15,7 @@ access:
   allowed_clients: [192.168.116.154]
 
 nav:
-  udp_bind: 127.0.0.1:9000       # aio_nav_node always sends here
+  udp_bind: 127.0.0.1:9000       # aio_nav_node always sends here; the dashboard is its only listener (aio-nav-ui is not used)
   # auto: newest aio_nav.yaml under /home/*/aio-nav-ros/install/... or ~/.local/opt/aio-nav-ros/...
   # The destination (output_udp) and rate (output_rate) shown in the UI are read from it.
   aio_nav_config: auto
@@ -29,9 +29,8 @@ nav:
   ready_requires: [alignment, heading_valid, fine_alignment]   # all three lamps must be on
   trajectory: { recent_window_s: 60, recent_hz: 10, older_hz: 1 }
 
-# ROS domain follows the camera/IMU drivers (/opt/point-lab/bin/launch_openrtk330_basler.sh: domain 10,
-# localhost only), set in deploy/aio-dashboard.service. AIO NAV runs on domain 13, so its data comes
-# over UDP only and /nav/odometry and /aio_nav_node are not monitored through ROS here.
+# ROS domain/localhost come from "ros:" below (live 10 / 1, matching the camera/IMU drivers). AIO NAV's
+# own data reaches the dashboard over UDP; /nav/odometry and /aio_nav_node are not watched through ROS.
 # systemd units. A unit that does not exist shows "Not installed" and raises no warning.
 # AIO NAV is also detected by process name, so the desktop app start works too.
 # Units with restartable: true get a Restart button (re-run install.sh after changing).
@@ -73,6 +72,11 @@ system:
 # strict: true requires it). An auto topic that finds nothing shows "Not found", no warning.
 ros:
   enabled: true
+  # ROS environment. Live (drivers on domain 10, localhost only): 10 / 1.
+  # Replaying a bag: 13 / 0, then restart the dashboard. The same values are given to AIO NAV and
+  # DSO when started from the Overview page (otherwise they read them from aio_nav.yaml).
+  domain_id: 10
+  localhost_only: 1
   graph_interval_s: 2
   rate_window_s: 2
   nodes: [/basler/pylon_ros2_camera_node, /openrtk330_driver]
@@ -81,6 +85,19 @@ ros:
     - { name: auto, type: sensor_msgs/msg/CameraInfo,  group: camera, label: Camera, expected_hz: 20 }
     - { name: auto, type: sensor_msgs/msg/PointCloud2, group: lidar,  label: LiDAR points, hint: ouster }
     - { name: auto, type: sensor_msgs/msg/Imu,         group: lidar,  label: Ouster IMU,   hint: ouster, strict: true }
+
+# DSO watchdog (Maintenance > ROS 2): when /dso/odometry turns NaN, restart DSO only (not AIO NAV).
+# Waits settle_s after a restart, keeps cooldown_s between restarts, and gives up after max_restarts
+# within window_s. Acts only while DSO is running, so a deliberate stop stays stopped.
+dso_watchdog:
+  enabled: true
+  topic: /dso/odometry
+  service: dso
+  bad_messages: 3
+  settle_s: 15
+  cooldown_s: 30
+  max_restarts: 5
+  window_s: 600
 
 # auto = the aio-nav-ros output folder (from fusion_txt_path, or output/ next to install/).
 # Or list folders: roots: [{ id: logs, name: AIO NAV logs, path: /home/jetson/aio-nav-ros/output }]

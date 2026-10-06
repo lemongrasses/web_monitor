@@ -8,6 +8,7 @@ One process, shared state, two HTTP servers:
 import argparse
 import logging
 import signal
+import os
 import socket
 import threading
 
@@ -15,6 +16,8 @@ from werkzeug.serving import make_server
 
 from .actions.registry import ActionRegistry
 from .collectors.fake import FakeState
+from .actions import process_control
+from .collectors.dso_watchdog import DsoWatchdog
 from .collectors.nav_udp import NavUdpCollector
 from .collectors.network import NetworkCollector
 from .collectors.ros2 import Ros2Collector
@@ -50,7 +53,12 @@ class DashboardContext:
         self.services = ServicesCollector(self.store, cfg, self.fake)
         self.network = NetworkCollector(self.store, cfg, self.fake)
         self.preview = PreviewTap(cfg, fake=cfg.fake, fake_state=self.fake)
-        self.ros = Ros2Collector(self.store, cfg, self.fake, self.preview)
+        self.dso_watchdog = DsoWatchdog(
+            cfg, self.store, self.events,
+            restart=lambda: self.actions.run("restart_process", cfg["dso_watchdog"]["service"]),
+            process_running=lambda: bool(process_control.running_pids(cfg, cfg["dso_watchdog"]["service"])))
+        self.ros = Ros2Collector(self.store, cfg, self.fake, self.preview,
+                                 watchers=[self.dso_watchdog] if not cfg.fake else [])
         self.health = HealthEngine(cfg, self.store, self.nav, self.events)
         self.actions = ActionRegistry(cfg, self.store, self.events, self.network.check_device,
                                       self.fake)
@@ -58,6 +66,7 @@ class DashboardContext:
         self._workers = [self.nav, self.system, self.services, self.network, self.ros, self.health]
 
     def start(self):
+        self.dso_watchdog._publish()
         for w in self._workers:
             w.start()
 
@@ -82,6 +91,10 @@ def main(argv=None) -> int:
     logging.getLogger("werkzeug").setLevel(logging.WARNING)
 
     cfg = load_config(args.config, force_fake=args.fake)
+    for key, value in cfg.ros_env().items():  # before rclpy starts
+        os.environ[key] = value
+    if cfg.ros_env():
+        logger.info("ROS environment from config: %s", cfg.ros_env())
     ctx = DashboardContext(cfg)
     ctx.events.add("info", "system", "Dashboard started", "fake mode" if cfg.fake else "")
     ctx.start()

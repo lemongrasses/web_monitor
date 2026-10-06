@@ -39,8 +39,15 @@ DEFAULTS: Dict[str, Any] = {
     "devices": {},
     "network": {"sensor_interface": "auto", "ping_interval_s": 5.0},
     "system": {"interval_s": 2.0, "disk_paths": ["/"], "disk_warn_percent": 90, "temp_warn_c": 85},
-    "ros": {"enabled": True, "graph_interval_s": 2.0, "rate_window_s": 2.0, "nodes": [], "topics": []},
+    "ros": {"enabled": True, "graph_interval_s": 2.0, "rate_window_s": 2.0, "nodes": [], "topics": [],
+            # None: keep the environment. Otherwise set before ROS starts and also given to AIO NAV
+            # and DSO when the dashboard launches them (live: 10 / 1, bag replay: 13 / 0).
+            "domain_id": None, "localhost_only": None},
     "data": {"roots": "auto"},  # "auto": the aio-nav-ros output folder
+    # Watches DSO's odometry and restarts DSO (only DSO) when it turns NaN.
+    "dso_watchdog": {"enabled": False, "topic": "/dso/odometry", "service": "dso",
+                     "bad_messages": 3, "settle_s": 15.0, "cooldown_s": 30.0,
+                     "max_restarts": 5, "window_s": 600.0},
     "events": {"log_file": "logs/events.jsonl", "max_memory": 500},
     "actions": {"restart_timeout_s": 30.0, "diagnostic_timeout_s": 15.0,
                 "stop_grace_s": 5.0},  # stop_grace_s: SIGTERM -> SIGKILL delay for AIO NAV / DSO
@@ -170,6 +177,15 @@ class Config:
     def expected_nav_rate(self) -> Optional[float]:
         rate = self.data["nav"].get("expected_rate_hz")
         return float(rate) if rate else self.aio_nav.get("output_rate")
+
+    def ros_env(self) -> Dict[str, str]:
+        """ROS_DOMAIN_ID / ROS_LOCALHOST_ONLY from ros.domain_id / ros.localhost_only (if set)."""
+        r, env = self.data["ros"], {}
+        if r.get("domain_id") is not None:
+            env["ROS_DOMAIN_ID"] = str(int(r["domain_id"]))
+        if r.get("localhost_only") is not None:
+            env["ROS_LOCALHOST_ONLY"] = "1" if int(r["localhost_only"]) else "0"
+        return env
 
     def launcher(self, name: str) -> Optional[str]:
         """Path of an aio-nav-ros wrapper (aio-nav, aio-nav-dso) from the install/ folder."""

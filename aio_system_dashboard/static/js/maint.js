@@ -69,6 +69,14 @@
       // ---------- data flow / ROS
       get dataflow() { return (this.d && this.d.maint && this.d.maint.dataflow) || []; },
       get ros() { return (this.d && this.d.ros) || {}; },
+      get dso() { return ((this.d && this.d.watchdog) || {}).dso || {}; },
+      dsoChip() {
+        const m = { ok: ["healthy", "OK"], settling: ["warning", "Settling"], restarting: ["warning", "Restarting"],
+                    bad: ["warning", "NaN"], gave_up: ["fault", "Gave up"], idle: ["unknown", "DSO not running"],
+                    waiting: ["unknown", "Waiting"], disabled: ["unknown", "Disabled"] };
+        const e = m[this.dso.state] || ["unknown", "Unknown"];
+        return this.lvl(e[0], e[1]);
+      },
       topicChip(t) { const m = TOPIC[t.state] || ["unknown", "Unknown"]; return this.lvl(m[0], m[1]); },
       topicsFor(group) { return (this.ros.watched || []).filter((t) => t.group === group); },
       rateText(r, exp) { return AIO.isNum(r) ? fmt.hz(r) + (AIO.isNum(exp) ? " / " + fmt.hz(exp) : "") : "—"; },

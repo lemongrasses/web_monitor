@@ -130,7 +130,7 @@ does not protect against a computer that spoofs that address on the same LAN.
 
 | Key | Default | Meaning |
 |-----|---------|---------|
-| `udp_bind` | `127.0.0.1:9000` | Where the dashboard listens for AIO NAV packets. `aio_nav_node` always sends to `127.0.0.1:9000`, so leave this unchanged. |
+| `udp_bind` | `127.0.0.1:9000` | Where the dashboard listens for AIO NAV packets. `aio_nav_node` always sends to `127.0.0.1:9000`, so leave this unchanged. The dashboard is the only listener: the AIO Nav desktop app (`aio-nav-ui`) binds the same port, so do not run it together with the dashboard. |
 | `aio_nav_config` | `auto` | Path to AIO NAV's `aio_nav.yaml`. The dashboard reads the UDP destination (`output_udp`) and rate (`output_rate`) from it to display them. `auto` searches `/home/*/aio-nav-ros/install/...` and `~/.local/opt/aio-nav-ros/...` and uses the newest file. The `AIO_NAV_CONFIG` environment variable also works. |
 | `expected_rate_hz` | `null` | Expected packet rate. `null` = use `output_rate` from `aio_nav.yaml`. |
 | `service` | `aio_nav` | Which entry in `services` is AIO NAV. |
@@ -263,6 +263,8 @@ ros:
 | Key | Default | Meaning |
 |-----|---------|---------|
 | `enabled` | `true` | `false` turns ROS 2 monitoring off. Topic lamps then show Unknown. |
+| `domain_id` | `null` | ROS domain for the dashboard. `null` keeps the environment of the service. When set, the same value is given to AIO NAV and DSO when they are started from the Overview page (otherwise the wrappers read `ros_domain_id` from `aio_nav.yaml`). **Live: `10`. Replaying a bag: `13`.** |
+| `localhost_only` | `null` | Same for `ROS_LOCALHOST_ONLY`. **Live: `1`. Replaying a bag: `0`.** After changing either, restart the dashboard, then Stop and Start AIO NAV. |
 | `graph_interval_s` | `2` | How often the list of nodes and topics is refreshed. |
 | `rate_window_s` | `2` | Time window used to measure each topic's rate. |
 | `nodes` | `[]` | Node names that must exist (shown on the ROS 2 page; a missing one is a warning). |
@@ -293,6 +295,32 @@ Topic states:
 Monitoring uses raw subscriptions, so messages are counted but never decoded. Prefer
 light topics (for example `camera_info` rather than `image_raw`) for continuous
 monitoring.
+
+### 4.7a `dso_watchdog`: restart DSO when its odometry breaks
+
+```yaml
+dso_watchdog:
+  enabled: true
+  topic: /dso/odometry
+  service: dso
+```
+
+When DSO loses tracking, `/dso/odometry` turns NaN and DSO has to be restarted. The watchdog
+watches that topic and restarts **only DSO** (the same restart as `restart_process dso`); AIO NAV
+keeps running. There is nothing to operate on the Overview page; status is under
+Maintenance > ROS 2, and every restart is in the event log.
+
+| Key | Default | Meaning |
+|-----|---------|---------|
+| `enabled` | `false` (shipped config: `true`) | Turn the watchdog on. |
+| `topic` | `/dso/odometry` | `nav_msgs/Odometry` topic to watch. Any NaN or infinite pose or velocity counts as bad. |
+| `service` | `dso` | The `services` entry (with a `launch` setting) to restart. |
+| `bad_messages` | `3` | Consecutive bad messages before restarting, so one glitch is ignored. |
+| `settle_s` | `15` | After a restart DSO is left alone for this long while it initialises. |
+| `cooldown_s` | `30` | Minimum time between two restarts. |
+| `max_restarts` / `window_s` | `5` / `600` | After this many restarts within the window the watchdog stops restarting and shows **Gave up** until the odometry is finite again. |
+
+It acts only while the DSO process is running, so a DSO you stopped on purpose stays stopped.
 
 ### 4.8 `data`: the Data (download) page
 

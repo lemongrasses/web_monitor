@@ -111,9 +111,10 @@ class Ros2Collector:
     name = "ros2"
     section = "ros"
 
-    def __init__(self, store, cfg, fake=None, preview=None):
+    def __init__(self, store, cfg, fake=None, preview=None, watchers=()):
         self.store = store
         self.preview = preview  # PreviewTap: on-demand camera/LiDAR subscriptions
+        self.watchers = list(watchers)  # e.g. DsoWatchdog.attach(node, qos)
         self.rcfg = cfg["ros"]
         self.fake = fake
         self.watched: List[Dict] = list(self.rcfg.get("topics", []))
@@ -197,6 +198,11 @@ class Ros2Collector:
         node.create_timer(float(self.rcfg["graph_interval_s"]), self._refresh_graph)
         if self.preview is not None and self.preview.sources:
             node.create_timer(0.5, self._sync_preview)
+        for w in self.watchers:
+            try:
+                w.attach(node, self._qos)
+            except Exception:
+                logger.exception("could not attach %s", type(w).__name__)
         self._refresh_graph()
         logger.info("ROS 2 monitor started (watching %d topics)", len(self.watched))
         try:

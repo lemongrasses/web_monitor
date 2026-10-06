@@ -7,8 +7,9 @@
 * Processes are found by command-line pattern, so ones started by the app are controlled too.
 
 Targets come from config only (``services.<key>.launch``); the web request never carries a
-command. The children get a clean environment so ROS_DOMAIN_ID / ROS_LOCALHOST_ONLY come from
-aio_nav.yaml (the wrappers read them there), not from the dashboard's own ROS settings.
+command. The children get a clean environment. ROS_DOMAIN_ID / ROS_LOCALHOST_ONLY are the
+dashboard's ros.domain_id / ros.localhost_only when set (live 10 / 1, bag replay 13 / 0);
+otherwise the wrappers read them from aio_nav.yaml.
 """
 
 import logging
@@ -30,8 +31,10 @@ KEEP_ENV = ("HOME", "USER", "LOGNAME", "PATH", "LANG", "LC_ALL", "SHELL", "DISPL
 GROUP = "nav_core"
 
 
-def child_env() -> Dict[str, str]:
+def child_env(cfg=None) -> Dict[str, str]:
     env = {k: os.environ[k] for k in KEEP_ENV if k in os.environ}
+    if cfg is not None:
+        env.update(cfg.ros_env())  # else the wrappers read ros_domain_id from aio_nav.yaml
     env.setdefault("DISPLAY", ":0")  # same default as the desktop app
     return env
 
@@ -51,6 +54,11 @@ def targets(cfg) -> Dict[str, str]:
 
 def _keys(cfg, target: str) -> List[str]:
     return members(cfg) if target == GROUP else [target]
+
+
+def running_pids(cfg, key: str) -> List[int]:
+    """PIDs of the process behind a service (matched by its process_pattern)."""
+    return _pids(cfg, key)
 
 
 def _pids(cfg, key: str) -> List[int]:
@@ -86,7 +94,7 @@ def start_one(cfg, key: str, wait_s: float = 4.0) -> Dict:
         with open(log, "wb") as out:
             proc = subprocess.Popen([launcher], stdin=subprocess.DEVNULL, stdout=out,
                                     stderr=subprocess.STDOUT, start_new_session=True,
-                                    env=child_env(), cwd=str(Path.home()))
+                                    env=child_env(cfg), cwd=str(Path.home()))
     except OSError as e:
         return {"ok": False, "text": f"{label}: cannot start ({e})"}
     _reap(proc)

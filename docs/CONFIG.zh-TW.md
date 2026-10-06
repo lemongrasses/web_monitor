@@ -105,7 +105,7 @@ access:
 
 | 項目 | 預設值 | 說明 |
 |------|--------|------|
-| `udp_bind` | `127.0.0.1:9000` | 儀表板接收 AIO NAV 封包的位址。`aio_nav_node` 一律送往 `127.0.0.1:9000`，請勿修改。 |
+| `udp_bind` | `127.0.0.1:9000` | 儀表板接收 AIO NAV 封包的位址。`aio_nav_node` 一律送往 `127.0.0.1:9000`，請勿修改。只有儀表板在監聽:AIO Nav 桌面程式(`aio-nav-ui`)綁定同一個埠,所以不要與儀表板同時使用。 |
 | `aio_nav_config` | `auto` | AIO NAV 的 `aio_nav.yaml` 路徑。儀表板從中讀取 UDP 目的地（`output_udp`）與輸出頻率（`output_rate`）來顯示。`auto` 會搜尋 `/home/*/aio-nav-ros/install/...` 與 `~/.local/opt/aio-nav-ros/...`，並使用最新的檔案；也可以用環境變數 `AIO_NAV_CONFIG` 指定。 |
 | `expected_rate_hz` | `null` | 預期的封包頻率。`null` = 使用 `aio_nav.yaml` 中的 `output_rate`。 |
 | `service` | `aio_nav` | `services` 中哪一個項目代表 AIO NAV。 |
@@ -231,6 +231,8 @@ ros:
 | 項目 | 預設值 | 說明 |
 |------|--------|------|
 | `enabled` | `true` | `false` 會關閉 ROS 2 監看，topic 指示燈會顯示 Unknown。 |
+| `domain_id` | `null` | 儀表板使用的 ROS 網域。`null` 沿用服務的環境變數。設定後,從首頁啟動 AIO NAV 與 DSO 時也會使用同一個值(否則由啟動程式從 `aio_nav.yaml` 的 `ros_domain_id` 讀取)。**即時:`10`。播放 bag:`13`。** |
+| `localhost_only` | `null` | `ROS_LOCALHOST_ONLY` 的設定。**即時:`1`。播放 bag:`0`。** 修改後需重啟儀表板,並重新 Stop 再 Start AIO NAV。 |
 | `graph_interval_s` | `2` | 重新整理節點與 topic 清單的間隔。 |
 | `rate_window_s` | `2` | 計算每個 topic 頻率所用的時間窗。 |
 | `nodes` | `[]` | 必須存在的節點名稱（顯示於 ROS 2 頁面，缺少時會產生警告）。 |
@@ -259,6 +261,29 @@ Topic 狀態：
 | Not found | `auto` 找不到任何符合的 topic，通常代表沒有安裝這個感測器 | 否 |
 
 監看使用 raw 訂閱，只計數、不解碼訊息。長時間監看請盡量選擇輕量的 topic（例如用 `camera_info` 而非 `image_raw`）。
+
+### 4.7a `dso_watchdog`:DSO 里程計壞掉時自動重啟
+
+```yaml
+dso_watchdog:
+  enabled: true
+  topic: /dso/odometry
+  service: dso
+```
+
+DSO 追蹤失敗時,`/dso/odometry` 會變成 NaN,必須重啟 DSO。監控程式會看這個 topic,並且**只重啟 DSO**(與 `restart_process dso` 相同),AIO NAV 不受影響。首頁沒有任何操作,狀態在維護頁面的 ROS 2,每次重啟都會記錄在事件紀錄。
+
+| 設定 | 預設 | 說明 |
+|-----|------|------|
+| `enabled` | `false`(預設設定檔:`true`) | 開啟監控。 |
+| `topic` | `/dso/odometry` | 要監看的 `nav_msgs/Odometry`。位置或速度中有任何 NaN 或無限大就算異常。 |
+| `service` | `dso` | 要重啟的 `services` 項目(需設定 `launch`)。 |
+| `bad_messages` | `3` | 連續幾筆異常才重啟,單筆雜訊不會觸發。 |
+| `settle_s` | `15` | 重啟後給 DSO 初始化的時間,這段時間不判斷。 |
+| `cooldown_s` | `30` | 兩次重啟的最短間隔。 |
+| `max_restarts` / `window_s` | `5` / `600` | 時間窗口內重啟達此次數後不再重啟,狀態顯示 **Gave up**,直到里程計恢復正常。 |
+
+只在 DSO 程序執行中才會動作,所以你主動停掉的 DSO 不會被拉起來。
 
 ### 4.8 `data`：資料下載頁面
 
