@@ -19,6 +19,7 @@ from .actions import process_control
 from .collectors.dso_watchdog import DsoWatchdog
 from .collectors.gnss_monitor import GnssMonitor
 from .collectors.nav_udp import NavUdpCollector
+from .collectors.ros_guard import RosIsolationGuard
 from .collectors.network import NetworkCollector
 from .collectors.ros2 import Ros2Collector
 from .collectors.services import ServicesCollector
@@ -61,8 +62,14 @@ class DashboardContext:
             wanted=lambda: process_control.wanted(cfg, dso),
             adopt=lambda: process_control.set_wanted(cfg, dso, True))
         self.gnss = GnssMonitor(cfg, self.store)
+        drivers = next((k for k, s in cfg["services"].items() if s.get("user_unit")), None)
+        self.guard = RosIsolationGuard(
+            cfg, self.events,
+            driver_pids=lambda: process_control.running_pids(cfg, drivers) if drivers else [],
+            restart=self.request_restart, state_file=cfg.state_file("ros_self_restart.json"))
         self.ros = Ros2Collector(self.store, cfg, self.fake, self.preview,
-                                 watchers=[self.dso_watchdog, self.gnss] if not cfg.fake else [])
+                                 watchers=[self.dso_watchdog, self.gnss] if not cfg.fake else [],
+                                 guard=None if cfg.fake else self.guard)
         self.health = HealthEngine(cfg, self.store, self.nav, self.events)
         self.actions = ActionRegistry(cfg, self.store, self.events, self.network.check_device,
                                       self.fake)

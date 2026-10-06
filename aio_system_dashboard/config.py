@@ -47,6 +47,9 @@ DEFAULTS: Dict[str, Any] = {
             # ros_localhost_only become the dashboard's own ROS environment. A mode may also set
             # domain_id / localhost_only itself to override the file. mode: null keeps the environment.
             "mode": None,
+            # Restart the dashboard when its ROS connection is stuck (sensor drivers running in the
+            # same domain, yet no node visible for isolation_grace_s). At most once per cooldown.
+            "isolation_restart": False, "isolation_grace_s": 30, "isolation_cooldown_s": 600,
             "modes": {"live": {"label": "Live", "config": "aio_nav.yaml"},
                       "bag": {"label": "Bag replay", "config": "aio_nav_bag.yaml"}}},
     "data": {"roots": "auto"},  # "auto": the aio-nav-ros output folder

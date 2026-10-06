@@ -73,6 +73,11 @@ ros:
   # which the dashboard uses for its own ROS connection too. Switch on Maintenance > ROS 2; the
   # choice is kept in state/ros_mode.json and `mode` below is used until then.
   mode: live
+  # If the dashboard's own ROS connection gets stuck (the sensor drivers run in this domain but no
+  # node is visible for isolation_grace_s), restart the dashboard; at most once per cooldown.
+  isolation_restart: true
+  isolation_grace_s: 30
+  isolation_cooldown_s: 600
   modes:
     live: { label: Live,       config: aio_nav.yaml }
     bag:  { label: Bag replay, config: aio_nav_bag.yaml }

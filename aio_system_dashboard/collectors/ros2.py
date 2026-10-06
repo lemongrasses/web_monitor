@@ -111,9 +111,10 @@ class Ros2Collector:
     name = "ros2"
     section = "ros"
 
-    def __init__(self, store, cfg, fake=None, preview=None, watchers=()):
+    def __init__(self, store, cfg, fake=None, preview=None, watchers=(), guard=None):
         self.store = store
         self.preview = preview  # PreviewTap: on-demand camera/LiDAR subscriptions
+        self.guard = guard  # RosIsolationGuard: restarts the dashboard if its ROS connection is stuck
         self.watchers = list(watchers)  # e.g. DsoWatchdog.attach(node, qos)
         self.rcfg = cfg["ros"]
         self.fake = fake
@@ -277,6 +278,9 @@ class Ros2Collector:
 
         graph = []
         own = "/aio_dashboard_monitor"
+        if self.guard is not None:
+            foreign = [n for n in node_names if n != own and not n.startswith("/_ros2cli")]
+            self.guard.update(len(foreign))
         for name, types in sorted(topic_types.items())[:300]:
             subs = node.count_subscribers(name)
             if self._subs.get(name) is not None:
