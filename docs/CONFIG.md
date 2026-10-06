@@ -132,6 +132,7 @@ does not protect against a computer that spoofs that address on the same LAN.
 | `aio_nav_config` | `auto` | Path to AIO NAV's `aio_nav.yaml`. The dashboard reads the UDP destination (`output_udp`) and rate (`output_rate`) from it to display them. `auto` searches `/home/*/aio-nav-ros/install/...` and `~/.local/opt/aio-nav-ros/...` and uses the newest file. The `AIO_NAV_CONFIG` environment variable also works. |
 | `expected_rate_hz` | `null` | Expected packet rate. `null` = use `output_rate` from `aio_nav.yaml`. |
 | `service` | `aio_nav` | Which entry in `services` is AIO NAV. |
+| `allow_control` | `false` (shipped config: `true`) | `true` shows **Start / Restart / Stop** for AIO NAV on the Overview page. It needs the `controllable: true` flag on the service (below) and `aio-nav.service` installed. Stop and Restart ask for a second click. Only computers in `access.allowed_clients` can reach the page. |
 | `startup_grace_s` | `3.0` | For this long after the dashboard starts, having no packets shows "Unknown" instead of "Fault". |
 | `stale_warn_s` | `0.5` | Packet age (seconds) at which UDP output shows **Stale**. |
 | `stale_fault_s` | `2.0` | Packet age at which UDP output shows **Lost** and the state becomes **Fault**. |
@@ -174,6 +175,7 @@ services:
 | `unit` | systemd unit name (`systemctl status <unit>`). |
 | `process_pattern` | Optional. Also counts the service as running when a process matches this text (`pgrep -f`). AIO NAV uses this, so starting it from the AIO Nav desktop app is detected too. |
 | `restartable` | `true` adds a **Restart driver** button on the Camera or LiDAR page. Re-run the installer after changing this (see section 2). |
+| `controllable` | `true` lets the Overview page start, stop and restart this unit (used for AIO NAV, with `nav.allow_control`). The installer writes a sudoers rule for exactly `systemctl start|stop|restart <unit>`. `install.sh` installs `aio-nav.service` from the `install/` folder of aio-nav-ros and does **not** enable it at boot. |
 
 A unit that does not exist on the device shows **Not installed** and raises no
 warning, so unused entries are harmless. To find your real unit names:

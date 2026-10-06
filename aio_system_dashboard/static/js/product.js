@@ -14,6 +14,9 @@
       connected: true,
       hdgRot: 0,
       follow: true,
+      ctlBusy: false,
+      ctlConfirm: null,   // "stop" | "restart" while waiting for the second click
+      ctlResult: null,
       fmt,
 
       init() {
@@ -64,6 +67,42 @@
       ind(key) {
         const i = this.s && this.s.indicators && this.s.indicators[key];
         return this.connected && i ? i : { level: "unknown", label: "Unknown" };
+      },
+      get ctl() {
+        const c = this.connected && this.s && this.s.control;
+        return c || { enabled: false, state: "unknown", installed: true, unit: "", label: "AIO NAV" };
+      },
+      ctlChip() {
+        if (this.ctlBusy) return { level: "warning", label: "Working" };
+        const m = { running: ["healthy", "Running"], stopped: ["idle", "Stopped"],
+                    failed: ["fault", "Failed"], not_installed: ["unknown", "Not installed"] };
+        const e = m[this.ctl.state] || ["unknown", "Unknown"];
+        return { level: e[0], label: e[1] };
+      },
+      askCtl(verb) {
+        this.ctlResult = null;
+        this.ctlConfirm = verb;
+        clearTimeout(this._ctlTimer);
+        this._ctlTimer = setTimeout(() => { this.ctlConfirm = null; }, 8000);  // confirmation lapses
+      },
+      async runCtl(verb) {
+        clearTimeout(this._ctlTimer);
+        this.ctlConfirm = null;
+        this.ctlBusy = true;
+        this.ctlResult = null;
+        try {
+          const r = await fetch("/api/nav/control", {
+            method: "POST",
+            headers: { "Content-Type": "application/json", "X-Requested-With": "aio-dashboard" },
+            body: JSON.stringify({ action: verb }),
+          });
+          this.ctlResult = await r.json();
+        } catch (e) {
+          this.ctlResult = { success: false, summary: "request failed: " + e.message };
+        } finally {
+          this.ctlBusy = false;
+          setTimeout(() => { if (this.ctlResult && this.ctlResult.success) this.ctlResult = null; }, 6000);
+        }
       },
       aid(key) {
         const on = this.connected && this.s && this.s.aiding && this.s.aiding[key];

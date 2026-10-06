@@ -34,6 +34,17 @@ class FakeState:
     def service_state(self, key: str) -> str:
         return self.get().get("services", {}).get(key, "running")
 
+    def set_service(self, key: str, state: str) -> None:
+        """Persist a simulated service state (used by start/stop in fake mode)."""
+        with self._lock:
+            try:
+                data = json.loads(self.path.read_text(encoding="utf-8"))
+                data.setdefault("services", {})[key] = state
+                self.path.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
+                self._mtime = None
+            except (OSError, ValueError) as e:
+                logger.warning("fake state %s not writable: %s", self.path, e)
+
     def reachable(self, device: str) -> bool:
         return bool(self.get().get("devices", {}).get(device, True))
 

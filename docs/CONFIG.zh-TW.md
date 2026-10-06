@@ -108,6 +108,7 @@ access:
 | `aio_nav_config` | `auto` | AIO NAV 的 `aio_nav.yaml` 路徑。儀表板從中讀取 UDP 目的地（`output_udp`）與輸出頻率（`output_rate`）來顯示。`auto` 會搜尋 `/home/*/aio-nav-ros/install/...` 與 `~/.local/opt/aio-nav-ros/...`，並使用最新的檔案；也可以用環境變數 `AIO_NAV_CONFIG` 指定。 |
 | `expected_rate_hz` | `null` | 預期的封包頻率。`null` = 使用 `aio_nav.yaml` 中的 `output_rate`。 |
 | `service` | `aio_nav` | `services` 中哪一個項目代表 AIO NAV。 |
+| `allow_control` | `false`(預設設定檔:`true`) | `true` 時,首頁會顯示 AIO NAV 的 **Start / Restart / Stop**。需要同時在 `services` 把該項目設為 `controllable: true`,且已安裝 `aio-nav.service`。Stop 與 Restart 需要再按一次確認。只有 `access.allowed_clients` 內的電腦連得到頁面。 |
 | `startup_grace_s` | `3.0` | 儀表板啟動後的這段時間內，沒有封包會顯示「Unknown」而不是「Fault」。 |
 | `stale_warn_s` | `0.5` | 封包超過這個秒數未更新時，UDP 輸出顯示 **Stale**。 |
 | `stale_fault_s` | `2.0` | 封包超過這個秒數未更新時，UDP 輸出顯示 **Lost**，狀態變成 **Fault**。 |
@@ -146,6 +147,7 @@ services:
 | `unit` | systemd 服務名稱（`systemctl status <unit>`）。 |
 | `process_pattern` | 選填。若有程序符合這段文字（`pgrep -f`），也視為正在執行。AIO NAV 使用這個設定，因此從 AIO Nav 桌面應用程式啟動也能偵測到。 |
 | `restartable` | `true` 會在相機或光達頁面加上 **Restart driver** 按鈕。修改後請重新執行安裝程式（見第 2 節）。 |
+| `controllable` | `true` 讓首頁可以啟動、停止、重啟這個 unit(用於 AIO NAV,搭配 `nav.allow_control`)。安裝程式會寫入只允許 `systemctl start\|stop\|restart <unit>` 的 sudoers 規則,並從 aio-nav-ros 的 `install/` 資料夾安裝 `aio-nav.service`,**不會**設定開機自動啟動。 |
 
 裝置上不存在的服務會顯示 **Not installed**，不會產生警告，所以用不到的項目放著也沒關係。查詢實際的服務名稱：
 ```bash

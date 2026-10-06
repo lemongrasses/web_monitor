@@ -36,7 +36,7 @@ class ActionError(Exception):
 
 
 class ActionRegistry:
-    def __init__(self, cfg, store, events, network_probe):
+    def __init__(self, cfg, store, events, network_probe, fake=None):
         self.cfg = cfg
         self.events = events
         self._busy: set = set()
@@ -45,7 +45,9 @@ class ActionRegistry:
         acfg = cfg["actions"]
         devices = {k: d.get("label", k) for k, d in cfg["devices"].items()}
         restartable = {k: s.get("label", k) for k, s in cfg["services"].items()
-                       if s.get("restartable") and s.get("unit")}
+                       if (s.get("restartable") or s.get("controllable")) and s.get("unit")}
+        controllable = {k: s.get("label", k) for k, s in cfg["services"].items()
+                        if s.get("controllable") and s.get("unit")}
         self.actions: Dict[str, Action] = {
             "run_diagnostic": Action(
                 "run_diagnostic", "Run diagnostic", devices, False, acfg["diagnostic_timeout_s"],
@@ -53,8 +55,19 @@ class ActionRegistry:
                 "diagnostic"),
             "restart_service": Action(
                 "restart_service", "Restart driver", restartable, True, acfg["restart_timeout_s"],
-                lambda target: service_control.restart_service(cfg, target, acfg["restart_timeout_s"]),
+                lambda target: service_control.restart_service(cfg, target, acfg["restart_timeout_s"],
+                                                               fake),
                 "restart"),
+            "start_service": Action(
+                "start_service", "Start", controllable, False, acfg["restart_timeout_s"],
+                lambda target: service_control.control_service(cfg, target, "start",
+                                                               acfg["restart_timeout_s"], fake),
+                "start"),
+            "stop_service": Action(
+                "stop_service", "Stop", controllable, True, acfg["restart_timeout_s"],
+                lambda target: service_control.control_service(cfg, target, "stop",
+                                                               acfg["restart_timeout_s"], fake),
+                "stop"),
         }
 
     def describe(self) -> List[Dict]:

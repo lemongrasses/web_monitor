@@ -52,7 +52,8 @@ class DashboardContext:
         self.preview = PreviewTap(cfg, fake=cfg.fake, fake_state=self.fake)
         self.ros = Ros2Collector(self.store, cfg, self.fake, self.preview)
         self.health = HealthEngine(cfg, self.store, self.nav, self.events)
-        self.actions = ActionRegistry(cfg, self.store, self.events, self.network.check_device)
+        self.actions = ActionRegistry(cfg, self.store, self.events, self.network.check_device,
+                                      self.fake)
         self.data = DataRoots(cfg["data"]["roots"])
         self._workers = [self.nav, self.system, self.services, self.network, self.ros, self.health]
 

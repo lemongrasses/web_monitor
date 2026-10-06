@@ -263,6 +263,7 @@ class HealthEngine:
                     "rate_hz": nav.get("rate_hz"), "expected_rate_hz": expected,
                     "age_s": nav.get("age_s"), "destinations": self._destinations(network)},
             "indicators": indicators,
+            "control": self._nav_control(nav_svc),
             "aiding": aiding,
             "advisories": advisories,
             "storage": storage,
@@ -271,6 +272,16 @@ class HealthEngine:
         })
         self.store.set("maint", self._maintenance(now, services, network, system,
                                                   shown, u_shown, nav, expected))
+
+    def _nav_control(self, nav_svc: Dict) -> Dict:
+        """What the Overview page may offer for starting/stopping AIO NAV."""
+        svc_cfg = self.cfg["services"].get(self.cfg["nav"]["service"]) or {}
+        enabled = bool(self.cfg["nav"]["allow_control"] and svc_cfg.get("controllable")
+                       and svc_cfg.get("unit"))
+        state = nav_svc.get("state") or "unknown"
+        return {"enabled": enabled, "state": state, "unit": svc_cfg.get("unit", ""),
+                "installed": state != "not_installed",
+                "label": svc_cfg.get("label", "AIO NAV")}
 
     def _destinations(self, network: Dict) -> List[Dict]:
         routes = network.get("nav_routes") or {}

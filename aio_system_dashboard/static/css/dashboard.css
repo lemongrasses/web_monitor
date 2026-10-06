@@ -199,3 +199,12 @@ h1, h2, h3 { font-family: var(--cond); font-weight: 600; letter-spacing: .005em;
 /* Breadcrumb separators: Alpine <template> nodes sit between items and break Bootstrap's "+" selector. */
 .breadcrumb .breadcrumb-item ~ .breadcrumb-item { padding-left: .5rem; }
 .breadcrumb .breadcrumb-item ~ .breadcrumb-item::before { content: "/"; float: left; padding-right: .5rem; color: var(--muted); }
+
+/* ---------- AIO NAV control strip ---------- */
+.ctl { border-left: 4px solid var(--ink); }
+.ctl-actions .btn { min-width: 5.5rem; }
+.ctl-ask { font-size: var(--t-s); font-weight: 600; color: var(--warning); }
+.ctl-msg { font-size: var(--t-s); min-height: 1.3rem; }
+.ctl-msg .ok { color: var(--go); font-weight: 500; }
+.ctl-msg .bad { color: var(--warning); font-weight: 600; }
+.btn:disabled { opacity: .55; }

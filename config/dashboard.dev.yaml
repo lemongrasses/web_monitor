@@ -7,11 +7,12 @@ maintenance:  { host: 127.0.0.1, port: 8081 }
 
 nav:
   udp_bind: 127.0.0.1:9000
-  aio_nav_config: ../aio-nav-ros/src/aio_nav_ros/config/aio_nav.yaml
+  aio_nav_config: auto
+  allow_control: true
   trajectory: { recent_window_s: 60, recent_hz: 10, older_hz: 1 }
 
 services:
-  aio_nav:   { label: AIO NAV, unit: aio-nav.service, process_pattern: lib/aio_nav_ros/aio_nav_node }
+  aio_nav:   { label: AIO NAV, unit: aio-nav.service, process_pattern: lib/aio_nav_ros/aio_nav_node, controllable: true }
   camera:    { label: Camera driver, unit: camera.service, restartable: true }
   ouster:    { label: Ouster driver, unit: ouster.service, restartable: true }
   dashboard: { label: Dashboard, unit: aio-dashboard.service }

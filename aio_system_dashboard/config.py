@@ -24,6 +24,7 @@ DEFAULTS: Dict[str, Any] = {
         "aio_nav_config": "auto",  # "auto": search the usual aio-nav-ros install locations
         "expected_rate_hz": None,  # None: take output_rate from aio_nav_config
         "service": "aio_nav",
+        "allow_control": False,    # True: the Overview page can start/stop AIO NAV
         "startup_grace_s": 3.0,
         "stale_warn_s": 0.5,
         "stale_fault_s": 2.0,

@@ -21,6 +21,7 @@ nav:
   aio_nav_config: auto
   expected_rate_hz: null         # null = output_rate from aio_nav.yaml
   service: aio_nav
+  allow_control: true            # Overview page can start/stop AIO NAV (aio-nav.service)
   stale_warn_s: 0.5              # UDP "Stale" after this packet age
   stale_fault_s: 2.0             # UDP "Lost" / product Fault after this packet age
   gnss_timeout_s: 3.0            # GNSS "Unavailable" if no GNSS update for this long
@@ -34,7 +35,7 @@ nav:
 # AIO NAV is also detected by process name, so the desktop app start works too.
 # Units with restartable: true get a Restart button (re-run install.sh after changing).
 services:
-  aio_nav:   { label: AIO NAV, unit: aio-nav.service, process_pattern: lib/aio_nav_ros/aio_nav_node }
+  aio_nav:   { label: AIO NAV, unit: aio-nav.service, process_pattern: lib/aio_nav_ros/aio_nav_node, controllable: true }
   camera:    { label: Camera driver, unit: camera.service, restartable: true, process_pattern: pylon_ros2_camera_wrapper }   # Basler, started by ros2 launch
   ouster:    { label: Ouster driver, unit: ouster.service, restartable: true }   # optional
   dashboard: { label: Dashboard, unit: aio-dashboard.service }

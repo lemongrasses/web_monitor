@@ -6,7 +6,7 @@ maintenance:  { host: 0.0.0.0, port: 8081 }
 
 nav:
   udp_bind: 127.0.0.1:9000
-  aio_nav_config: ../aio-nav-ros/src/aio_nav_ros/config/aio_nav.yaml
+  aio_nav_config: auto
   trajectory: { recent_window_s: 60, recent_hz: 10, older_hz: 1 }
 
 services:

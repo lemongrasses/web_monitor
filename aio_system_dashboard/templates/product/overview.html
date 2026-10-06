@@ -3,6 +3,32 @@
 {% block title %}Overview · AIO Navigation{% endblock %}
 {% block content %}
 
+<!-- AIO NAV control: only shown when nav.allow_control is on -->
+<section class="strip ctl mb-3" x-show="ctl.enabled" x-cloak aria-label="AIO NAV control">
+  <div><span class="strip-title">AIO NAV</span>{{ chip('ctlChip()') }}</div>
+  <div class="ctl-actions" role="group" aria-label="AIO NAV actions">
+    <template x-if="!ctlConfirm">
+      <div class="d-flex gap-2">
+        <button class="btn btn-sm btn-primary" x-show="ctl.state !== 'running'" :disabled="ctlBusy || !ctl.installed" @click="runCtl('start')">Start</button>
+        <button class="btn btn-sm btn-outline-primary" x-show="ctl.state === 'running'" :disabled="ctlBusy" @click="askCtl('restart')">Restart</button>
+        <button class="btn btn-sm btn-outline-danger" x-show="ctl.state === 'running'" :disabled="ctlBusy" @click="askCtl('stop')">Stop</button>
+      </div>
+    </template>
+    <template x-if="ctlConfirm">
+      <div class="d-flex align-items-center gap-2">
+        <span class="ctl-ask" x-text="ctlConfirm === 'stop' ? 'Stop AIO NAV? Navigation output ends.' : 'Restart AIO NAV? Alignment starts over.'"></span>
+        <button class="btn btn-sm btn-danger" @click="runCtl(ctlConfirm)" x-text="ctlConfirm === 'stop' ? 'Stop' : 'Restart'"></button>
+        <button class="btn btn-sm btn-outline-secondary" @click="ctlConfirm = null">Cancel</button>
+      </div>
+    </template>
+  </div>
+  <div class="ctl-msg" role="status" aria-live="polite">
+    <span x-show="ctlBusy">Working…</span>
+    <span x-show="!ctlBusy && ctlResult" :class="ctlResult && ctlResult.success ? 'ok' : 'bad'" x-text="ctlResult && ctlResult.summary"></span>
+    <span x-show="!ctlBusy && !ctlResult && !ctl.installed" class="muted">Service <span class="mono" x-text="ctl.unit"></span> is not installed. Run deploy/install.sh.</span>
+  </div>
+</section>
+
 <!-- NAV output -->
 <div class="strip mb-3">
   <div><span class="strip-title">UDP output</span>{{ chip('udp') }}</div>
