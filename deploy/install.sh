@@ -4,7 +4,7 @@
 # made by tools/build_release.sh (./install.sh), which contains no Python source.
 #
 #   sudo deploy/install.sh [--user nvidia] [--prefix /opt/aio-dashboard] [--with-aio-nav PATH_TO_aio-nav]
-#                          [--reset-config]
+#                          [--reset-config] [--no-sysmon]
 #
 # - copies the app to PREFIX (default /opt/aio-dashboard), keeping an existing config
 #   (--reset-config replaces it with the default; the old one is saved as .bak)
@@ -15,6 +15,8 @@
 # - installs the `aio-dashboard` command (start/stop/status/logs/config)
 # - optionally installs aio-nav.service (--with-aio-nav); not needed for the Overview page,
 #   which starts AIO NAV and DSO itself, like the AIO Nav desktop app
+# - installs aio-sysmon.service, the computer's black box (docs/SYSMON.md), and keeps the system
+#   journal across reboots; --no-sysmon skips both
 set -euo pipefail
 
 HERE="$(cd "$(dirname "$0")" && pwd)"
@@ -24,6 +26,7 @@ PREFIX=/opt/aio-dashboard
 RUN_USER="${SUDO_USER:-nvidia}"
 AIO_NAV_BIN=""
 RESET_CONFIG=0
+WITH_SYSMON=1
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -31,6 +34,7 @@ while [[ $# -gt 0 ]]; do
     --prefix) PREFIX="$2"; shift 2 ;;
     --with-aio-nav) AIO_NAV_BIN="$2"; shift 2 ;;
     --reset-config) RESET_CONFIG=1; shift ;;
+    --no-sysmon) WITH_SYSMON=0; shift ;;
     -h|--help) sed -n '2,16p' "$0"; exit 0 ;;
     *) echo "unknown option: $1" >&2; exit 1 ;;
   esac
@@ -136,14 +140,45 @@ if [[ -n "$AIO_NAV_BIN" ]]; then
   systemctl enable aio-nav.service
 fi
 
+if [[ $WITH_SYSMON -eq 1 && -d "$SRC/aio_sysmon" ]]; then
+  echo "==> system recorder (aio-sysmon): a black box for the computer"
+  SYSMON_DIR=/var/log/aio-sysmon
+  rm -rf "$PREFIX/aio_sysmon"
+  cp -r "$SRC/aio_sysmon" "$PREFIX/"
+  find "$PREFIX/aio_sysmon" -name __pycache__ -type d -prune -exec rm -rf {} +
+  install -d -m 0755 "$SYSMON_DIR"
+  if [[ ! -f "$PREFIX/config/sysmon.yaml" || $RESET_CONFIG -eq 1 ]]; then
+    install -m 0644 "$SRC/config/sysmon.yaml" "$PREFIX/config/sysmon.yaml"
+  fi
+  install -m 0755 "$SRC/deploy/aio-sysmon" "$PREFIX/bin/aio-sysmon"
+  ln -sf "$PREFIX/bin/aio-sysmon" /usr/local/bin/aio-sysmon
+  cp "$SRC"/docs/SYSMON*.md "$PREFIX/docs/" 2>/dev/null || true
+  sed -e "s|@PREFIX@|$PREFIX|g" -e "s|@LOGDIR@|$SYSMON_DIR|g" "$SRC/deploy/aio-sysmon.service" \
+    > /etc/systemd/system/aio-sysmon.service
+  # Keep the system journal on disk: after a hang or a power cut, the kernel's own messages are
+  # otherwise gone with the memory they were in.
+  install -d -m 2755 /var/log/journal
+  install -d /etc/systemd/journald.conf.d
+  printf '[Journal]\nStorage=persistent\nSystemMaxUse=300M\n' > /etc/systemd/journald.conf.d/aio-persistent.conf
+  systemctl restart systemd-journald 2>/dev/null || true
+  journalctl --flush 2>/dev/null || true
+fi
+
 systemctl daemon-reload
 systemctl enable aio-dashboard.service
 systemctl restart aio-dashboard.service
+if [[ $WITH_SYSMON -eq 1 && -d "$SRC/aio_sysmon" ]]; then
+  systemctl enable aio-sysmon.service
+  systemctl restart aio-sysmon.service
+fi
 
 echo
 echo "Done ($(cat "$PREFIX/VERSION")). Settings are detected automatically."
 echo "  aio-dashboard status    service state and web addresses"
 echo "  aio-dashboard config    edit settings ($PREFIX/config/dashboard.yaml) and restart"
 echo "  aio-dashboard logs      follow the log"
+if [[ $WITH_SYSMON -eq 1 && -d "$SRC/aio_sysmon" ]]; then
+  echo "  aio-sysmon status       the computer's black box (after a freeze: aio-sysmon last-crash)"
+fi
 "$PREFIX/bin/aio-dashboard" urls
 echo "Re-run install.sh after changing restartable units so the sudoers rule is regenerated."

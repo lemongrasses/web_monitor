@@ -1,0 +1,6 @@
+#!/usr/bin/env bash
+# aio-sysmon: read the computer's black box (the recorder itself runs as aio-sysmon.service).
+#   aio-sysmon status | last-crash | report | ring | events | snapshots     (aio-sysmon --help)
+APP_DIR="$(cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")/.." && pwd)"
+export PYTHONPATH="$APP_DIR:$APP_DIR/lib${PYTHONPATH:+:$PYTHONPATH}"
+exec /usr/bin/python3 -m aio_sysmon --config "$APP_DIR/config/sysmon.yaml" "$@"

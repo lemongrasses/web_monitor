@@ -16,6 +16,7 @@ the system. It does not start navigation or sensor processes, so a dashboard cra
 **Manuals:** operation, alignment SOP and UDP output format:
 [English](docs/OPERATION.md) · [繁體中文](docs/OPERATION.zh-TW.md).
 Settings: [English](docs/CONFIG.md) · [繁體中文](docs/CONFIG.zh-TW.md).
+System recorder (a black box for the computer, to trace freezes and power cuts): [English](docs/SYSMON.md) · [繁體中文](docs/SYSMON.zh-TW.md).
 
 ## Architecture
 

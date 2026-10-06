@@ -1,0 +1,38 @@
+# AIO system recorder settings (docs/SYSMON.md). Everything here is optional: the defaults are
+# derived from this machine (cores, RAM, swap, disk size, thermal trip points).
+#   sudo systemctl restart aio-sysmon     after editing
+
+dir: /var/log/aio-sysmon
+
+# Normal operation costs about 1% of one CPU core and about 2 MB of disk per day (compressed).
+interval_s: 5            # one full sample (daily log) every 5 s
+ring_interval_s: 1       # one light record per second into a fixed-size ring file ...
+ring_mb: 4               # ... of this size (about 2 hours): it never grows
+top_every_s: 60          # top processes are added to a sample this often
+
+# Detail only when something looks wrong. After a trigger the recorder samples every
+# burst_interval_s for burst_s seconds, but only while the disk has room.
+burst_s: 60
+burst_interval_s: 1
+cooldown_s: 120          # the same kind of trigger is silent for this long
+
+# Disk budget. None: the cap is 0.3% of the disk (60-250 MB); detail stops when the free space
+# falls below 3% of the disk (at least 2 GB) and almost everything stops below critical_free_mb.
+max_total_mb: null
+snapshots_share: 0.4     # at most this share of the cap may be detailed snapshots
+max_snapshots_per_day: 120
+retention_days: 30
+min_free_mb: null
+critical_free_mb: 512
+
+kmsg: true               # copy kernel warnings and errors to disk (needs root)
+
+# Override any derived limit (see docs/SYSMON.md for the list and what they are derived from):
+triggers: {}
+#  load1: 12             # 1.5 x the number of cores
+#  iowait_pct: 25
+#  mem_avail_mb: 1252    # 8% of RAM, at least 512
+#  temp_c: 85            # 10 degrees below the first hot trip point
+#  sched_stall_ms: 800
+#  fsync_ms: 1000
+#  disk_free_mb: 6850    # 5% of the disk, at least 2 GB

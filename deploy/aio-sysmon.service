@@ -1,0 +1,35 @@
+# AIO system recorder: a black box for the computer (see docs/SYSMON.md).
+# Installed by deploy/install.sh, which replaces @PREFIX@ and @LOGDIR@.
+# It runs as root only so it can read what ordinary users cannot (kernel messages, the stack of a
+# stuck task); it writes nothing outside @LOGDIR@ and is capped in CPU and memory.
+[Unit]
+Description=AIO system recorder (black box for the computer)
+After=local-fs.target time-sync.target
+Wants=time-sync.target
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/python3 -m aio_sysmon run --config @PREFIX@/config/sysmon.yaml
+Environment=PYTHONPATH=@PREFIX@:@PREFIX@/lib
+Environment=PYTHONUNBUFFERED=1
+Restart=always
+RestartSec=5
+KillSignal=SIGTERM
+TimeoutStopSec=15
+# It has to keep running while the machine is struggling: a little priority, and the OOM killer
+# should pick other processes first. The caps keep it from ever becoming the problem.
+Nice=-5
+IOSchedulingClass=best-effort
+IOSchedulingPriority=2
+OOMScoreAdjust=-900
+CPUQuota=15%
+MemoryMax=96M
+# Sandbox: read-only system, no home directories, only its own log directory is writable.
+ProtectSystem=strict
+ReadWritePaths=@LOGDIR@
+ProtectHome=true
+PrivateTmp=true
+NoNewPrivileges=true
+
+[Install]
+WantedBy=multi-user.target

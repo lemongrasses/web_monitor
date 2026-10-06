@@ -6,6 +6,8 @@
 # Removes aio-dashboard.service, aio-nav.service (the optional unit install.sh can add), the
 # sudoers rule, the `aio-dashboard` command and PREFIX. The installed config is copied to
 # DIR (default: ~/aio-dashboard-backup-<time>) first.
+# The recorder's records (/var/log/aio-sysmon) and the persistent-journal setting are kept: they
+# are the evidence about past freezes. Delete them yourself if you want them gone.
 # Not touched: network services, sensor drivers, aio-nav-ros, and AIO NAV / DSO processes that
 # were started from the dashboard (they run in their own sessions; stop them from the Overview page).
 set -euo pipefail
@@ -35,7 +37,7 @@ if [[ -d "$PREFIX/config" ]]; then
   echo "==> config saved to $BACKUP_DIR"
 fi
 
-for unit in aio-dashboard.service aio-nav.service; do
+for unit in aio-dashboard.service aio-nav.service aio-sysmon.service; do
   if [[ -f "/etc/systemd/system/$unit" ]]; then
     echo "==> removing $unit"
     systemctl stop "$unit" 2>/dev/null || true
@@ -48,6 +50,7 @@ systemctl reset-failed 2>/dev/null || true
 
 rm -f /etc/sudoers.d/aio-dashboard
 [[ -L /usr/local/bin/aio-dashboard ]] && rm -f /usr/local/bin/aio-dashboard
+[[ -L /usr/local/bin/aio-sysmon ]] && rm -f /usr/local/bin/aio-sysmon
 if [[ -d "$PREFIX" ]]; then
   echo "==> removing $PREFIX"
   rm -rf "$PREFIX"
