@@ -109,7 +109,8 @@ access:
 | `aio_nav_config` | `auto` | AIO NAV 的 `aio_nav.yaml` 路徑。儀表板從中讀取 UDP 目的地（`output_udp`）與輸出頻率（`output_rate`）來顯示。`auto` 會搜尋 `/home/*/aio-nav-ros/install/...` 與 `~/.local/opt/aio-nav-ros/...`，並使用最新的檔案；也可以用環境變數 `AIO_NAV_CONFIG` 指定。 |
 | `expected_rate_hz` | `null` | 預期的封包頻率。`null` = 使用 `aio_nav.yaml` 中的 `output_rate`。 |
 | `service` | `aio_nav` | `services` 中哪一個項目代表 AIO NAV。 |
-| `allow_control` | `false`(預設設定檔:`true`) | `true` 時,首頁會顯示 AIO NAV 的 **Start / Restart / Stop**。需要同時在 `services` 把該項目設為 `controllable: true`,且已安裝 `aio-nav.service`。Stop 與 Restart 需要再按一次確認。只有 `access.allowed_clients` 內的電腦連得到頁面。 |
+| `allow_control` | `false`(預設設定檔:`true`) | `true` 時,首頁會顯示 AIO NAV 的 **Start / Restart / Stop**。**Start** 會先啟動濾波器再啟動 DSO,**Stop** 兩者一起停止,做法與 AIO Nav 桌面程式相同(程序已在執行就不會重複啟動,所以不會跟桌面程式啟動的那份重複)。啟動的是 aio-nav-ros `install/` 資料夾內的 `aio-nav` 與 `aio-nav-dso`,不需要原始碼。Stop 與 Restart 需要再按一次確認。只有 `access.allowed_clients` 內的電腦連得到頁面。 |
+| `control_group` | `[aio_nav, dso]` | Start/Stop 作用在 `services` 的哪些項目,依序啟動。每個項目都需要設定 `launch`。 |
 | `startup_grace_s` | `3.0` | 儀表板啟動後的這段時間內，沒有封包會顯示「Unknown」而不是「Fault」。 |
 | `stale_warn_s` | `0.5` | 封包超過這個秒數未更新時，UDP 輸出顯示 **Stale**。 |
 | `stale_fault_s` | `2.0` | 封包超過這個秒數未更新時，UDP 輸出顯示 **Lost**，狀態變成 **Fault**。 |
@@ -148,7 +149,8 @@ services:
 | `unit` | systemd 服務名稱（`systemctl status <unit>`）。 |
 | `process_pattern` | 選填。若有程序符合這段文字（`pgrep -f`），也視為正在執行。AIO NAV 使用這個設定，因此從 AIO Nav 桌面應用程式啟動也能偵測到。 |
 | `restartable` | `true` 會在相機或光達頁面加上 **Restart driver** 按鈕。修改後請重新執行安裝程式（見第 2 節）。 |
-| `controllable` | `true` 讓首頁可以啟動、停止、重啟這個 unit(用於 AIO NAV,搭配 `nav.allow_control`)。安裝程式會寫入只允許 `systemctl start\|stop\|restart <unit>` 的 sudoers 規則,並從 aio-nav-ros 的 `install/` 資料夾安裝 `aio-nav.service`,**不會**設定開機自動啟動。 |
+| `launch` | aio-nav-ros `install/aio_nav_ros/lib/aio_nav_ros/` 資料夾內的啟動程式名稱(`aio-nav`、`aio-nav-dso`),或絕對路徑。設定後儀表板可以啟動與停止這個程式,並用 `process_pattern` 找到它。程式以儀表板的使用者身分在獨立的 session 中執行,ROS 網域由 `aio_nav.yaml` 決定,不是儀表板的設定。輸出寫到 `logs/<name>.log`。儀表板服務使用 `KillMode=process`,所以重啟儀表板時 AIO NAV 不會被停掉。 |
+| `optional` | `true` 代表這個程式停止時不算警告(DSO 使用)。 |
 
 裝置上不存在的服務會顯示 **Not installed**，不會產生警告，所以用不到的項目放著也沒關係。查詢實際的服務名稱：
 ```bash

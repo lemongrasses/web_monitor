@@ -276,11 +276,10 @@ class HealthEngine:
     def _nav_control(self, nav_svc: Dict) -> Dict:
         """What the Overview page may offer for starting/stopping AIO NAV."""
         svc_cfg = self.cfg["services"].get(self.cfg["nav"]["service"]) or {}
-        enabled = bool(self.cfg["nav"]["allow_control"] and svc_cfg.get("controllable")
-                       and svc_cfg.get("unit"))
+        enabled = bool(self.cfg["nav"]["allow_control"] and svc_cfg.get("launch"))
         state = nav_svc.get("state") or "unknown"
-        return {"enabled": enabled, "state": state, "unit": svc_cfg.get("unit", ""),
-                "installed": state != "not_installed",
+        installed = bool(svc_cfg.get("launch") and self.cfg.launcher(svc_cfg["launch"]))
+        return {"enabled": enabled, "state": state, "installed": installed,
                 "label": svc_cfg.get("label", "AIO NAV")}
 
     def _destinations(self, network: Dict) -> List[Dict]:
@@ -329,7 +328,8 @@ class HealthEngine:
                         "success" if state == "running" else "warning", "service",
                         f"{svc.get('label', key)} {state}")
             # A sensor driver unit that does not exist is "not set up", not a problem.
-            if state in SERVICE_DOWN_STATES and (key == nav_key or state != "not_installed"):
+            optional = (self.cfg["services"].get(key) or {}).get("optional")
+            if state in SERVICE_DOWN_STATES and not optional and (key == nav_key or state != "not_installed"):
                 level = FAULT if key == nav_key else WARNING
                 issue("services", level, f"{svc.get('label', key)} {state.replace('_', ' ')}",
                       svc.get("unit", ""), "system")

@@ -13,7 +13,7 @@ import time
 from dataclasses import dataclass
 from typing import Callable, Dict, List
 
-from . import diagnostics, service_control
+from . import diagnostics, process_control, service_control
 
 logger = logging.getLogger(__name__)
 
@@ -45,9 +45,9 @@ class ActionRegistry:
         acfg = cfg["actions"]
         devices = {k: d.get("label", k) for k, d in cfg["devices"].items()}
         restartable = {k: s.get("label", k) for k, s in cfg["services"].items()
-                       if (s.get("restartable") or s.get("controllable")) and s.get("unit")}
-        controllable = {k: s.get("label", k) for k, s in cfg["services"].items()
-                        if s.get("controllable") and s.get("unit")}
+                       if s.get("restartable") and s.get("unit")}
+        launchable = process_control.targets(cfg)
+        grace = acfg["stop_grace_s"]
         self.actions: Dict[str, Action] = {
             "run_diagnostic": Action(
                 "run_diagnostic", "Run diagnostic", devices, False, acfg["diagnostic_timeout_s"],
@@ -58,16 +58,18 @@ class ActionRegistry:
                 lambda target: service_control.restart_service(cfg, target, acfg["restart_timeout_s"],
                                                                fake),
                 "restart"),
-            "start_service": Action(
-                "start_service", "Start", controllable, False, acfg["restart_timeout_s"],
-                lambda target: service_control.control_service(cfg, target, "start",
-                                                               acfg["restart_timeout_s"], fake),
+            "start_process": Action(
+                "start_process", "Start", launchable, False, acfg["restart_timeout_s"],
+                lambda target: process_control.control(cfg, target, "start", grace, fake),
                 "start"),
-            "stop_service": Action(
-                "stop_service", "Stop", controllable, True, acfg["restart_timeout_s"],
-                lambda target: service_control.control_service(cfg, target, "stop",
-                                                               acfg["restart_timeout_s"], fake),
+            "stop_process": Action(
+                "stop_process", "Stop", launchable, True, acfg["restart_timeout_s"] + grace,
+                lambda target: process_control.control(cfg, target, "stop", grace, fake),
                 "stop"),
+            "restart_process": Action(
+                "restart_process", "Restart", launchable, True, acfg["restart_timeout_s"] + grace,
+                lambda target: process_control.control(cfg, target, "restart", grace, fake),
+                "restart"),
         }
 
     def describe(self) -> List[Dict]:

@@ -24,7 +24,8 @@ DEFAULTS: Dict[str, Any] = {
         "aio_nav_config": "auto",  # "auto": search the usual aio-nav-ros install locations
         "expected_rate_hz": None,  # None: take output_rate from aio_nav_config
         "service": "aio_nav",
-        "allow_control": False,    # True: the Overview page can start/stop AIO NAV
+        "allow_control": False,    # True: the Overview page can start/stop AIO NAV (+ DSO)
+        "control_group": ["aio_nav", "dso"],   # what Start/Stop acts on, in start order
         "startup_grace_s": 3.0,
         "stale_warn_s": 0.5,
         "stale_fault_s": 2.0,
@@ -41,7 +42,8 @@ DEFAULTS: Dict[str, Any] = {
     "ros": {"enabled": True, "graph_interval_s": 2.0, "rate_window_s": 2.0, "nodes": [], "topics": []},
     "data": {"roots": "auto"},  # "auto": the aio-nav-ros output folder
     "events": {"log_file": "logs/events.jsonl", "max_memory": 500},
-    "actions": {"restart_timeout_s": 30.0, "diagnostic_timeout_s": 15.0},
+    "actions": {"restart_timeout_s": 30.0, "diagnostic_timeout_s": 15.0,
+                "stop_grace_s": 5.0},  # stop_grace_s: SIGTERM -> SIGKILL delay for AIO NAV / DSO
     "fake": {"enabled": False, "state_file": "dev/fake_state.json"},
 }
 
@@ -168,6 +170,19 @@ class Config:
     def expected_nav_rate(self) -> Optional[float]:
         rate = self.data["nav"].get("expected_rate_hz")
         return float(rate) if rate else self.aio_nav.get("output_rate")
+
+    def launcher(self, name: str) -> Optional[str]:
+        """Path of an aio-nav-ros wrapper (aio-nav, aio-nav-dso) from the install/ folder."""
+        if os.path.isabs(name):
+            return name if os.access(name, os.X_OK) else None
+        path = self.aio_nav.get("path")
+        if not path:
+            return None
+        for parent in Path(path).resolve().parents:
+            cand = parent / "lib" / "aio_nav_ros" / name
+            if cand.is_file() and os.access(cand, os.X_OK):
+                return str(cand)
+        return None
 
     def nav_destinations(self) -> List[Dict[str, Any]]:
         """Configured NAV UDP outputs (display only; v1 does not edit them)."""

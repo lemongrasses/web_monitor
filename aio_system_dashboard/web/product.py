@@ -2,6 +2,7 @@
 
 from flask import abort, jsonify, render_template, request, send_file
 
+from ..actions import process_control
 from ..actions.registry import ActionError
 from ..data_access.files import DataAccessError
 from .common import create_base_app
@@ -28,18 +29,18 @@ def create_product_app(ctx):
 
     @app.route("/api/nav/control", methods=["POST"])
     def api_nav_control():
-        """Start / stop / restart AIO NAV (the one service named by nav.service)."""
+        """Start / stop / restart AIO NAV and DSO together, like the AIO Nav desktop app."""
         if request.headers.get("X-Requested-With") != "aio-dashboard" or not request.is_json:
             return jsonify({"success": False, "summary": "bad request"}), 400
         if not ctx.cfg["nav"]["allow_control"]:
             return jsonify({"success": False, "summary": "control is disabled"}), 403
         verb = (request.get_json(silent=True) or {}).get("action")
-        action_id = {"start": "start_service", "stop": "stop_service",
-                     "restart": "restart_service"}.get(verb)
+        action_id = {"start": "start_process", "stop": "stop_process",
+                     "restart": "restart_process"}.get(verb)
         if action_id is None:
             return jsonify({"success": False, "summary": "action must be start, stop or restart"}), 400
         try:
-            return jsonify(ctx.actions.run(action_id, ctx.cfg["nav"]["service"]))
+            return jsonify(ctx.actions.run(action_id, process_control.GROUP))
         except ActionError as e:
             return jsonify({"success": False, "summary": str(e)}), e.status
 

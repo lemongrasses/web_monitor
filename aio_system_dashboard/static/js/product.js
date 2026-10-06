@@ -70,7 +70,7 @@
       },
       get ctl() {
         const c = this.connected && this.s && this.s.control;
-        return c || { enabled: false, state: "unknown", installed: true, unit: "", label: "AIO NAV" };
+        return c || { enabled: false, state: "unknown", installed: true, label: "AIO NAV" };
       },
       ctlChip() {
         if (this.ctlBusy) return { level: "warning", label: "Working" };
@@ -82,10 +82,10 @@
       get ctlHint() {
         if (this.ctlBusy) return "Waiting for the service to change state…";
         const st = this.ctl.state;
+        if (!this.ctl.installed) return "AIO NAV launcher not found in the aio-nav-ros install folder.";
         if (st === "running") return "Navigation filter is running.";
         if (st === "failed") return "The service stopped with an error. Start it again, or check the logs.";
-        if (st === "not_installed") return "aio-nav.service is not installed on this device.";
-        if (st === "stopped") return "Not running. No navigation output until it is started.";
+        if (st === "stopped") return "Not running. Start launches the filter and DSO, like the AIO Nav app.";
         return "";
       },
       get ctlMsg() {

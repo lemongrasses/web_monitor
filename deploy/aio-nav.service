@@ -1,7 +1,5 @@
-# Template: run aio_nav_node under systemd, independent of the dashboard (spec §5).
-# install.sh installs it when it finds the aio-nav wrapper (install/ folder of aio-nav-ros).
-# It is deliberately NOT enabled at boot: the dashboard Overview page starts and stops it
-# (sudoers allows start/stop/restart of this unit only).
+# Template: run aio_nav_node under systemd so it starts at boot and is independent
+# of the dashboard (spec §5). Installed only with `install.sh --with-aio-nav`.
 # @USER@ and @AIO_NAV_BIN@ are replaced by install.sh. The wrapper sources ROS 2 and
 # the aio-nav-ros overlay itself and uses the package aio_nav.yaml.
 #
@@ -23,3 +21,5 @@ RestartSec=3
 KillSignal=SIGINT
 TimeoutStopSec=10
 
+[Install]
+WantedBy=multi-user.target

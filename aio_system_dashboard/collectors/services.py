@@ -70,13 +70,12 @@ class ServicesCollector(PeriodicCollector):
                 out[key] = {"label": svc.get("label", key), "unit": svc.get("unit", ""),
                             "state": state, "pids": [pid] if state == "running" else [],
                             "unit_state": {"active": "active" if state == "running" else "inactive"},
-                            "restartable": bool(svc.get("restartable")),
-                            "controllable": bool(svc.get("controllable"))}
+                            "restartable": bool(svc.get("restartable"))}
                 continue
             unit_state = systemd_unit_state(svc["unit"]) if svc.get("unit") else {"load": "none"}
             pids = pgrep(svc["process_pattern"]) if svc.get("process_pattern") else None
             state = summarize(unit_state, pids)
-            if state == "not_installed" and svc.get("process_pattern"):
+            if state in ("not_installed", "unknown") and svc.get("process_pattern"):
                 state = "stopped"  # detected by process too (e.g. desktop app): no unit is fine
             out[key] = {
                 "label": svc.get("label", key),
@@ -85,6 +84,5 @@ class ServicesCollector(PeriodicCollector):
                 "pids": pids or ([unit_state["main_pid"]] if unit_state.get("main_pid") else []),
                 "unit_state": unit_state,
                 "restartable": bool(svc.get("restartable")),
-                "controllable": bool(svc.get("controllable")),
             }
         return out

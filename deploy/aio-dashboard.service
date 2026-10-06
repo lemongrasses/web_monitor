@@ -1,6 +1,7 @@
 # AIO System Dashboard (Product :8080, Maintenance :8081).
 # Installed by deploy/install.sh, which replaces @USER@ and @PREFIX@.
-# The dashboard only monitors; it is not the parent of navigation or sensor processes.
+# The dashboard monitors. When nav.allow_control is on it can also start AIO NAV / DSO (like the
+# AIO Nav desktop app); KillMode=process keeps them running when the dashboard restarts.
 [Unit]
 Description=AIO System Dashboard
 After=network-online.target
@@ -19,6 +20,7 @@ ExecStart=@PREFIX@/bin/aio-dashboard run
 Restart=always
 RestartSec=3
 KillSignal=SIGTERM
+KillMode=process
 TimeoutStopSec=10
 
 [Install]
