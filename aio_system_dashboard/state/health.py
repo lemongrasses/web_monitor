@@ -220,6 +220,8 @@ class HealthEngine:
             label = dev_cfg.get("label", key)
             indicators[key] = {"level": d_level, "label": {HEALTHY: "Connected",
                                WARNING: "Not connected"}.get(d_level, "Unknown")}
+            if not dev_cfg.get("host"):
+                indicators[key]["label"] = "Not set up"  # optional: no IP to check
             self._track(f"dev:{key}", d_level, "warning" if d_level == WARNING else "info",
                         "network", f"{label} " + {WARNING: "unreachable", HEALTHY: "reachable"}.get(d_level, "unknown"),
                         d.get("host", ""))
@@ -311,7 +313,8 @@ class HealthEngine:
             self._track(f"svc:{key}", state or "unknown",
                         "success" if state == "running" else "warning", "service",
                         f"{svc.get('label', key)} {state}")
-            if state in SERVICE_DOWN_STATES:
+            # A sensor driver unit that does not exist is "not set up", not a problem.
+            if state in SERVICE_DOWN_STATES and (key == nav_key or state != "not_installed"):
                 level = FAULT if key == nav_key else WARNING
                 issue("services", level, f"{svc.get('label', key)} {state.replace('_', ' ')}",
                       svc.get("unit", ""), "system")
@@ -324,6 +327,11 @@ class HealthEngine:
         ros = self.store.get("ros", {}) or {}
         if ros.get("available"):
             for t in ros.get("watched", []):
+                if t["state"] == "not_found":
+                    dataflow.append({"name": t["label"], "topic": t["name"], "rate_hz": None,
+                                     "level": UNKNOWN, "state": t["state"], "detail": "not found",
+                                     "link": "ros"})
+                    continue
                 level = {"healthy": HEALTHY, "low_rate": WARNING}.get(t["state"], FAULT)
                 group = t.get("group", "")
                 link = group if group in ("camera", "lidar") else "ros"

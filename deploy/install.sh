@@ -2,8 +2,10 @@
 # Install the AIO System Dashboard on the Jetson (offline).
 #
 #   sudo deploy/install.sh [--user nvidia] [--prefix /opt/aio-dashboard] [--with-aio-nav PATH_TO_aio-nav]
+#                          [--reset-config]
 #
 # - copies the app to PREFIX (default /opt/aio-dashboard), keeping an existing config
+#   (--reset-config replaces it with the default; the old one is saved as .bak)
 # - installs bundled wheels (wheels/, aarch64 cp310) into PREFIX/lib, with pip if
 #   available, otherwise by unpacking the wheels (no Internet, no venv needed)
 # - installs aio-dashboard.service and a sudoers rule that allows ONLY
@@ -15,13 +17,15 @@ SRC="$(cd "$(dirname "$0")/.." && pwd)"
 PREFIX=/opt/aio-dashboard
 RUN_USER="${SUDO_USER:-nvidia}"
 AIO_NAV_BIN=""
+RESET_CONFIG=0
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --user) RUN_USER="$2"; shift 2 ;;
     --prefix) PREFIX="$2"; shift 2 ;;
     --with-aio-nav) AIO_NAV_BIN="$2"; shift 2 ;;
-    -h|--help) sed -n '2,11p' "$0"; exit 0 ;;
+    --reset-config) RESET_CONFIG=1; shift ;;
+    -h|--help) sed -n '2,13p' "$0"; exit 0 ;;
     *) echo "unknown option: $1" >&2; exit 1 ;;
   esac
 done
@@ -35,7 +39,11 @@ mkdir -p "$PREFIX"/{config,logs,lib,dev}
 cp -r "$SRC/aio_system_dashboard" "$PREFIX/"
 find "$PREFIX/aio_system_dashboard" -name __pycache__ -type d -prune -exec rm -rf {} +
 cp "$SRC/dev/fake_state.json" "$PREFIX/dev/"
-if [[ -f "$PREFIX/config/dashboard.yaml" ]]; then
+if [[ -f "$PREFIX/config/dashboard.yaml" && $RESET_CONFIG -eq 1 ]]; then
+  cp "$PREFIX/config/dashboard.yaml" "$PREFIX/config/dashboard.yaml.bak"
+  cp "$SRC/config/dashboard.yaml" "$PREFIX/config/dashboard.yaml"
+  echo "    replaced config (previous one saved as dashboard.yaml.bak)"
+elif [[ -f "$PREFIX/config/dashboard.yaml" ]]; then
   echo "    keeping existing $PREFIX/config/dashboard.yaml (new default: dashboard.yaml.new)"
   cp "$SRC/config/dashboard.yaml" "$PREFIX/config/dashboard.yaml.new"
 else
@@ -44,8 +52,10 @@ fi
 
 echo "==> installing Python wheels into $PREFIX/lib"
 if python3 -m pip --version >/dev/null 2>&1; then
-  python3 -m pip install --quiet --no-index --find-links "$SRC/wheels" --target "$PREFIX/lib" --upgrade \
-    flask pyyaml psutil
+  # Packages go into PREFIX/lib only. --no-warn-conflicts hides pip's complaints about
+  # unrelated system packages (e.g. ultralytics wanting torch); the root warning is expected here.
+  PIP_ROOT_USER_ACTION=ignore python3 -m pip install --quiet --no-warn-conflicts --no-index \
+    --find-links "$SRC/wheels" --target "$PREFIX/lib" --upgrade flask pyyaml psutil
 else
   echo "    pip not found; unpacking wheels directly"
   python3 - "$SRC/wheels" "$PREFIX/lib" <<'EOF'
@@ -103,7 +113,8 @@ systemctl enable aio-dashboard.service
 systemctl restart aio-dashboard.service
 
 echo
-echo "Done. Edit $PREFIX/config/dashboard.yaml (TODO items), then: sudo systemctl restart aio-dashboard"
+echo "Done. Settings are detected automatically; to pin anything down edit"
+echo "  $PREFIX/config/dashboard.yaml  then: sudo systemctl restart aio-dashboard"
 echo "  Product UI      http://<jetson-ip>:8080"
 echo "  Maintenance UI  http://<jetson-ip>:8081"
 echo "  Logs            journalctl -u aio-dashboard -f"

@@ -26,7 +26,8 @@ try:
 except ImportError as e:  # numpy missing: previews disabled, everything else works
     NUMPY_ERROR = str(e)
 
-IMAGE_TYPES = ("sensor_msgs/msg/Image", "sensor_msgs/msg/CompressedImage")
+# Order = preference when the topic is picked automatically (compressed is cheaper to show).
+IMAGE_TYPES = ("sensor_msgs/msg/CompressedImage", "sensor_msgs/msg/Image")
 CLOUD_TYPES = ("sensor_msgs/msg/PointCloud2",)
 
 
@@ -40,7 +41,9 @@ class _Source:
     def __init__(self, device: str, kind: str, cfg: Dict):
         self.device = device
         self.kind = kind  # image | pointcloud
-        self.topic = cfg.get("topic", "")
+        self.auto = cfg.get("topic", "auto") in ("", "auto", None)
+        self.topic = "" if self.auto else cfg["topic"]
+        self.hint = cfg.get("hint", "")
         self.max_width = int(cfg.get("max_width", 960))
         self.max_points = int(cfg.get("max_points", 30000))
         self.last_request = 0.0
@@ -67,7 +70,11 @@ class PreviewTap:
                 self.sources[key] = _Source(key, prev["kind"], prev)
 
     def describe(self) -> Dict[str, Dict]:
-        return {k: {"kind": s.kind, "topic": s.topic} for k, s in self.sources.items()}
+        return {k: {"kind": s.kind, "topic": s.topic, "auto": s.auto} for k, s in self.sources.items()}
+
+    @staticmethod
+    def _types(s: "_Source"):
+        return IMAGE_TYPES if s.kind == "image" else CLOUD_TYPES
 
     # ------------------------------------------------------------- ROS thread
     def sync(self, node, topic_types: Dict[str, list]) -> None:
@@ -76,12 +83,17 @@ class PreviewTap:
         for s in self.sources.values():
             wanted = now - s.last_request < self.idle_timeout_s
             if wanted and s.sub is None:
+                if s.auto:
+                    from ..collectors.ros2 import pick_topic
+                    s.topic = pick_topic(topic_types, self._types(s), s.hint) or ""
+                    if not s.topic:
+                        s.status = f"no {'image' if s.kind == 'image' else 'PointCloud2'} topic found"
+                        continue
                 types = topic_types.get(s.topic)
                 if not types:
                     s.status = "topic not found"
                     continue
-                allowed = IMAGE_TYPES if s.kind == "image" else CLOUD_TYPES
-                msg_type = next((t for t in types if t in allowed), None)
+                msg_type = next((t for t in self._types(s) if t in types), None)
                 if msg_type is None:
                     s.status = f"unsupported type {types[0]}"
                     continue
@@ -127,8 +139,10 @@ class PreviewTap:
         with self._lock:
             raw, seq, raw_time, cache = s.raw, s.seq, s.raw_time, s.cache
         if raw is None:
-            raise PreviewError({"subscribed": f"waiting for messages on {s.topic}",
-                                "idle": f"subscribing to {s.topic}…"}.get(s.status, f"{s.topic}: {s.status}"))
+            name = s.topic or "the topic"
+            raise PreviewError({"subscribed": f"Waiting for messages on {name}",
+                                "idle": f"Subscribing to {name}…"}.get(s.status, s.status if not s.topic
+                                                                      else f"{s.topic}: {s.status}"))
         age = time.monotonic() - raw_time
         if cache and cache[0] == seq:
             payload, ctype, meta = cache[1], cache[2], dict(cache[3])
@@ -142,6 +156,7 @@ class PreviewTap:
             with self._lock:
                 s.cache = (seq, payload, ctype, meta)
         meta["age_s"] = round(age, 3)
+        meta["topic"] = s.topic
         return payload, ctype, meta
 
     def _convert(self, s: _Source, msg) -> Tuple[bytes, str, Dict]:
@@ -158,19 +173,24 @@ class PreviewTap:
             "frame": frame_id, "count": len(pts), "total": int(msg.width) * int(msg.height)}
 
     def _fake_frame(self, s: _Source) -> Tuple[bytes, str, Dict]:
+        if s.auto:
+            from ..collectors.ros2 import FAKE_TOPIC_BY_TYPE
+            s.topic = FAKE_TOPIC_BY_TYPE[self._types(s)[0]]
         if self.fake_state is not None:
             state = self.fake_state.topic(s.topic)["state"]
             if state in ("missing", "stale"):
                 raise PreviewError(f"No messages on {s.topic} (topic {state})")
         if s.kind == "image":
             payload, ctype = encode_rgb(fake_camera_frame())
-            return payload, ctype, {"frame": "camera_fake", "size": "640x400", "age_s": 0.03}
+            return payload, ctype, {"frame": "camera_fake", "size": "640x400", "age_s": 0.03,
+                                    "topic": s.topic}
         pts = fake_lidar_scan()
         total = len(pts)
         if total > s.max_points:
             pts = pts[:: -(-total // s.max_points)]
         return pts.tobytes(), "application/octet-stream", {
-            "frame": "os_sensor_fake", "count": len(pts), "total": total, "age_s": 0.05}
+            "frame": "os_sensor_fake", "count": len(pts), "total": total, "age_s": 0.05,
+            "topic": s.topic}
 
 
 def meta_header(meta: Dict) -> str:

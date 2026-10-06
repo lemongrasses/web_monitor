@@ -61,7 +61,7 @@
       status.hidden = true;
       frames++;
       const fps = frames / ((performance.now() - t0) / 1000);
-      setInfo(info, [meta.size, meta.encoding || meta.source, meta.frame && "frame " + meta.frame,
+      setInfo(info, [meta.topic, meta.size, meta.encoding || meta.source, meta.frame && "frame " + meta.frame,
         "age " + AIO.fmt.age(meta.age_s), fps.toFixed(1) + " frames/s shown"]);
     }, (msg) => { status.hidden = false; status.textContent = msg; });
   }
@@ -195,7 +195,7 @@
       const buf = await r.arrayBuffer();
       view.setPoints(new Float32Array(buf));
       status.hidden = true;
-      setInfo(info, [(meta.count || 0).toLocaleString() + " of " + (meta.total || 0).toLocaleString() + " points",
+      setInfo(info, [meta.topic, (meta.count || 0).toLocaleString() + " of " + (meta.total || 0).toLocaleString() + " points",
         meta.frame && "frame " + meta.frame, "age " + AIO.fmt.age(meta.age_s)]);
     }, (msg) => { status.hidden = false; status.textContent = msg; });
   }

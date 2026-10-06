@@ -114,9 +114,26 @@ class NetworkCollector(PeriodicCollector):
         result.update({"host": host, "checked": time.time()})
         return result
 
+    def _auto_interface(self, ifaces: List[Dict]) -> str:
+        """Interface used to reach the sensors, else the default-route one, else the first link up."""
+        for dev in self.cfg["devices"].values():
+            host = (dev or {}).get("host")
+            if host:
+                r = route_to(host)
+                if r.get("ok") and r.get("interface") and r["interface"] != "lo":
+                    return r["interface"]
+        dr = default_route()
+        if dr:
+            return dr["interface"]
+        up = [i for i in ifaces if i["up"] and i["carrier"] and i["ipv4"]]
+        return up[0]["name"] if up else ""
+
     def poll(self) -> Dict:
         ifaces = interfaces()
-        sensor_if = self.cfg["network"].get("sensor_interface") or ""
+        sensor_if = self.cfg["network"].get("sensor_interface") or "auto"
+        auto_if = sensor_if == "auto"
+        if auto_if:
+            sensor_if = self._auto_interface(ifaces)
         sensor = next((i for i in ifaces if i["name"] == sensor_if), None)
         routes = {}
         for d in self.cfg.nav_destinations():
@@ -125,6 +142,7 @@ class NetworkCollector(PeriodicCollector):
         return {
             "interfaces": ifaces,
             "sensor_interface": sensor_if,
+            "sensor_interface_auto": auto_if,
             "sensor_link_up": (bool(sensor["up"] and sensor["carrier"] is not False)
                                if sensor else None),
             "default_route": default_route(),

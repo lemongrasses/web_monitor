@@ -51,7 +51,7 @@
 {% if pv %}
 <div class="panel mt-3 preview" data-preview="{{ pv.kind }}" data-url="/api/maint/preview/{{ device_key }}">
   <div class="panel-h">
-    <span><strong>Live view</strong> <span class="mono small muted ms-2">{{ pv.topic }}</span></span>
+    <span><strong>Live view</strong> <span class="mono small muted ms-2">{{ pv.topic if pv.topic else "topic found automatically" }}</span></span>
     {% if pv.kind == 'pointcloud' %}
     <span class="d-flex gap-1 align-items-center">
       <button class="btn btn-sm btn-outline-secondary" data-view="top">Top</button>

@@ -5,3 +5,4 @@ __pycache__/
 logs/
 dev/sample_data/
 .claude/
+*.tar.gz

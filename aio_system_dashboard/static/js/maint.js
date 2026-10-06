@@ -10,7 +10,7 @@
   };
   const TOPIC = {
     healthy: ["healthy", "Active"], low_rate: ["warning", "Low rate"],
-    stale: ["warning", "Stale"], missing: ["fault", "Missing"],
+    stale: ["warning", "Stale"], missing: ["fault", "Missing"], not_found: ["unknown", "Not found"],
   };
 
   window.maintPage = function () {

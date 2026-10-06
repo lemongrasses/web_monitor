@@ -21,6 +21,43 @@ TOPIC_HEALTHY = "healthy"
 TOPIC_LOW_RATE = "low_rate"
 TOPIC_STALE = "stale"
 TOPIC_MISSING = "missing"
+TOPIC_NOT_FOUND = "not_found"  # auto topic with no match: sensor not fitted, not an error
+
+
+# Names used for "auto" topics in fake mode (match dev/fake_state.json).
+FAKE_TOPIC_BY_TYPE = {
+    "sensor_msgs/msg/PointCloud2": "/ouster/points",
+    "sensor_msgs/msg/Imu": "/ouster/imu",
+    "sensor_msgs/msg/CameraInfo": "/camera/camera_info",
+    "sensor_msgs/msg/CompressedImage": "/camera/image_raw/compressed",
+    "sensor_msgs/msg/Image": "/camera/image_raw",
+    "nav_msgs/msg/Odometry": "/nav/odometry",
+}
+
+
+def pick_topic(topic_types: Dict[str, List[str]], types, hint: str = "", strict: bool = False,
+               avoid=("depth", "/nav/", "/odometry/raw", "/clock")) -> Optional[str]:
+    """Choose the topic to watch among those publishing one of ``types``.
+
+    Preference: name contains ``hint``; name avoids depth images and the nav / input
+    topics; earlier entry in ``types``; shorter name.
+    """
+    types = [types] if isinstance(types, str) else list(types)
+    cands = [n for n, ts in topic_types.items() if any(t in ts for t in types)]
+    if strict and hint:
+        cands = [n for n in cands if hint in n]
+    if not cands:
+        return None
+
+    def key(n):
+        type_rank = min(types.index(t) for t in topic_types[n] if t in types)
+        return (0 if hint and hint in n else 1,
+                any(a in n.lower() for a in avoid), type_rank, len(n), n)
+    return min(cands, key=key)
+
+
+def is_auto(name: Optional[str]) -> bool:
+    return not name or name == "auto"
 
 
 def stale_after_s(expected_hz: Optional[float]) -> float:
@@ -103,7 +140,10 @@ class Ros2Collector:
     def _run_fake(self) -> None:
         while not self._stop.is_set():
             topics = []
-            for t in self.watched:
+            for spec in self.watched:
+                t = dict(spec)
+                if is_auto(t.get("name")):
+                    t["name"] = FAKE_TOPIC_BY_TYPE.get(t.get("type", ""), "/auto")
                 f = self.fake.topic(t["name"])
                 expected = t.get("expected_hz")
                 if f["state"] == TOPIC_MISSING:
@@ -203,7 +243,14 @@ class Ros2Collector:
             return
 
         watched_out = []
-        for t in self.watched:
+        for spec in self.watched:
+            t = dict(spec)
+            if is_auto(t.get("name")):
+                found = pick_topic(topic_types, t.get("type", ""), t.get("hint", ""),
+                                   bool(t.get("strict")))
+                short = t.get("type", "topic").rsplit("/", 1)[-1]
+                t["name"] = found or f"(no {short} topic)"
+                t["auto"] = True
             name = t["name"]
             types = topic_types.get(name)
             pubs = node.count_publishers(name) if types else 0
@@ -245,5 +292,7 @@ class Ros2Collector:
             "subscribers": subs,
             "rate_hz": round(rate, 2),
             "age_s": age,
-            "state": classify_topic(present, pubs, age, rate, expected),
+            "state": (TOPIC_NOT_FOUND if t.get("auto") and not present
+                      else classify_topic(present, pubs, age, rate, expected)),
+            "auto": bool(t.get("auto")),
         }

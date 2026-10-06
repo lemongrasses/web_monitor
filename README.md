@@ -103,16 +103,24 @@ sudo deploy/install.sh --user nvidia \
 - installs and starts `aio-dashboard.service`, which runs as the ROS user with ROS 2 Humble sourced so `rclpy` works
 - writes `/etc/sudoers.d/aio-dashboard`, which allows only `systemctl restart <unit>` for units with `restartable: true`
 
-Then fill in the `TODO` items in `/opt/aio-dashboard/config/dashboard.yaml`:
-- camera and Ouster IP addresses
-- systemd unit names
-- the sensor NIC
-- ROS node and topic names (prefer light topics such as `camera_info` over `image_raw`)
-- the data root path
-- the `aio_nav.yaml` path
+No configuration is required. At start-up the dashboard detects:
 
-After editing, run `sudo systemctl restart aio-dashboard`. Re-run `install.sh` if you change which
-units are restartable.
+| Setting | `auto` behaviour |
+|---------|------------------|
+| `nav.aio_nav_config` | newest `aio_nav.yaml` under `/home/*/aio-nav-ros/install/...` or `~/.local/opt/aio-nav-ros/...` (or `$AIO_NAV_CONFIG`) |
+| `data.roots` | folder of an absolute `fusion_txt_path`, else `output/` next to aio-nav-ros `install/` |
+| `network.sensor_interface` | interface that routes to the sensors, else the default-route interface |
+| ROS topics, Live view topics | first topic of the right message type (`hint` prefers a name, `strict` requires it) |
+
+Optional settings stay quiet when they are empty:
+- A device without a `host` shows "Not set up" and is never pinged.
+- A driver unit that doesn't exist shows "Not installed" and raises no warning.
+- An auto topic that finds nothing shows "Not found".
+
+To pin anything down, edit `/opt/aio-dashboard/config/dashboard.yaml`, then run
+`sudo systemctl restart aio-dashboard`. Re-running `install.sh` keeps your config. Add
+`--reset-config` to replace it with the shipped default; the old one is saved as `.bak`.
+Re-run `install.sh` after changing which units are restartable.
 
 ## Security notes (closed sensor LAN, spec §4)
 

@@ -7,7 +7,7 @@
   <div class="col-lg-7">
     <div class="panel h-100">
       <div class="panel-h"><strong>Interfaces</strong>
-        <span class="small">Sensor LAN <span class="mono" x-text="net.sensor_interface || 'not configured'"></span> {{ chip("linkChip()") }}</span></div>
+        <span class="small">Sensor LAN <span class="mono" x-text="net.sensor_interface || 'not found'"></span><span class="muted" x-show="net.sensor_interface_auto"> (auto)</span> {{ chip("linkChip()") }}</span></div>
       <div class="table-responsive">
         <table class="table table-sm mb-0 align-middle">
           <thead><tr><th>Interface</th><th>Link</th><th>IPv4</th><th class="text-end">Speed</th><th class="text-end">MTU</th></tr></thead>
