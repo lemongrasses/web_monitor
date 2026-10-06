@@ -7,6 +7,43 @@
   ROS 2 monitoring unavailable: <span class="mono" x-text="ros.error || 'starting'"></span>
 </div>
 
+<section class="panel mb-3" aria-labelledby="rosenv-title">
+  <div class="panel-h"><strong id="rosenv-title">ROS environment</strong>
+    <span class="muted small">same for the dashboard, AIO NAV and DSO</span></div>
+  <div class="panel-b">
+    <div class="vrow"><span class="k">Active</span>
+      <span><strong x-text="rosMode.label"></strong>
+        <span class="muted small" x-show="rosMode.domain_id !== null" x-text="'domain ' + rosMode.domain_id + ', ' + (rosMode.localhost_only ? 'this computer only' : 'network')"></span>
+        <span class="muted small" x-show="rosMode.domain_id === null">taken from the service environment</span></span></div>
+    <fieldset class="ros-modes mt-2" :disabled="rosBusy">
+      <legend class="visually-hidden">ROS environment</legend>
+      <template x-for="m in rosMode.modes" :key="m.name">
+        <label class="ros-mode" :class="rosPick === m.name ? 'on' : ''">
+          <input type="radio" name="rosmode" :value="m.name" x-model="rosPick">
+          <span class="ros-mode-name" x-text="m.label"></span>
+          <span class="muted small" x-text="'domain ' + m.domain_id + ', ' + (m.localhost_only ? 'this computer only' : 'network')"></span>
+        </label>
+      </template>
+    </fieldset>
+    <div class="mt-3 d-flex flex-wrap align-items-center gap-2">
+      <template x-if="!rosConfirm">
+        <button type="button" class="btn btn-sm btn-primary" :disabled="rosBusy || !rosChanged" @click="rosConfirm = true">Apply</button>
+      </template>
+      <template x-if="rosConfirm">
+        <div class="ctl-confirm" role="alertdialog" aria-labelledby="ros-ask">
+          <span class="ctl-ask" id="ros-ask">This stops AIO NAV and DSO and restarts the dashboard (a few seconds). The camera and IMU drivers are not touched.</span>
+          <div class="ctl-btns">
+            <button type="button" class="btn btn-sm btn-danger" @click="applyRosMode()">Switch now</button>
+            <button type="button" class="btn btn-sm btn-outline-secondary" @click="rosConfirm = false">Cancel</button>
+          </div>
+        </div>
+      </template>
+    </div>
+    <div class="ctl-msg mt-2" :class="rosMsgClass" role="status" aria-live="polite" x-text="rosMsg"></div>
+    <p class="muted small mt-2 mb-0">Live matches the camera and IMU drivers (domain 10). Use Bag replay only while playing a bag. After a switch, start AIO NAV again from the Overview page.</p>
+  </div>
+</section>
+
 <div class="row g-3">
   <div class="col-lg-4">
     <div class="panel h-100">

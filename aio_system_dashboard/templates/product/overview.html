@@ -9,7 +9,9 @@
   <div class="ctl-id">
     <span class="strip-title" id="ctl-title">AIO NAV</span>{{ chip('ctlChip()') }}
   </div>
-  <div class="ctl-hint muted" x-text="ctlHint"></div>
+  <div class="ctl-hint muted"><span x-text="ctlHint"></span>
+    <span class="ctl-mode" :class="ctl.ros && ctl.ros.mode === 'bag' ? 'bag' : ''" x-show="ctl.ros && ctl.ros.domain_id !== null"
+          x-text="ctl.ros ? ctl.ros.label + ' · domain ' + ctl.ros.domain_id : ''"></span></div>
   <div class="ctl-actions" role="group" aria-label="AIO NAV actions">
     <template x-if="!ctlConfirm">
       <div class="ctl-btns">

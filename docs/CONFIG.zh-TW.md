@@ -231,8 +231,8 @@ ros:
 | 項目 | 預設值 | 說明 |
 |------|--------|------|
 | `enabled` | `true` | `false` 會關閉 ROS 2 監看，topic 指示燈會顯示 Unknown。 |
-| `domain_id` | `null` | 儀表板使用的 ROS 網域。`null` 沿用服務的環境變數。設定後,從首頁啟動 AIO NAV 與 DSO 時也會使用同一個值(否則由啟動程式從 `aio_nav.yaml` 的 `ros_domain_id` 讀取)。**即時:`10`。播放 bag:`13`。** |
-| `localhost_only` | `null` | `ROS_LOCALHOST_ONLY` 的設定。**即時:`1`。播放 bag:`0`。** 修改後需重啟儀表板,並重新 Stop 再 Start AIO NAV。 |
+| `mode` | `null`(預設設定檔:`live`) | 在維護頁面 **ROS 2** 另外選擇之前使用的 ROS 環境預設組。`null` 表示沿用服務的環境變數。在維護頁面選的組合存在 `state/ros_mode.json`(優先於這個設定),會套用到儀表板自己的 ROS 連線,以及從首頁啟動的 AIO NAV 與 DSO。 |
+| `modes` | `live`:網域 10、僅本機;`bag`:網域 13、網路 | 預設組(`label`、`domain_id`、`localhost_only`)。**Live** 與相機、IMU 驅動一致;只有播放 bag 時才用 **Bag replay**。在維護頁面切換會停止 AIO NAV 與 DSO 並重啟儀表板(幾秒鐘),之後需要再次啟動 AIO NAV。相機與 IMU 驅動不受影響。 |
 | `graph_interval_s` | `2` | 重新整理節點與 topic 清單的間隔。 |
 | `rate_window_s` | `2` | 計算每個 topic 頻率所用的時間窗。 |
 | `nodes` | `[]` | 必須存在的節點名稱（顯示於 ROS 2 頁面，缺少時會產生警告）。 |

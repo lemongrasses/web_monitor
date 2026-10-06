@@ -263,8 +263,8 @@ ros:
 | Key | Default | Meaning |
 |-----|---------|---------|
 | `enabled` | `true` | `false` turns ROS 2 monitoring off. Topic lamps then show Unknown. |
-| `domain_id` | `null` | ROS domain for the dashboard. `null` keeps the environment of the service. When set, the same value is given to AIO NAV and DSO when they are started from the Overview page (otherwise the wrappers read `ros_domain_id` from `aio_nav.yaml`). **Live: `10`. Replaying a bag: `13`.** |
-| `localhost_only` | `null` | Same for `ROS_LOCALHOST_ONLY`. **Live: `1`. Replaying a bag: `0`.** After changing either, restart the dashboard, then Stop and Start AIO NAV. |
+| `mode` | `null` (shipped config: `live`) | The ROS environment preset in use until someone picks another on **Maintenance > ROS 2**. `null` keeps the environment of the service. The chosen preset is stored in `state/ros_mode.json` (it wins over this setting) and is applied to the dashboard's own ROS connection and to AIO NAV and DSO when they are started from the Overview page. |
+| `modes` | `live`: domain 10, localhost only; `bag`: domain 13, network | The presets (`label`, `domain_id`, `localhost_only`). **Live** matches the camera and IMU drivers; use **Bag replay** only while playing a bag. Switching on the maintenance page stops AIO NAV and DSO and restarts the dashboard (a few seconds); start AIO NAV again afterwards. The camera and IMU drivers are not touched. |
 | `graph_interval_s` | `2` | How often the list of nodes and topics is refreshed. |
 | `rate_window_s` | `2` | Time window used to measure each topic's rate. |
 | `nodes` | `[]` | Node names that must exist (shown on the ROS 2 page; a missing one is a warning). |

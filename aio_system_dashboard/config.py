@@ -1,6 +1,7 @@
 """Dashboard configuration: built-in defaults deep-merged with a YAML file."""
 
 import copy
+import json
 import glob
 import logging
 import os
@@ -40,9 +41,12 @@ DEFAULTS: Dict[str, Any] = {
     "network": {"sensor_interface": "auto", "ping_interval_s": 5.0},
     "system": {"interval_s": 2.0, "disk_paths": ["/"], "disk_warn_percent": 90, "temp_warn_c": 85},
     "ros": {"enabled": True, "graph_interval_s": 2.0, "rate_window_s": 2.0, "nodes": [], "topics": [],
-            # None: keep the environment. Otherwise set before ROS starts and also given to AIO NAV
-            # and DSO when the dashboard launches them (live: 10 / 1, bag replay: 13 / 0).
-            "domain_id": None, "localhost_only": None},
+            # ROS environment presets; the active one is chosen on Maintenance > ROS 2 (stored in
+            # state/ros_mode.json) or by ros.mode here. It is set before ROS starts and also given
+            # to AIO NAV and DSO when the dashboard launches them. mode: null keeps the environment.
+            "mode": None,
+            "modes": {"live": {"label": "Live", "domain_id": 10, "localhost_only": 1},
+                      "bag": {"label": "Bag replay", "domain_id": 13, "localhost_only": 0}}},
     "data": {"roots": "auto"},  # "auto": the aio-nav-ros output folder
     # Watches DSO's odometry and restarts DSO (only DSO) when it turns NaN.
     "dso_watchdog": {"enabled": False, "topic": "/dso/odometry", "service": "dso",
@@ -178,14 +182,50 @@ class Config:
         rate = self.data["nav"].get("expected_rate_hz")
         return float(rate) if rate else self.aio_nav.get("output_rate")
 
+    # ---- ROS environment mode (live 10/1, bag replay 13/0)
+    def ros_mode_file(self) -> Path:
+        return resolve_path("state/ros_mode.json")
+
+    def ros_mode(self) -> Optional[str]:
+        """Active preset: the one chosen on the maintenance page, else ros.mode, else None."""
+        modes = self.data["ros"]["modes"]
+        try:
+            chosen = json.loads(self.ros_mode_file().read_text(encoding="utf-8")).get("mode")
+        except (OSError, ValueError, AttributeError):
+            chosen = None
+        if chosen in modes:
+            return chosen
+        configured = self.data["ros"].get("mode")
+        return configured if configured in modes else None
+
+    def save_ros_mode(self, mode: str) -> None:
+        if mode not in self.data["ros"]["modes"]:
+            raise ValueError(f"unknown ROS mode {mode!r}")
+        f = self.ros_mode_file()
+        f.parent.mkdir(parents=True, exist_ok=True)
+        f.write_text(json.dumps({"mode": mode}) + "\n", encoding="utf-8")
+
     def ros_env(self) -> Dict[str, str]:
-        """ROS_DOMAIN_ID / ROS_LOCALHOST_ONLY from ros.domain_id / ros.localhost_only (if set)."""
-        r, env = self.data["ros"], {}
-        if r.get("domain_id") is not None:
-            env["ROS_DOMAIN_ID"] = str(int(r["domain_id"]))
-        if r.get("localhost_only") is not None:
-            env["ROS_LOCALHOST_ONLY"] = "1" if int(r["localhost_only"]) else "0"
-        return env
+        """ROS_DOMAIN_ID / ROS_LOCALHOST_ONLY of the active mode ({} = keep the environment)."""
+        mode = self.ros_mode()
+        if mode is None:
+            return {}
+        m = self.data["ros"]["modes"][mode]
+        return {"ROS_DOMAIN_ID": str(int(m["domain_id"])),
+                "ROS_LOCALHOST_ONLY": "1" if int(m["localhost_only"]) else "0"}
+
+    def ros_mode_info(self) -> Dict[str, Any]:
+        mode = self.ros_mode()
+        modes = self.data["ros"]["modes"]
+        cur = modes.get(mode) if mode else None
+        return {
+            "mode": mode,
+            "label": cur["label"] if cur else "Environment",
+            "domain_id": cur["domain_id"] if cur else None,
+            "localhost_only": bool(cur["localhost_only"]) if cur else None,
+            "modes": [{"name": k, "label": v["label"], "domain_id": v["domain_id"],
+                       "localhost_only": bool(v["localhost_only"])} for k, v in modes.items()],
+        }
 
     def launcher(self, name: str) -> Optional[str]:
         """Path of an aio-nav-ros wrapper (aio-nav, aio-nav-dso) from the install/ folder."""

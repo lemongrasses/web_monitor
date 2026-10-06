@@ -72,11 +72,14 @@ system:
 # strict: true requires it). An auto topic that finds nothing shows "Not found", no warning.
 ros:
   enabled: true
-  # ROS environment. Live (drivers on domain 10, localhost only): 10 / 1.
-  # Replaying a bag: 13 / 0, then restart the dashboard. The same values are given to AIO NAV and
-  # DSO when started from the Overview page (otherwise they read them from aio_nav.yaml).
-  domain_id: 10
-  localhost_only: 1
+  # ROS environment preset: live (domain 10, localhost only, same as the camera/IMU drivers) or bag
+  # (13 / network). Switch on Maintenance > ROS 2; the choice is kept in state/ros_mode.json and
+  # this value is used until then. The mode is also given to AIO NAV and DSO when started from the
+  # Overview page. Change the presets below only if the drivers use other values.
+  mode: live
+  modes:
+    live: { label: Live,       domain_id: 10, localhost_only: 1 }
+    bag:  { label: Bag replay, domain_id: 13, localhost_only: 0 }
   graph_interval_s: 2
   rate_window_s: 2
   nodes: [/basler/pylon_ros2_camera_node, /openrtk330_driver]

@@ -8,3 +8,4 @@ dev/sample_data/
 *.tar.gz
 build/
 dist/
+state/

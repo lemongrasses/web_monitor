@@ -2,6 +2,7 @@
 
 from flask import Response, abort, jsonify, render_template, request
 
+from ..actions import process_control, ros_mode
 from ..actions.registry import ActionError
 from ..media.tap import PreviewError, meta_header
 from .common import create_base_app
@@ -48,6 +49,7 @@ def create_maintenance_app(ctx):
                 "aio_nav": ctx.cfg.aio_nav,
                 "nav_bind": ctx.cfg["nav"]["udp_bind"],
                 "fake": ctx.cfg.fake,
+                "ros_mode": ctx.cfg.ros_mode_info(),
             },
         })
 
@@ -87,5 +89,25 @@ def create_maintenance_app(ctx):
             return jsonify(ctx.actions.run(action_id, target))
         except ActionError as e:
             return jsonify({"success": False, "summary": str(e)}), e.status
+
+    @app.route("/api/maint/ros-mode", methods=["POST"])
+    def api_ros_mode():
+        if request.headers.get("X-Requested-With") != "aio-dashboard" or not request.is_json:
+            return jsonify({"success": False, "summary": "bad request"}), 400
+        mode = (request.get_json(silent=True) or {}).get("mode")
+        if not isinstance(mode, str):
+            return jsonify({"success": False, "summary": "mode required"}), 400
+
+        def stop_nav():
+            if not process_control.members(ctx.cfg):
+                return {"success": True}
+            return ctx.actions.run("stop_process", process_control.GROUP)
+
+        try:
+            result = ros_mode.apply_mode(ctx.cfg, mode, stop_nav, ctx.request_restart, ctx.events)
+        except ActionError as e:
+            return jsonify({"success": False, "summary": str(e)}), e.status
+        status = result.pop("status", 200)
+        return jsonify(result), status
 
     return app

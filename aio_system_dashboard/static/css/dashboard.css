@@ -222,3 +222,12 @@ h1, h2, h3 { font-family: var(--cond); font-weight: 600; letter-spacing: .005em;
   .ctl-btns .btn { flex: 1; }
   .ctl-confirm { justify-content: flex-start; }
 }
+
+/* ---------- ROS environment (maintenance) + mode tag (overview) ---------- */
+.ros-modes { display: flex; flex-wrap: wrap; gap: .5rem; border: 0; padding: 0; margin: 0; }
+.ros-mode { display: flex; align-items: center; gap: .5rem; padding: .5rem .8rem; border: 1px solid var(--rule); border-radius: 2px; background: var(--panel); cursor: pointer; min-width: 15rem; }
+.ros-mode.on { border-color: var(--ink); box-shadow: inset 3px 0 0 var(--ink); }
+.ros-mode-name { font-family: var(--cond); font-weight: 700; font-size: var(--t-l); }
+.ros-mode input { accent-color: var(--ink); }
+.ctl-mode { margin-left: .6rem; padding: .05rem .5rem; border: 1px solid var(--rule); border-radius: 2px; font-size: var(--t-xs); font-weight: 600; color: var(--ink-2); white-space: nowrap; }
+.ctl-mode.bag { color: var(--caution); border-color: var(--caution); }

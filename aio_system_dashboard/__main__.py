@@ -65,6 +65,13 @@ class DashboardContext:
         self.data = DataRoots(cfg["data"]["roots"])
         self._workers = [self.nav, self.system, self.services, self.network, self.ros, self.health]
 
+    def request_restart(self):
+        """Stop this process shortly (systemd Restart=always brings it back with the new settings)."""
+        if self.cfg.fake:
+            logger.info("fake mode: restart requested, not restarting")
+            return
+        threading.Timer(1.0, lambda: os.kill(os.getpid(), signal.SIGTERM)).start()
+
     def start(self):
         self.dso_watchdog._publish()
         for w in self._workers:
@@ -96,7 +103,9 @@ def main(argv=None) -> int:
     if cfg.ros_env():
         logger.info("ROS environment from config: %s", cfg.ros_env())
     ctx = DashboardContext(cfg)
-    ctx.events.add("info", "system", "Dashboard started", "fake mode" if cfg.fake else "")
+    info = cfg.ros_mode_info()
+    ros_text = f"ROS {info['label']}" + (f" (domain {info['domain_id']})" if info["domain_id"] is not None else "")
+    ctx.events.add("info", "system", "Dashboard started", "fake mode" if cfg.fake else ros_text)
     ctx.start()
 
     servers = []

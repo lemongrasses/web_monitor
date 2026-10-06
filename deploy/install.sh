@@ -41,7 +41,7 @@ id "$RUN_USER" >/dev/null 2>&1 || { echo "user $RUN_USER does not exist" >&2; ex
 python3 -c 'import sys; assert sys.version_info >= (3, 8)' || { echo "python3 >= 3.8 required" >&2; exit 1; }
 
 echo "==> installing to $PREFIX (service user: $RUN_USER)"
-mkdir -p "$PREFIX"/{config,logs,lib,dev,bin,docs}
+mkdir -p "$PREFIX"/{config,logs,lib,dev,bin,docs,state}
 # Replace the app completely, so switching from source to a compiled release leaves no .py behind.
 rm -rf "$PREFIX/aio_system_dashboard" "$PREFIX"/aio_system_dashboard*.so
 shopt -s nullglob
@@ -97,7 +97,7 @@ fi
 PYTHONPATH="$PREFIX/lib" python3 -c 'import flask, yaml, psutil' \
   || { echo "dependency check failed (wheels must match this Python/arch)" >&2; exit 1; }
 
-chown -R "$RUN_USER": "$PREFIX/logs" "$PREFIX/dev"
+chown -R "$RUN_USER": "$PREFIX/logs" "$PREFIX/dev" "$PREFIX/state"
 
 echo "==> systemd unit aio-dashboard.service"
 sed -e "s|@USER@|$RUN_USER|g" -e "s|@PREFIX@|$PREFIX|g" "$SRC/deploy/aio-dashboard.service" \

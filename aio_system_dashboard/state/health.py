@@ -279,8 +279,10 @@ class HealthEngine:
         enabled = bool(self.cfg["nav"]["allow_control"] and svc_cfg.get("launch"))
         state = nav_svc.get("state") or "unknown"
         installed = bool(svc_cfg.get("launch") and self.cfg.launcher(svc_cfg["launch"]))
+        info = self.cfg.ros_mode_info()
         return {"enabled": enabled, "state": state, "installed": installed,
-                "label": svc_cfg.get("label", "AIO NAV")}
+                "label": svc_cfg.get("label", "AIO NAV"),
+                "ros": {"mode": info["mode"], "label": info["label"], "domain_id": info["domain_id"]}}
 
     def _destinations(self, network: Dict) -> List[Dict]:
         routes = network.get("nav_routes") or {}
