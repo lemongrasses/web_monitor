@@ -161,5 +161,37 @@ class TailTest(unittest.TestCase):
             self.assertEqual(process_control._tail(f), "two | three | four")
 
 
+
+class UserResultTest(unittest.TestCase):
+    """The Overview page must not mention DSO, whatever DSO did."""
+
+    def setUp(self):
+        _isolate_state(self)
+        self.cfg = make()
+
+    def _result(self, nav_ok, dso_ok, dso_text="DSO exited right after starting: Assertion failed (log: /x/dso.log)"):
+        return {"success": nav_ok and dso_ok, "summary": "AIO NAV started; " + dso_text,
+                "parts": [{"key": "aio_nav", "ok": nav_ok, "text": "AIO NAV started" if nav_ok else
+                           "AIO NAV did not start: bind error (log: /x/aio_nav.log)"},
+                          {"key": "dso", "ok": dso_ok, "text": dso_text}]}
+
+    def test_a_failed_dso_does_not_make_start_fail_or_show_up(self):
+        r = process_control.user_result(self.cfg, "start", self._result(True, False))
+        self.assertEqual(r, {"success": True, "summary": "AIO NAV started"})
+
+    def test_a_failed_filter_is_reported_without_server_paths(self):
+        r = process_control.user_result(self.cfg, "start", self._result(False, True, "DSO started"))
+        self.assertFalse(r["success"])
+        self.assertEqual(r["summary"], "AIO NAV did not start: bind error")
+        self.assertNotIn("dso", str(r).lower())
+
+    def test_stop_and_already_running(self):
+        r = process_control.user_result(self.cfg, "stop", {"success": True, "summary": "stopped 2 process(es)"})
+        self.assertEqual(r, {"success": True, "summary": "AIO NAV stopped"})
+        res = {"success": True, "parts": [{"key": "aio_nav", "ok": True, "text": "AIO NAV already running"},
+                                          {"key": "dso", "ok": True, "text": "DSO already running"}]}
+        self.assertEqual(process_control.user_result(self.cfg, "start", res)["summary"], "AIO NAV already running")
+
+
 if __name__ == "__main__":
     unittest.main()

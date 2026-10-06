@@ -221,16 +221,39 @@ def control(cfg, target: str, verb: str, grace_s: float, fake=None) -> Dict:
         return {"success": True, "summary": f"(fake) {verb} {', '.join(keys)}"}
 
     notes: List[str] = []
+    parts: List[Dict] = []     # per program, for callers that report only part of the group
     ok = True
     if verb in ("stop", "restart"):
         r = stop_many(cfg, keys, grace_s)
         ok &= r["ok"]
         notes.append(r["text"])
+        parts += [{"key": k, "ok": r["ok"], "text": r["text"]} for k in keys]
         if not r["ok"]:
-            return {"success": False, "summary": "; ".join(notes)}
+            return {"success": False, "summary": "; ".join(notes), "parts": parts}
+        parts = []
     if verb in ("start", "restart"):
         for k in keys:
             r = start_one(cfg, k)
             ok &= r["ok"]
             notes.append(r["text"])
-    return {"success": ok, "summary": "; ".join(notes)}
+            parts.append({"key": k, "ok": r["ok"], "text": r["text"]})
+    return {"success": ok, "summary": "; ".join(notes), "parts": parts}
+
+
+def user_result(cfg, verb: str, result: Dict) -> Dict:
+    """What the Overview page may show: AIO NAV only.
+
+    The group also contains DSO, but the user view does not mention it. A DSO that fails to start
+    does not make the Start look failed; its state is in Maintenance and the event log.
+    """
+    nav_key = cfg["nav"]["service"]
+    label = cfg["services"].get(nav_key, {}).get("label", "AIO NAV")
+    part = next((p for p in result.get("parts", []) if p["key"] == nav_key), None)
+    ok = part["ok"] if part is not None else bool(result.get("success"))
+    past = {"start": "started", "stop": "stopped", "restart": "restarted"}.get(verb, verb)
+    if ok:
+        text = part["text"] if part and "already" in part["text"] else f"{label} {past}"
+    else:
+        text = part["text"] if part else f"{label} could not be {past}"
+        text = text.split(" (log: ")[0]
+    return {"success": ok, "summary": text}

@@ -85,7 +85,7 @@
         if (!this.ctl.installed) return "AIO NAV launcher not found in the aio-nav-ros install folder.";
         if (st === "running") return "Navigation filter is running.";
         if (st === "failed") return "The service stopped with an error. Start it again, or check the logs.";
-        if (st === "stopped") return "Not running. Start launches the filter and DSO, like the AIO Nav app.";
+        if (st === "stopped") return "Not running. No navigation output until it is started.";
         return "";
       },
       get ctlMsg() {

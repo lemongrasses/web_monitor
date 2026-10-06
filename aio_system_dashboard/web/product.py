@@ -29,7 +29,7 @@ def create_product_app(ctx):
 
     @app.route("/api/nav/control", methods=["POST"])
     def api_nav_control():
-        """Start / stop / restart AIO NAV and DSO together, like the AIO Nav desktop app."""
+        """Start / stop / restart AIO NAV (with the programs that go with it, like the AIO Nav app)."""
         if request.headers.get("X-Requested-With") != "aio-dashboard" or not request.is_json:
             return jsonify({"success": False, "summary": "bad request"}), 400
         if not ctx.cfg["nav"]["allow_control"]:
@@ -40,7 +40,8 @@ def create_product_app(ctx):
         if action_id is None:
             return jsonify({"success": False, "summary": "action must be start, stop or restart"}), 400
         try:
-            return jsonify(ctx.actions.run(action_id, process_control.GROUP))
+            result = ctx.actions.run(action_id, process_control.GROUP)
+            return jsonify(process_control.user_result(ctx.cfg, verb, result))
         except ActionError as e:
             return jsonify({"success": False, "summary": str(e)}), e.status
 
