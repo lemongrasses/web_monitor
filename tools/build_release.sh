@@ -52,7 +52,7 @@ cp config/dashboard.yaml "$STAGE/config/"
 cp -r wheels "$STAGE/"
 cp deploy/aio-dashboard deploy/aio-dashboard.service deploy/aio-nav.service "$STAGE/deploy/"
 cp deploy/install.sh "$STAGE/install.sh"
-cp docs/CONFIG.md docs/CONFIG.zh-TW.md "$STAGE/docs/"
+cp docs/CONFIG.md docs/CONFIG.zh-TW.md docs/OPERATION.md docs/OPERATION.zh-TW.md "$STAGE/docs/"
 mkdir -p "$STAGE/dev" && cp dev/fake_state.json "$STAGE/dev/"   # data for --fake demos, not code
 echo "$VERSION" > "$STAGE/VERSION"
 cat > "$STAGE/README.txt" <<EOF
@@ -60,6 +60,7 @@ AIO System Dashboard $VERSION ($ARCH, Python $PYV) — compiled release, no sour
 
 Install:   sudo ./install.sh --user <ros-user>      (add --reset-config to replace settings)
 Then:      aio-dashboard status | config | logs | restart
+Operation: docs/OPERATION.md  /  docs/OPERATION.zh-TW.md
 Settings:  docs/CONFIG.md  /  docs/CONFIG.zh-TW.md
 After installing, this folder can be deleted.
 EOF
