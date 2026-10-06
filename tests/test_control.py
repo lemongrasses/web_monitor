@@ -3,6 +3,7 @@ import os
 import stat
 import tempfile
 import unittest
+from pathlib import Path
 
 from aio_system_dashboard.actions import process_control
 from aio_system_dashboard.actions.registry import ActionError, ActionRegistry
@@ -127,6 +128,17 @@ class WorkDirTest(unittest.TestCase):
                 f.write("aio_nav_node:\n  ros__parameters:\n    output_rate: 100.0\n")
             self.assertEqual(os.path.realpath(process_control.work_dir(make(aio_nav_path=yml))),
                              os.path.realpath(root))
+
+
+
+class TailTest(unittest.TestCase):
+    def test_error_lines_come_first(self):
+        with tempfile.TemporaryDirectory() as d:
+            f = Path(d) / "x.log"
+            f.write_text("[INFO] up\n[INFO] topics ready\nprog: Assertion `a' failed.\n[ros2run]: Aborted\n[INFO] bye\n")
+            self.assertEqual(process_control._tail(f), "prog: Assertion `a' failed. | [ros2run]: Aborted")
+            f.write_text("one\ntwo\nthree\nfour\n")
+            self.assertEqual(process_control._tail(f), "two | three | four")
 
 
 if __name__ == "__main__":

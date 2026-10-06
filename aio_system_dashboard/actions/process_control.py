@@ -71,12 +71,17 @@ def _reap(proc: subprocess.Popen) -> None:
     threading.Thread(target=proc.wait, daemon=True, name="reap").start()
 
 
+ERROR_WORDS = ("assertion", "aborted", "error", "traceback", "terminate", "segmentation", "fatal")
+
+
 def _tail(path: Path, n: int = 3) -> str:
+    """The most telling lines of a program's log: error lines if there are any, else the last ones."""
     try:
-        lines = [l.strip() for l in path.read_text(errors="replace").splitlines() if l.strip()]
+        lines = [l.strip() for l in path.read_text(errors="replace").splitlines() if l.strip()][-60:]
     except OSError:
         return ""
-    return " | ".join(lines[-n:])
+    errors = [l for l in lines if any(w in l.lower() for w in ERROR_WORDS)]
+    return " | ".join((errors or lines)[-n:])
 
 
 def work_dir(cfg) -> str:
@@ -118,6 +123,7 @@ def start_one(cfg, key: str, wait_s: float = 4.0, stable_s: float = 3.0) -> Dict
         time.sleep(0.2)
     if seen:  # a program that dies right after launching is not "started"
         time.sleep(stable_s)
+        time.sleep(0.3)  # let a crashing program finish writing its log
         if _pids(cfg, key):
             return {"ok": True, "text": f"{label} started"}
     detail = _tail(log)
