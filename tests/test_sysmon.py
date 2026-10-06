@@ -350,3 +350,23 @@ class SnapshotPermissionTest(TmpTest):
         s = Store(small_cfg(self.dir), free_mb=lambda _p: 50000)
         path = s.write_snapshot("t", {"cmd": "secret --token abc"})
         self.assertEqual(os.stat(path).st_mode & 0o007, 0)            # no access for others
+
+
+class CommandLineTest(unittest.TestCase):
+    """The exact command lines used by the service file and by people."""
+
+    def test_the_service_command_line_parses(self):
+        import re
+        from aio_sysmon.__main__ import build_parser
+        unit = open(os.path.join(os.path.dirname(__file__), "..", "deploy", "aio-sysmon.service")).read()
+        exec_line = re.search(r"^ExecStart=/usr/bin/python3 -m aio_sysmon (.*)$", unit, re.M).group(1)
+        args = build_parser().parse_args(exec_line.replace("@PREFIX@", "/opt/x").split())
+        self.assertEqual((args.cmd, args.config), ("run", "/opt/x/config/sysmon.yaml"))
+
+    def test_options_work_before_and_after_the_command(self):
+        from aio_sysmon.__main__ import build_parser
+        p = build_parser()
+        self.assertEqual(p.parse_args(["--config", "/a", "status"]).config, "/a")
+        self.assertEqual(p.parse_args(["status", "--config", "/b", "--dir", "/d"]).config, "/b")
+        self.assertEqual(p.parse_args(["status"]).dir, None)
+        self.assertEqual(p.parse_args(["report", "--hours", "2"]).hours, 2.0)

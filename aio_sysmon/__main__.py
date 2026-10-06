@@ -16,7 +16,7 @@ import os
 import sys
 import time
 
-from . import __version__, config as cfgmod, report as rp
+from . import __version__, config as cfgmod, report as rp, sources
 from .ring import read_ring
 
 DEFAULT_CONFIG = "/opt/aio-dashboard/config/sysmon.yaml"
@@ -38,10 +38,12 @@ def cmd_status(args) -> int:
         pass
     st = os.statvfs("/")
     print(f"aio-sysmon {__version__}   directory {base}")
-    print(f"space used: {used / 1048576:.1f} MB of the {cfg['max_total_mb']} MB cap;  disk free: {st.f_bavail * st.f_frsize / 1048576 / 1024:.1f} GB")
+    cap_mb = cfg["max_total_mb"] if cfg["max_total_mb"] is not None else cfgmod.default_max_total_mb(sources.capacity())
+    print(f"space used: {used / 1048576:.1f} MB of the {cap_mb:.0f} MB cap;  disk free: {st.f_bavail * st.f_frsize / 1048576 / 1024:.1f} GB")
     if lk:
         print(f"latest record: {rp.fmt_ts(lk['t'])} ({time.time() - lk['t']:.0f} s ago)  cpu {lk.get('b')}%  load {lk.get('l')}  "
-              f"mem avail {lk.get('a')} MB  temp {lk.get('T')} C  vin {lk.get('v')} mV  disk write {lk.get('fs')} ms")
+              f"mem avail {lk.get('a', '-')} MB  temp {lk.get('T', '-')} C  vin {lk.get('v', '-')} mV  "
+              f"disk write {lk.get('fs', '-')} ms")
         if time.time() - lk["t"] > 30:
             print("WARNING: the recorder is not writing (last record is older than 30 s)")
     else:
@@ -129,27 +131,36 @@ def cmd_snapshots(args) -> int:
     return 0
 
 
-def main(argv=None) -> int:
+def build_parser() -> argparse.ArgumentParser:
     ap = argparse.ArgumentParser(prog="aio-sysmon", description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--config", default=DEFAULT_CONFIG)
     ap.add_argument("--dir", help="log directory (default: from the config)")
+    # --config / --dir are accepted before or after the command (the service uses "run --config ...")
+    common = argparse.ArgumentParser(add_help=False)
+    common.add_argument("--config", default=argparse.SUPPRESS)
+    common.add_argument("--dir", default=argparse.SUPPRESS)
     sub = ap.add_subparsers(dest="cmd")
-    sub.add_parser("run")
-    sub.add_parser("status")
-    r = sub.add_parser("report")
+    sub.add_parser("run", parents=[common])
+    sub.add_parser("status", parents=[common])
+    r = sub.add_parser("report", parents=[common])
     r.add_argument("--hours", type=float, default=6)
     r.add_argument("--since", help='"YYYY-MM-DD HH:MM"')
-    c = sub.add_parser("last-crash")
+    c = sub.add_parser("last-crash", parents=[common])
     c.add_argument("--rows", type=int, default=90)
-    g = sub.add_parser("ring")
+    g = sub.add_parser("ring", parents=[common])
     g.add_argument("--rows", type=int, default=60)
-    e = sub.add_parser("events")
+    e = sub.add_parser("events", parents=[common])
     e.add_argument("--hours", type=float, default=24)
     e.add_argument("--kind")
     e.add_argument("--rows", type=int, default=100)
-    s = sub.add_parser("snapshots")
+    s = sub.add_parser("snapshots", parents=[common])
     s.add_argument("name", nargs="?")
     s.add_argument("--rows", type=int, default=40)
+    return ap
+
+
+def main(argv=None) -> int:
+    ap = build_parser()
     args = ap.parse_args(argv)
     if args.cmd == "run":
         from .daemon import main_loop
