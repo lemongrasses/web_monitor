@@ -79,7 +79,7 @@ def _tail(path: Path, n: int = 3) -> str:
     return " | ".join(lines[-n:])
 
 
-def start_one(cfg, key: str, wait_s: float = 4.0) -> Dict:
+def start_one(cfg, key: str, wait_s: float = 4.0, stable_s: float = 3.0) -> Dict:
     svc = cfg["services"][key]
     label = svc.get("label", key)
     if _pids(cfg, key):
@@ -99,16 +99,21 @@ def start_one(cfg, key: str, wait_s: float = 4.0) -> Dict:
         return {"ok": False, "text": f"{label}: cannot start ({e})"}
     _reap(proc)
     deadline = time.monotonic() + wait_s
+    seen = False
     while time.monotonic() < deadline:
         if _pids(cfg, key):
-            return {"ok": True, "text": f"{label} started"}
+            seen = True
+            break
         if proc.poll() is not None:
             break
         time.sleep(0.2)
-    if _pids(cfg, key):
-        return {"ok": True, "text": f"{label} started"}
+    if seen:  # a program that dies right after launching is not "started"
+        time.sleep(stable_s)
+        if _pids(cfg, key):
+            return {"ok": True, "text": f"{label} started"}
     detail = _tail(log)
-    return {"ok": False, "text": f"{label} did not start" + (f": {detail}" if detail else "")
+    what = "exited right after starting" if seen else "did not start"
+    return {"ok": False, "text": f"{label} {what}" + (f": {detail}" if detail else "")
                                  + f" (log: {log})"}
 
 

@@ -13,8 +13,8 @@ nav:
   trajectory: { recent_window_s: 60, recent_hz: 10, older_hz: 1 }
 
 services:
-  aio_nav:   { label: AIO NAV, unit: aio-nav.service, process_pattern: lib/aio_nav_ros/aio_nav_node, launch: aio-nav }
-  dso:       { label: DSO, process_pattern: lib/dso_ros/dso_live, launch: aio-nav-dso, optional: true }
+  aio_nav:   { label: AIO NAV, unit: aio-nav.service, process_pattern: '^[^ ]*lib/aio_nav_ros/aio_nav_node', launch: aio-nav }
+  dso:       { label: DSO, process_pattern: '^[^ ]*lib/dso_ros/dso_live', launch: aio-nav-dso, optional: true }
   camera:    { label: Camera driver, unit: camera.service, restartable: true }
   ouster:    { label: Ouster driver, unit: ouster.service, restartable: true }
   dashboard: { label: Dashboard, unit: aio-dashboard.service }

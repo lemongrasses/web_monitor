@@ -32,12 +32,14 @@ nav:
 # ROS domain/localhost come from "ros:" below (live 10 / 1, matching the camera/IMU drivers). AIO NAV's
 # own data reaches the dashboard over UDP; /nav/odometry and /aio_nav_node are not watched through ROS.
 # systemd units. A unit that does not exist shows "Not installed" and raises no warning.
-# AIO NAV is also detected by process name, so the desktop app start works too.
+# Programs are found by command line; '^[^ ]*' makes the pattern match only the program path at the
+# start of the command, not any other command that merely mentions it (an editor, tail, a shell).
+# AIO NAV is also detected by process name, so a start from elsewhere is noticed too.
 # Units with restartable: true get a Restart button (re-run install.sh after changing).
 services:
-  aio_nav:   { label: AIO NAV, unit: aio-nav.service, process_pattern: lib/aio_nav_ros/aio_nav_node, launch: aio-nav }
-  dso:       { label: DSO, process_pattern: lib/dso_ros/dso_live, launch: aio-nav-dso, optional: true }
-  camera:    { label: Camera driver, unit: camera.service, restartable: true, process_pattern: pylon_ros2_camera_wrapper }   # Basler, started by ros2 launch
+  aio_nav:   { label: AIO NAV, unit: aio-nav.service, process_pattern: '^[^ ]*lib/aio_nav_ros/aio_nav_node', launch: aio-nav }
+  dso:       { label: DSO, process_pattern: '^[^ ]*lib/dso_ros/dso_live', launch: aio-nav-dso, optional: true }
+  camera:    { label: Camera driver, unit: camera.service, restartable: true, process_pattern: '^[^ ]*pylon_ros2_camera_wrapper' }   # Basler, started by ros2 launch
   ouster:    { label: Ouster driver, unit: ouster.service, restartable: true }   # optional
   dashboard: { label: Dashboard, unit: aio-dashboard.service }
 
@@ -86,7 +88,7 @@ ros:
   topics:
     - { name: /openrtk330/imu/data_raw, group: nav, label: INS IMU, expected_hz: 100 }
     - { name: auto, type: sensor_msgs/msg/CameraInfo,  group: camera, label: Camera, expected_hz: 20 }
-    - { name: auto, type: sensor_msgs/msg/PointCloud2, group: lidar,  label: LiDAR points, hint: ouster }
+    - { name: auto, type: sensor_msgs/msg/PointCloud2, group: lidar,  label: LiDAR points, hint: ouster, strict: true }
     - { name: auto, type: sensor_msgs/msg/Imu,         group: lidar,  label: Ouster IMU,   hint: ouster, strict: true }
 
 # DSO watchdog (Maintenance > ROS 2): when /dso/odometry turns NaN, restart DSO only (not AIO NAV).

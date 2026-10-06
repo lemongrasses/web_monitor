@@ -78,5 +78,42 @@ class LauncherTest(unittest.TestCase):
             self.assertIsNone(cfg.launcher("aio-nav-dso"))   # not installed -> reported, not guessed
 
 
+class StartStabilityTest(unittest.TestCase):
+    def _cfg(self, root, body):
+        cfgdir = os.path.join(root, "install", "aio_nav_ros", "share", "aio_nav_ros", "config")
+        libdir = os.path.join(root, "install", "aio_nav_ros", "lib", "aio_nav_ros")
+        os.makedirs(cfgdir)
+        os.makedirs(libdir)
+        yml = os.path.join(cfgdir, "aio_nav.yaml")
+        with open(yml, "w") as f:
+            f.write("aio_nav_node:\n  ros__parameters:\n    output_rate: 100.0\n")
+        wrapper = os.path.join(libdir, "aio-nav")
+        with open(wrapper, "w") as f:
+            f.write("#!/bin/bash\n" + body + "\n")
+        os.chmod(wrapper, 0o755)
+        cfg = make(aio_nav_path=yml)
+        cfg.data["fake"]["enabled"] = False
+        cfg.data["services"]["aio_nav"]["process_pattern"] = "^[^ ]*zzstab[l]e"
+        return cfg
+
+    def test_program_that_dies_right_after_launch_is_a_failure(self):
+        with tempfile.TemporaryDirectory() as root:
+            cfg = self._cfg(root, 'exec -a "zzstab""le" sleep 1')
+            r = process_control.start_one(cfg, "aio_nav", wait_s=3, stable_s=2)
+            self.assertFalse(r["ok"])
+            self.assertIn("exited right after starting", r["text"])
+
+    def test_program_that_stays_up_is_started(self):
+        with tempfile.TemporaryDirectory() as root:
+            cfg = self._cfg(root, 'exec -a "zzstab""le" sleep 30')
+            try:
+                r = process_control.start_one(cfg, "aio_nav", wait_s=3, stable_s=1)
+                self.assertTrue(r["ok"], r)
+                # a second start must not launch a duplicate
+                self.assertIn("already running", process_control.start_one(cfg, "aio_nav")["text"])
+            finally:
+                process_control.stop_many(cfg, ["aio_nav"], 2)
+
+
 if __name__ == "__main__":
     unittest.main()
