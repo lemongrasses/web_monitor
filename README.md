@@ -103,7 +103,8 @@ sudo deploy/install.sh --user nvidia \
 - installs and starts `aio-dashboard.service`, which runs as the ROS user with ROS 2 Humble sourced so `rclpy` works
 - writes `/etc/sudoers.d/aio-dashboard`, which allows only `systemctl restart <unit>` for units with `restartable: true`
 
-No configuration is required. At start-up the dashboard detects:
+No configuration is required. For every setting and how to change it, see the configuration
+manual: [English](docs/CONFIG.md) · [繁體中文](docs/CONFIG.zh-TW.md). At start-up the dashboard detects:
 
 | Setting | `auto` behaviour |
 |---------|------------------|
