@@ -235,6 +235,7 @@ ros:
 | `mode` | `null`(預設設定檔:`live`) | 在維護頁面 **ROS 2** 另外選擇之前使用的模式(選擇存在 `state/ros_mode.json`,優先於這個設定)。`null` 表示沿用服務的環境變數。 |
 | `modes` | `live`:`aio_nav.yaml`;`bag`:`aio_nav_bag.yaml` | 每個模式對應一份 aio-nav-ros 設定檔(與一般的 `aio_nav.yaml` 同一個資料夾)。啟動 AIO NAV 與 DSO 時會把該檔案當參數,檔案裡的 `ros_domain_id` / `ros_localhost_only` 也會成為儀表板自己的 ROS 環境,所以三者一定一致。`use_sim_time` 也由該檔案決定。模式可另加 `domain_id` / `localhost_only` 覆蓋檔案的值。找不到設定檔的模式無法選取。切換會停止 AIO NAV 與 DSO 並重啟儀表板(幾秒鐘),之後需要再次啟動 AIO NAV。相機與 IMU 驅動不受影響。 |
 | `isolation_restart` | `false`(預設設定檔:`true`) | 儀表板自己的 ROS 連線卡住時,自動重啟儀表板。曾經發生過:開機後儀表板比感測器驅動先啟動,之後一直沒有發現驅動,導致 IMU、相機與 GNSS 看起來都不見了。只有在感測器驅動程序**與儀表板在同一個 ROS domain 和 localhost 設定**下執行,但連續 `isolation_grace_s`(30 秒)都看不到任何其他節點時才會動作;驅動停止或在別的 domain 時不會動作;而且最多每 `isolation_cooldown_s`(600 秒)一次,所以不會形成重啟迴圈。重啟會記錄在事件紀錄中。 |
+| `sampling` | `enabled: false`(預設設定檔:`true`)、`period_s: 5`、`window_s: 1.5`、`above_hz: 30` | 降低高頻 topic 的 CPU 使用。被監看的 topic 若 `expected_hz` 大於等於 `above_hz`(例如 100 Hz 的 IMU),每 `period_s` 秒只聽 `window_s` 秒;ROS 2 頁面顯示的頻率與即時性是上一個視窗的結果,並標示 *sampled*。不啟用時,100 Hz 的 topic 每筆訊息都要在 Python 裡處理一次,約佔單一核心的 12%。**代價:**發布者還在但資料凍結時,*Stale* 最多晚 `period_s` 秒才顯示(不取樣時約 1 秒);短於 `period_s` 的中斷可能看不到。topic 整個消失仍會立刻顯示 *Missing*。這只改變儀表板自己的訂閱,不影響 GNSS、視覺里程計監控、相機/光達預覽、驅動程式與 ROS 本身。 |
 | `graph_interval_s` | `2` | 重新整理節點與 topic 清單的間隔。 |
 | `rate_window_s` | `2` | 計算每個 topic 頻率所用的時間窗。 |
 | `nodes` | `[]` | 必須存在的節點名稱（顯示於 ROS 2 頁面，缺少時會產生警告）。 |

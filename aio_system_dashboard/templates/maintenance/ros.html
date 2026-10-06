@@ -103,7 +103,8 @@
               <tr>
                 <td><span class="mono small" x-text="t.name"></span> <span class="muted small" x-text="t.group"></span></td>
                 <td>{{ chip("topicChip(t)") }}</td>
-                <td class="text-end num" x-text="rateText(t.rate_hz, t.expected_hz)"></td>
+                <td class="text-end num"><span x-text="rateText(t.rate_hz, t.expected_hz)"></span>
+                    <span class="muted small" x-show="t.sampled" title="High-rate topic: listened to in short windows to save CPU. The value is from the last window." x-text="' sampled'"></span></td>
                 <td class="text-end num" x-text="fmt.age(t.age_s)"></td>
                 <td class="text-end num" x-text="t.publishers"></td>
                 <td class="text-end num" x-text="t.subscribers"></td>

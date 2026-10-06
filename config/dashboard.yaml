@@ -78,6 +78,9 @@ ros:
   isolation_restart: true
   isolation_grace_s: 30
   isolation_cooldown_s: 600
+  # Listen to high-rate topics (expected_hz >= above_hz, e.g. the 100 Hz IMU) only window_s out of
+  # every period_s, to save CPU. Their rate/freshness are then the last window's, marked "sampled".
+  sampling: { enabled: true, period_s: 5, window_s: 1.5, above_hz: 30 }
   modes:
     live: { label: Live,       config: aio_nav.yaml }
     bag:  { label: Bag replay, config: aio_nav_bag.yaml }

@@ -77,12 +77,20 @@ def classify_topic(present: bool, publishers: int, age_s: Optional[float],
     return TOPIC_HEALTHY
 
 
+def in_sampling_window(now: float, t0: float, period_s: float, window_s: float) -> bool:
+    """Is `now` inside the listening part of the sampling cycle? Each period starts with a window."""
+    return (now - t0) % period_s < window_s
+
+
 class _TopicStats:
     def __init__(self, window_s: float):
         self.window_s = window_s
         self.times: deque = deque()
         self.last: Optional[float] = None
         self.lock = threading.Lock()
+        # Sampled topics only (see Ros2Collector): result of the last listening window.
+        self.sampling = False
+        self.frozen: Optional[tuple] = None   # (rate, age at the end of the window, ended at)
 
     def tick(self) -> None:
         now = time.monotonic()
@@ -92,19 +100,50 @@ class _TopicStats:
             while self.times and self.times[0] < now - self.window_s:
                 self.times.popleft()
 
+    def _live(self, now: float):
+        """Rate and age as of `now`. The caller holds the lock."""
+        while self.times and self.times[0] < now - self.window_s:
+            self.times.popleft()
+        n = len(self.times)
+        if n >= 2:
+            span = max(self.times[-1] - self.times[0], 1e-6)
+            rate = (n - 1) / span if now - self.times[-1] < self.window_s else 0.0
+        else:
+            rate = 0.0
+        age = now - self.last if self.last is not None else None
+        return rate, age
+
     def read(self):
         now = time.monotonic()
         with self.lock:
-            while self.times and self.times[0] < now - self.window_s:
-                self.times.popleft()
-            n = len(self.times)
-            if n >= 2:
-                span = max(self.times[-1] - self.times[0], 1e-6)
-                rate = (n - 1) / span if now - self.times[-1] < self.window_s else 0.0
-            else:
-                rate = 0.0
-            age = now - self.last if self.last is not None else None
-        return rate, age
+            return self._live(now)
+
+    def start_window(self) -> None:
+        with self.lock:
+            self.times.clear()
+            self.last = None
+            self.sampling = True
+
+    def end_window(self) -> None:
+        now = time.monotonic()
+        with self.lock:
+            rate, age = self._live(now) if self.last is not None else (0.0, None)
+            self.frozen = (rate, age, now)      # nothing heard in the window = a stale topic
+            self.sampling = False
+
+    def read_sampled(self):
+        """(rate, age, seconds since measured). Between windows this is the last window's result;
+        inside a window it switches to live values once there are enough messages to trust."""
+        now = time.monotonic()
+        with self.lock:
+            if self.sampling and len(self.times) >= 2:
+                rate, age = self._live(now)
+                return rate, age, 0.0
+            if self.frozen is not None:
+                rate, age, at = self.frozen
+                return rate, age, now - at
+            rate, age = self._live(now)
+            return rate, age, 0.0
 
 
 class Ros2Collector:
@@ -124,6 +163,8 @@ class Ros2Collector:
         self._thread: Optional[threading.Thread] = None
         self._stats: Dict[str, _TopicStats] = {}
         self._subs: Dict[str, object] = {}
+        self._sampled: Dict[str, Dict] = {}     # name -> {"type", "cls", "sub"}: high-rate topics
+        self._t0 = time.monotonic()
         self._first_seen: Dict[str, float] = {}
 
     def start(self) -> None:
@@ -206,6 +247,8 @@ class Ros2Collector:
         node.create_timer(float(self.rcfg["graph_interval_s"]), self._refresh_graph)
         if self.preview is not None and self.preview.sources:
             node.create_timer(0.5, self._sync_preview)
+        if (self.rcfg.get("sampling") or {}).get("enabled"):
+            node.create_timer(0.25, self._sample_tick)
         for w in self.watchers:
             try:
                 w.attach(node, self._qos)
@@ -244,6 +287,51 @@ class Ros2Collector:
         self._subs[name] = self._node.create_subscription(
             msg_cls, name, lambda _msg, s=stats: s.tick(), self._qos, raw=True)
 
+    # ------------------------------------------------- sampling of high-rate topics
+    def _sampling_on(self, spec: Dict) -> bool:
+        s = self.rcfg.get("sampling") or {}
+        hz = spec.get("expected_hz")
+        return bool(s.get("enabled") and hz and float(hz) >= float(s.get("above_hz", 30)))
+
+    def _sample_start(self, name: str, info: Dict) -> None:
+        if info.get("cls") is None:
+            try:
+                from rosidl_runtime_py.utilities import get_message
+                info["cls"] = get_message(info["type"])
+            except (ImportError, AttributeError, ModuleNotFoundError, ValueError) as e:
+                logger.warning("cannot load message type %s for %s: %s", info["type"], name, e)
+                info["cls"] = False
+                return
+        if info["cls"] is False:
+            return
+        stats = self._stats.setdefault(name, _TopicStats(float(self.rcfg["rate_window_s"])))
+        stats.start_window()
+        info["sub"] = self._node.create_subscription(
+            info["cls"], name, lambda _msg, s=stats: s.tick(), self._qos, raw=True)
+
+    def _sample_stop(self, name: str) -> None:
+        info = self._sampled.get(name)
+        if not info or info.get("sub") is None:
+            return
+        try:
+            self._node.destroy_subscription(info["sub"])
+        except Exception:
+            logger.exception("could not end the sampling window of %s", name)
+        info["sub"] = None
+        if name in self._stats:
+            self._stats[name].end_window()
+
+    def _sample_tick(self) -> None:
+        """Open or close the listening window of every sampled topic (timer, executor thread)."""
+        s = self.rcfg["sampling"]
+        want = in_sampling_window(time.monotonic(), self._t0, float(s["period_s"]), float(s["window_s"]))
+        for name, info in list(self._sampled.items()):
+            active = info.get("sub") is not None
+            if want and not active:
+                self._sample_start(name, info)
+            elif not want and active:
+                self._sample_stop(name)
+
     def _refresh_graph(self) -> None:
         node = self._node
         try:
@@ -269,12 +357,26 @@ class Ros2Collector:
             types = topic_types.get(name)
             pubs = node.count_publishers(name) if types else 0
             subs = node.count_subscribers(name) if types else 0
+            sampled = self._sampling_on(t)
             if types and pubs:
-                self._ensure_subscription(name, t.get("type") or types[0])
-            if self._subs.get(name) is not None:
+                if sampled:
+                    self._sampled.setdefault(name, {"type": t.get("type") or types[0]})
+                else:
+                    self._ensure_subscription(name, t.get("type") or types[0])
+            elif sampled:
+                self._sample_stop(name)          # the topic is gone: stop listening
+            own = self._subs.get(name) is not None or (self._sampled.get(name) or {}).get("sub") is not None
+            if own:
                 subs = max(0, subs - 1)  # do not count the dashboard's own subscription
-            rate, age = self._stats[name].read() if name in self._stats else (0.0, None)
-            watched_out.append(self._topic_entry(t, bool(types), pubs, subs, rate, age))
+            ago = None
+            if sampled and name in self._stats:
+                rate, age, ago = self._stats[name].read_sampled()
+            else:
+                rate, age = self._stats[name].read() if name in self._stats else (0.0, None)
+            entry = self._topic_entry(t, bool(types), pubs, subs, rate, age)
+            entry["sampled"] = sampled
+            entry["sample_age_s"] = ago
+            watched_out.append(entry)
 
         graph = []
         own = "/aio_dashboard_monitor"
