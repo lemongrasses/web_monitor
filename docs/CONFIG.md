@@ -109,6 +109,21 @@ The product view is for operators. The maintenance view is for engineers and can
 restart drivers. To keep the maintenance view reachable only from the Jetson itself,
 set `maintenance.host: 127.0.0.1`.
 
+### 4.1a `access`: who may open the pages
+
+```yaml
+access:
+  allowed_clients: [192.168.116.154]
+```
+
+| Key | Default | Meaning |
+|-----|---------|---------|
+| `allowed_clients` | `[]` | IP addresses or CIDRs (e.g. `192.168.116.0/24`) of the computers allowed to open the product and maintenance views. Anyone else gets `403 Forbidden`. `127.0.0.1` (this Jetson) is always allowed. Empty = no restriction. |
+
+The shipped value is the external computer on the sensor LAN (`192.168.116.154`); this
+Jetson is `192.168.116.1` on `eno1`. It is an access filter, not authentication: it
+does not protect against a computer that spoofs that address on the same LAN.
+
 ### 4.2 `nav`: AIO NAV data and the Ready / Initializing / Fault state
 
 | Key | Default | Meaning |

@@ -1,12 +1,17 @@
 """Shared Flask setup for the product and maintenance apps."""
 
+import ipaddress
+import logging
 import math
 from pathlib import Path
 
-from flask import Flask
+from flask import Flask, abort, request
 from flask.json.provider import DefaultJSONProvider
 
+from .access import client_allowed, parse_allowed_clients
+
 PKG_DIR = Path(__file__).resolve().parent.parent
+logger = logging.getLogger(__name__)
 
 
 def _sanitize(obj):
@@ -33,6 +38,17 @@ def create_base_app(name: str, ctx) -> Flask:
     app.json = SafeJSONProvider(app)
     app.config["SEND_FILE_MAX_AGE_DEFAULT"] = 3600
     app.extensions["dashboard"] = ctx
+
+    allowed = ctx.cfg["access"]["allowed_clients"]
+    nets = parse_allowed_clients(allowed)
+    if allowed and not nets:
+        logger.error("access.allowed_clients has no valid entry; only loopback can connect")
+        nets = [ipaddress.ip_network("127.0.0.0/8")]
+
+    @app.before_request
+    def _restrict_clients():
+        if not client_allowed(request.remote_addr, nets):
+            abort(403)
 
     @app.context_processor
     def _inject():

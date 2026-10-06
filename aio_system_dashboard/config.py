@@ -16,6 +16,9 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent
 DEFAULTS: Dict[str, Any] = {
     "product": {"host": "0.0.0.0", "port": 8080},
     "maintenance": {"host": "0.0.0.0", "port": 8081},
+    # Browsers allowed to open the pages (IPs or CIDRs). Loopback is always allowed.
+    # Empty = no restriction.
+    "access": {"allowed_clients": []},
     "nav": {
         "udp_bind": "127.0.0.1:9000",
         "aio_nav_config": "auto",  # "auto": search the usual aio-nav-ros install locations
