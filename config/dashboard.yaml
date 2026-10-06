@@ -74,16 +74,14 @@ system:
 # strict: true requires it). An auto topic that finds nothing shows "Not found", no warning.
 ros:
   enabled: true
-  # ROS environment preset: live (domain 10, localhost only, same as the camera/IMU drivers) or bag
-  # (13 / network). Switch on Maintenance > ROS 2; the choice is kept in state/ros_mode.json and
-  # this value is used until then. The mode is also given to AIO NAV and DSO when started from the
-  # Overview page. Change the presets below only if the drivers use other values.
+  # Mode = which aio-nav-ros config file AIO NAV and DSO are started with. That file also sets
+  # the ROS domain (live: aio_nav.yaml, 10 / localhost only; bag: aio_nav_bag.yaml, 13 / network),
+  # which the dashboard uses for its own ROS connection too. Switch on Maintenance > ROS 2; the
+  # choice is kept in state/ros_mode.json and `mode` below is used until then.
   mode: live
   modes:
-    live: { label: Live,       domain_id: 10, localhost_only: 1 }
-    bag:  { label: Bag replay, domain_id: 13, localhost_only: 0 }
-  graph_interval_s: 2
-  rate_window_s: 2
+    live: { label: Live,       config: aio_nav.yaml }
+    bag:  { label: Bag replay, config: aio_nav_bag.yaml }
   nodes: [/basler/pylon_ros2_camera_node, /openrtk330_driver]
   topics:
     - { name: /openrtk330/imu/data_raw, group: nav, label: INS IMU, expected_hz: 100 }
@@ -91,18 +89,26 @@ ros:
     - { name: auto, type: sensor_msgs/msg/PointCloud2, group: lidar,  label: LiDAR points, hint: ouster, strict: true }
     - { name: auto, type: sensor_msgs/msg/Imu,         group: lidar,  label: Ouster IMU,   hint: ouster, strict: true }
 
-# DSO watchdog (Maintenance > ROS 2): when /dso/odometry turns NaN, restart DSO only (not AIO NAV).
-# Waits settle_s after a restart, keeps cooldown_s between restarts, and gives up after max_restarts
-# within window_s. Acts only while DSO is running, so a deliberate stop stays stopped.
+# DSO watchdog (Maintenance > ROS 2). Only DSO is touched, never AIO NAV.
+#  - /dso/odometry turns NaN: restart DSO at once.
+#  - DSO should be running but is not (crashed, or failed right after a start): start it again
+#    every retry_s. A DSO stopped on purpose stays stopped.
+#  - Many NaN restarts in a row (fast_restarts within window_s) are spaced retry_s apart too.
 dso_watchdog:
   enabled: true
   topic: /dso/odometry
   service: dso
-  bad_messages: 3
-  settle_s: 15
-  cooldown_s: 30
-  max_restarts: 5
-  window_s: 600
+  bad_messages: 1
+  cooldown_s: 2
+  settle_s: 3
+  retry_s: 30
+  fast_restarts: 3
+  window_s: 60
+
+# GNSS lamp: green RTK fix, yellow RTK float, red SPP / no signal, from this NavSatFix topic.
+gnss:
+  topic: /openrtk330/gnss/fix
+  timeout_s: 3
 
 # auto = the aio-nav-ros output folder (from fusion_txt_path, or output/ next to install/).
 # Or list folders: roots: [{ id: logs, name: AIO NAV logs, path: /home/jetson/aio-nav-ros/output }]

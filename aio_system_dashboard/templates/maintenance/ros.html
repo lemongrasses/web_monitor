@@ -88,13 +88,13 @@
 </div>
 
 <div class="panel mt-3" x-show="dso.enabled" x-cloak>
-  <div class="panel-h"><strong>DSO watchdog</strong><span class="muted small">restarts DSO only, never AIO NAV</span></div>
+  <div class="panel-h"><strong>DSO watchdog</strong><span class="muted small">NaN: restart at once. Crashed: try again every 30 s. AIO NAV is never touched</span></div>
   <div class="panel-b">
     <div class="vrow"><span class="k">State</span>{{ chip("dsoChip()") }}</div>
     <div class="vrow"><span class="k">Watching</span><span class="mono small" x-text="dso.topic"></span></div>
     <div class="vrow"><span class="k">Last odometry</span><span class="num" x-text="fmt.age(dso.last_msg_age_s)"></span></div>
-    <div class="vrow"><span class="k">Restarts since the dashboard started</span><span class="num" x-text="dso.restarts"></span></div>
-    <div class="vrow" x-show="dso.last_result"><span class="k">Last restart</span><span class="small" x-text="dso.last_result"></span></div>
+    <div class="vrow"><span class="k">NaN restarts / crash retries since the dashboard started</span><span class="num" x-text="dso.restarts + ' / ' + dso.starts"></span></div>
+    <div class="vrow" x-show="dso.last_result"><span class="k">Last action</span><span class="small" x-text="dso.last_result"></span></div>
     <p class="muted small mt-2 mb-0" x-text="dso.detail"></p>
   </div>
 </div>

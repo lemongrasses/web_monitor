@@ -263,8 +263,8 @@ ros:
 | Key | Default | Meaning |
 |-----|---------|---------|
 | `enabled` | `true` | `false` turns ROS 2 monitoring off. Topic lamps then show Unknown. |
-| `mode` | `null` (shipped config: `live`) | The ROS environment preset in use until someone picks another on **Maintenance > ROS 2**. `null` keeps the environment of the service. The chosen preset is stored in `state/ros_mode.json` (it wins over this setting) and is applied to the dashboard's own ROS connection and to AIO NAV and DSO when they are started from the Overview page. |
-| `modes` | `live`: domain 10, localhost only; `bag`: domain 13, network | The presets (`label`, `domain_id`, `localhost_only`). **Live** matches the camera and IMU drivers; use **Bag replay** only while playing a bag. Switching on the maintenance page stops AIO NAV and DSO and restarts the dashboard (a few seconds); start AIO NAV again afterwards. The camera and IMU drivers are not touched. |
+| `mode` | `null` (shipped config: `live`) | The mode in use until someone picks another on **Maintenance > ROS 2** (that choice is stored in `state/ros_mode.json` and wins over this setting). `null` keeps the environment of the service. |
+| `modes` | `live`: `aio_nav.yaml`; `bag`: `aio_nav_bag.yaml` | Each mode names an aio-nav-ros config file (in the folder of the normal `aio_nav.yaml`). AIO NAV and DSO are started with that file as their argument, and its `ros_domain_id` / `ros_localhost_only` become the dashboard's own ROS environment, so all three always agree. The file also decides `use_sim_time`. A mode may add `domain_id` / `localhost_only` to override the file. A mode whose file is missing cannot be selected. Switching stops AIO NAV and DSO and restarts the dashboard (a few seconds); start AIO NAV again afterwards. The camera and IMU drivers are not touched. |
 | `graph_interval_s` | `2` | How often the list of nodes and topics is refreshed. |
 | `rate_window_s` | `2` | Time window used to measure each topic's rate. |
 | `nodes` | `[]` | Node names that must exist (shown on the ROS 2 page; a missing one is a warning). |
@@ -296,7 +296,7 @@ Monitoring uses raw subscriptions, so messages are counted but never decoded. Pr
 light topics (for example `camera_info` rather than `image_raw`) for continuous
 monitoring.
 
-### 4.7a `dso_watchdog`: restart DSO when its odometry breaks
+### 4.7a `dso_watchdog`: keep DSO healthy
 
 ```yaml
 dso_watchdog:
@@ -305,22 +305,42 @@ dso_watchdog:
   service: dso
 ```
 
-When DSO loses tracking, `/dso/odometry` turns NaN and DSO has to be restarted. The watchdog
-watches that topic and restarts **only DSO** (the same restart as `restart_process dso`); AIO NAV
-keeps running. There is nothing to operate on the Overview page; status is under
-Maintenance > ROS 2, and every restart is in the event log.
+Only DSO is touched, never AIO NAV. Status is under Maintenance > ROS 2; there is nothing to
+operate on the Overview page, and every action is in the event log.
+
+* **Odometry turns NaN** (DSO lost tracking): DSO is restarted **at once**.
+* **DSO is not running but should be** (it crashed, or failed right after a start): it is started
+  again **every `retry_s` (30 s)** until it stays up.
+* A DSO you stopped on purpose stays stopped. "Should be running" is recorded when AIO NAV and DSO
+  are started or stopped from the dashboard (in `state/processes.json`), and a DSO that is running
+  counts as wanted.
+* If NaN keeps coming back (`fast_restarts` restarts within `window_s`), further restarts are also
+  spaced `retry_s` apart, so a bad camera view does not cause a restart loop.
 
 | Key | Default | Meaning |
 |-----|---------|---------|
 | `enabled` | `false` (shipped config: `true`) | Turn the watchdog on. |
 | `topic` | `/dso/odometry` | `nav_msgs/Odometry` topic to watch. Any NaN or infinite pose or velocity counts as bad. |
-| `service` | `dso` | The `services` entry (with a `launch` setting) to restart. |
-| `bad_messages` | `3` | Consecutive bad messages before restarting, so one glitch is ignored. |
-| `settle_s` | `15` | After a restart DSO is left alone for this long while it initialises. |
-| `cooldown_s` | `30` | Minimum time between two restarts. |
-| `max_restarts` / `window_s` | `5` / `600` | After this many restarts within the window the watchdog stops restarting and shows **Gave up** until the odometry is finite again. |
+| `service` | `dso` | The `services` entry (with a `launch` setting) to restart or start. |
+| `bad_messages` | `1` | NaN messages in a row before restarting (1 = at once). |
+| `cooldown_s` | `2` | Minimum gap between two NaN restarts. |
+| `settle_s` | `3` | After a restart, odometry is ignored for this long. |
+| `retry_s` | `30` | Interval between tries when DSO is not running, and between restarts when NaN keeps coming back. |
+| `fast_restarts` / `window_s` | `3` / `60` | See above. |
 
-It acts only while the DSO process is running, so a DSO you stopped on purpose stays stopped.
+### 4.7b `gnss`: GNSS lamp
+
+```yaml
+gnss:
+  topic: /openrtk330/gnss/fix
+  timeout_s: 3
+```
+
+The GNSS lamp shows the receiver's position quality, taken from `NavSatFix.status.status`
+(checked against a recorded drive): **green** RTK fix (status 2, about 3 cm), **yellow** RTK float
+(status 1, about 10 cm), **red** SPP (status 0, 10 m) or no signal (status -1, or no message for
+`timeout_s`). It is advisory and never changes Ready. It is not the same as the "GNSS" aiding lamp on
+the Navigation page, which shows whether the navigation filter used GNSS in the last second.
 
 ### 4.8 `data`: the Data (download) page
 

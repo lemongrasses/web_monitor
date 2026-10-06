@@ -114,7 +114,7 @@
       get dso() { return ((this.d && this.d.watchdog) || {}).dso || {}; },
       dsoChip() {
         const m = { ok: ["healthy", "OK"], settling: ["warning", "Settling"], restarting: ["warning", "Restarting"],
-                    bad: ["warning", "NaN"], gave_up: ["fault", "Gave up"], idle: ["unknown", "DSO not running"],
+                    bad: ["warning", "NaN"], retrying: ["warning", "Retrying"], idle: ["unknown", "DSO not running"],
                     waiting: ["unknown", "Waiting"], disabled: ["unknown", "Disabled"] };
         const e = m[this.dso.state] || ["unknown", "Unknown"];
         return this.lvl(e[0], e[1]);

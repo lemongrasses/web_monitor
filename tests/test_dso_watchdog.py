@@ -1,4 +1,5 @@
 import copy
+import threading
 import types
 import unittest
 
@@ -29,25 +30,42 @@ class Clock:
         return self.t
 
 
-def make(running=True, **over):
-    data = copy.deepcopy(DEFAULTS)
-    data["nav"]["aio_nav_config"] = ""
-    data["dso_watchdog"]["enabled"] = True
-    data["dso_watchdog"].update(over)
-    cfg = Config(data, None)
-    clock, ev, calls = Clock(), Events(), []
-    state = {"running": running}
+class Rig:
+    """A watchdog with fake DSO control; actions run synchronously and take no time."""
 
-    def restart():
-        calls.append(clock.t)
-        return {"success": True, "summary": "ok"}
-    dog = DsoWatchdog(cfg, Store(), ev, restart, lambda: state["running"], clock)
-    # run restarts synchronously so the test is deterministic
-    import threading
-    dog._thread_target = None
-    real = threading.Thread
-    threading.Thread = lambda target, **k: types.SimpleNamespace(start=target)
-    return dog, clock, ev, calls, state, lambda: setattr(threading, "Thread", real)
+    def __init__(self, test, running=True, wanted=True, **over):
+        data = copy.deepcopy(DEFAULTS)
+        data["nav"]["aio_nav_config"] = ""
+        data["dso_watchdog"]["enabled"] = True
+        data["dso_watchdog"].update(over)
+        self.clock, self.events = Clock(), Events()
+        self.restarts, self.starts = [], []
+        self.running, self.wanted = running, wanted
+
+        def restart():
+            self.restarts.append(self.clock.t)
+            return {"success": True, "summary": "ok"}
+
+        def start():
+            self.starts.append(self.clock.t)
+            self.running = self.starts_ok
+            return {"success": self.starts_ok, "summary": ""}
+        self.starts_ok = False
+        self.dog = DsoWatchdog(Config(data, None), Store(), self.events, restart, start,
+                               lambda: self.running, lambda: self.wanted,
+                               lambda: setattr(self, "wanted", True), self.clock)
+        real = threading.Thread
+        threading.Thread = lambda target, args=(), **k: types.SimpleNamespace(start=lambda: target(*args))
+        test.addCleanup(setattr, threading, "Thread", real)
+
+    def nan(self, n=1):
+        for _ in range(n):
+            self.dog.on_message(False)
+
+    def tick(self, dt=0.0):
+        self.clock.t += dt
+        self.dog.tick()
+        return self.dog.state
 
 
 def odom(**vals):
@@ -66,92 +84,104 @@ def odom(**vals):
 
 class OdometryTest(unittest.TestCase):
     def test_finite_and_nan(self):
-        nan = float("nan")
         self.assertTrue(odometry_finite(odom()))
-        self.assertFalse(odometry_finite(odom(px=nan)))
+        self.assertFalse(odometry_finite(odom(px=float("nan"))))
         self.assertFalse(odometry_finite(odom(wz=float("inf"))))
 
 
-class WatchdogTest(unittest.TestCase):
-    def setUp(self):
-        self.restore = None
-
-    def tearDown(self):
-        if self.restore:
-            self.restore()
-
-    def build(self, **kw):
-        dog, clock, ev, calls, state, self.restore = make(**kw)
-        return dog, clock, ev, calls, state
-
+class NanTest(unittest.TestCase):
     def test_healthy_odometry_never_restarts(self):
-        dog, clock, ev, calls, _ = self.build()
+        r = Rig(self)
         for _ in range(20):
-            dog.on_message(True)
-            clock.t += 1
-            dog.tick()
-        self.assertEqual((dog.state, calls), ("ok", []))
+            r.dog.on_message(True)
+            r.tick(1)
+        self.assertEqual((r.dog.state, r.restarts, r.starts), ("ok", [], []))
 
-    def test_nan_restarts_dso_only_after_enough_bad_messages(self):
-        dog, clock, ev, calls, _ = self.build()
-        dog.on_message(True); dog.tick()
-        dog.on_message(False); dog.on_message(False); dog.tick()
-        self.assertEqual(calls, [])             # 2 < bad_messages (3)
-        dog.on_message(False); dog.tick()
-        self.assertEqual(len(calls), 1)
-        self.assertTrue(any("restarting DSO" in t for _, t in ev.items))
+    def test_one_nan_restarts_dso_at_once(self):
+        r = Rig(self)
+        r.dog.on_message(True); r.tick()
+        r.nan(); r.tick()
+        self.assertEqual(len(r.restarts), 1)
+        self.assertEqual(r.starts, [])                         # AIO NAV is never involved
+        self.assertTrue(any("restarting DSO" in t for _, t in r.events.items))
 
-    def test_isolated_nan_between_good_messages_does_not_restart(self):
-        dog, clock, ev, calls, _ = self.build()
+    def test_a_stricter_threshold_can_be_configured(self):
+        r = Rig(self, bad_messages=3)
+        r.nan(2); r.tick()
+        self.assertEqual(r.restarts, [])
+        r.nan(); r.tick()
+        self.assertEqual(len(r.restarts), 1)
+
+    def test_settles_after_a_restart_then_restarts_again_if_still_nan(self):
+        r = Rig(self, settle_s=3, cooldown_s=2)
+        r.nan(); r.tick()
+        r.nan()
+        self.assertEqual(r.tick(1), "settling")                # old messages are ignored
+        self.assertEqual(len(r.restarts), 1)
+        r.clock.t += 5
+        r.nan(); r.tick()
+        self.assertEqual(len(r.restarts), 2)
+
+    def test_repeated_nan_slows_down_to_the_retry_interval(self):
+        r = Rig(self, settle_s=0, cooldown_s=2, fast_restarts=3, window_s=60, retry_s=30)
+        for _ in range(3):
+            r.nan(); r.tick(3)
+        self.assertEqual(len(r.restarts), 3)
+        r.nan()
+        self.assertEqual(r.tick(10), "bad")                    # 3 restarts in the window: wait 30 s
+        self.assertEqual(len(r.restarts), 3)
+        r.tick(25)
+        self.assertEqual(len(r.restarts), 4)
+
+
+class DownTest(unittest.TestCase):
+    def test_crashed_dso_is_started_every_30_s(self):
+        r = Rig(self, running=False, wanted=True, retry_s=30, settle_s=0)
+        self.assertEqual(r.tick(), "retrying")                 # first sighting: wait, do not hammer
+        r.tick(29)
+        self.assertEqual(r.starts, [])
+        r.tick(2)                                              # 31 s after it went down
+        self.assertEqual(len(r.starts), 1)
+        self.assertEqual(r.tick(10), "retrying")               # 10 s after the failed try
+        r.tick(15)                                             # 25 s after it
+        self.assertEqual(len(r.starts), 1)
+        r.tick(10)                                             # 35 s after it
+        self.assertEqual(len(r.starts), 2)
+
+    def test_stops_trying_once_dso_stays_up(self):
+        r = Rig(self, running=False, wanted=True, retry_s=30, settle_s=0)
+        r.starts_ok = True
+        r.tick(); r.tick(31)
+        self.assertEqual(len(r.starts), 1)
+        self.assertTrue(r.running)
+        r.dog.on_message(True)
+        self.assertEqual(r.tick(1), "ok")
+        r.tick(100)
+        self.assertEqual(len(r.starts), 1)
+
+    def test_a_dso_stopped_on_purpose_stays_stopped(self):
+        r = Rig(self, running=False, wanted=False)
         for _ in range(5):
-            dog.on_message(False); dog.on_message(True); dog.tick()
-        self.assertEqual(calls, [])
+            self.assertEqual(r.tick(60), "idle")
+        self.assertEqual((r.starts, r.restarts), ([], []))
 
-    def test_settle_and_cooldown(self):
-        dog, clock, ev, calls, _ = self.build(settle_s=15, cooldown_s=30)
-        for _ in range(3):
-            dog.on_message(False)
-        dog.tick()
-        self.assertEqual(len(calls), 1)
-        for _ in range(3):
-            dog.on_message(False)               # still NaN right after the restart
-        clock.t += 5; dog.tick()
-        self.assertEqual((dog.state, len(calls)), ("settling", 1))
-        clock.t += 20                           # settled, cooldown (30 s) not over yet
-        for _ in range(3):
-            dog.on_message(False)
-        dog.tick()
-        self.assertEqual((dog.state, len(calls)), ("bad", 1))
-        clock.t += 15
-        dog.tick()
-        self.assertEqual(len(calls), 2)
+    def test_a_running_dso_counts_as_wanted(self):
+        r = Rig(self, running=True, wanted=False)
+        r.tick()
+        self.assertTrue(r.wanted)
 
-    def test_gives_up_after_max_restarts_and_recovers(self):
-        dog, clock, ev, calls, _ = self.build(settle_s=0, cooldown_s=0, max_restarts=2, window_s=600)
-        for _ in range(4):
-            for _ in range(3):
-                dog.on_message(False)
-            clock.t += 1
-            dog.tick()
-        self.assertEqual((dog.state, len(calls)), ("gave_up", 2))
-        self.assertEqual(sum(1 for _, t in ev.items if "gave up" in t), 1)   # logged once
-        dog.on_message(True); clock.t += 1; dog.tick()
-        self.assertEqual(dog.state, "ok")
-
-    def test_does_nothing_while_dso_is_stopped(self):
-        dog, clock, ev, calls, state = self.build()
-        state["running"] = False
-        for _ in range(5):
-            dog.on_message(False)
-        dog.tick()
-        self.assertEqual((dog.state, calls), ("idle", []))
+    def test_outage_is_logged_once(self):
+        r = Rig(self, running=False, wanted=True, retry_s=30, settle_s=0)
+        r.tick()
+        for _ in range(3):
+            r.tick(31)
+        self.assertEqual(len(r.starts), 3)
+        self.assertEqual(sum(1 for _, t in r.events.items if "not running" in t), 1)
 
     def test_disabled(self):
-        dog, clock, ev, calls, _ = self.build(enabled=False)
-        for _ in range(5):
-            dog.on_message(False)
-        dog.tick()
-        self.assertEqual((dog.state, calls), ("disabled", []))
+        r = Rig(self, running=False, wanted=True, enabled=False)
+        r.tick(100)
+        self.assertEqual((r.dog.state, r.starts, r.restarts), ("disabled", [], []))
 
 
 if __name__ == "__main__":

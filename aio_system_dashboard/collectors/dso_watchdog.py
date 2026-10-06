@@ -1,17 +1,20 @@
-"""DSO watchdog: restart DSO when its odometry output turns NaN.
+"""DSO watchdog: keep DSO healthy without touching AIO NAV.
 
-DSO (``dso_live``) publishes ``/dso/odometry``. When tracking breaks it publishes NaN
-values and has to be restarted. This watches that topic and restarts only the DSO
-process (the same restart the maintenance API offers); AIO NAV keeps running.
+Two situations, both handled by restarting or starting only DSO:
 
-Safeguards against restart loops: DSO is left alone for ``settle_s`` after a restart,
-restarts are at least ``cooldown_s`` apart, and after ``max_restarts`` within
-``window_s`` the watchdog stops restarting and says so (state ``gave_up``) until the
-odometry is finite again. It acts only while the DSO process is running, so it never
-starts DSO that was stopped on purpose.
+* Odometry turns NaN. When DSO loses tracking, ``/dso/odometry`` carries NaN. DSO is restarted
+  at once (``bad_messages`` NaN messages in a row, 1 by default).
+* DSO is not running although it should be (it crashed, or failed right after a start). It is
+  started again every ``retry_s`` seconds (30 by default) until it stays up.
 
-The state machine (``DsoWatchdog``) takes the clock and callbacks as arguments so it can
-be tested without ROS; ``attach`` connects it to the ROS monitor's node.
+"Should be running" is recorded by the start / stop actions (``process_control.wanted``), so a DSO
+that was stopped on purpose stays stopped, and one that is running counts as wanted.
+
+If NaN keeps coming back (``fast_restarts`` restarts within ``window_s``), further restarts also
+wait ``retry_s`` so a broken camera view does not make DSO restart in a tight loop.
+
+The state machine takes the clock and callbacks as arguments so it can be tested without ROS;
+``attach`` connects it to the ROS monitor's node.
 """
 
 import logging
@@ -24,11 +27,11 @@ from typing import Callable, Deque, Dict, Optional
 logger = logging.getLogger(__name__)
 
 OK = "ok"
-BAD = "bad"
-SETTLING = "settling"
+BAD = "bad"              # NaN seen, waiting for the minimum gap before restarting
+SETTLING = "settling"    # just restarted
 RESTARTING = "restarting"
-GAVE_UP = "gave_up"
-IDLE = "idle"            # DSO not running
+RETRYING = "retrying"    # should be running, is not: waiting for the next try
+IDLE = "idle"            # not running and not wanted
 WAITING = "waiting"      # running, no odometry yet
 DISABLED = "disabled"
 
@@ -44,23 +47,27 @@ def odometry_finite(msg) -> bool:
 class DsoWatchdog:
     section = "watchdog"
 
-    def __init__(self, cfg, store, events, restart: Callable[[], Dict],
-                 process_running: Callable[[], bool], clock: Callable[[], float] = time.monotonic):
+    def __init__(self, cfg, store, events, restart: Callable[[], Dict], start: Callable[[], Dict],
+                 process_running: Callable[[], bool], wanted: Callable[[], bool],
+                 adopt: Callable[[], None], clock: Callable[[], float] = time.monotonic):
         self.w = cfg["dso_watchdog"]
         self.store, self.events = store, events
-        self._restart, self._running, self._clock = restart, process_running, clock
+        self._restart, self._start = restart, start
+        self._running, self._wanted, self._adopt, self._clock = process_running, wanted, adopt, clock
         self._lock = threading.Lock()
         self._bad = 0
         self._last_msg: Optional[float] = None
-        self._last_ok: Optional[float] = None
         self._settle_until = 0.0
         self._last_restart: Optional[float] = None
+        self._down_since: Optional[float] = None
+        self._last_try: Optional[float] = None
         self._history: Deque[float] = deque()
         self._busy = False
-        self._gave_up_logged = False
+        self._outage_logged = False
         self.state = DISABLED if not self.w["enabled"] else WAITING
         self.detail = ""
         self.restarts_total = 0
+        self.starts_total = 0
         self.last_restart_ts: Optional[float] = None   # wall clock, for display
         self.last_result = ""
 
@@ -75,71 +82,102 @@ class DsoWatchdog:
             self._last_msg = now
             if finite:
                 self._bad = 0
-                self._last_ok = now
-                self._gave_up_logged = False
             else:
                 self._bad += 1
 
     # ------------------------------------------------------------------ tick
     def tick(self) -> None:
-        """Evaluate once (called about once a second); may start a restart."""
+        """Evaluate once (about once a second); may start a restart or a start."""
         if not self.enabled:
             self._publish()
             return
         now = self._clock()
-        start_restart = False
+        action = None
         with self._lock:
+            running = self._running()
             if self._busy:
-                self.state, self.detail = RESTARTING, "restarting DSO"
-            elif not self._running():
-                self._bad = 0
-                self.state, self.detail = IDLE, "DSO is not running"
-            elif now < self._settle_until:
-                self._bad = 0
-                self.state, self.detail = SETTLING, f"DSO started, waiting {self._settle_until - now:.0f} s"
-            elif self._bad >= int(self.w["bad_messages"]):
-                while self._history and now - self._history[0] > float(self.w["window_s"]):
-                    self._history.popleft()
-                if len(self._history) >= int(self.w["max_restarts"]):
-                    self.state = GAVE_UP
-                    self.detail = (f"{len(self._history)} restarts in "
-                                   f"{float(self.w['window_s']) / 60:.0f} min, not restarting again")
-                    if not self._gave_up_logged:
-                        self._gave_up_logged = True
-                        self.events.add("fault", "watchdog", "DSO watchdog gave up", self.detail)
-                elif self._last_restart is not None and now - self._last_restart < float(self.w["cooldown_s"]):
-                    self.state, self.detail = BAD, "odometry is NaN, waiting before the next restart"
-                else:
-                    self._busy = True
-                    start_restart = True
-                    self.state, self.detail = RESTARTING, "odometry is NaN, restarting DSO"
-            elif self._last_msg is None:
-                self.state, self.detail = WAITING, "no odometry received yet"
+                self.state, self.detail = RESTARTING, "working on DSO"
+            elif running:
+                self._adopt()                      # a running DSO is a wanted DSO
+                self._down_since = None
+                self._outage_logged = False
+                action = self._check_odometry(now)
             else:
-                self.state, self.detail = OK, "odometry is finite"
-        if start_restart:
-            threading.Thread(target=self._do_restart, name="dso-watchdog", daemon=True).start()
+                self._bad = 0
+                action = self._check_down(now)
+        if action:
+            threading.Thread(target=self._do, args=(action,), name="dso-watchdog", daemon=True).start()
         self._publish()
 
-    def _do_restart(self) -> None:
-        self.events.add("warning", "watchdog", "DSO odometry is NaN: restarting DSO",
-                        "AIO NAV is not restarted")
+    def _check_odometry(self, now: float) -> Optional[str]:
+        if now < self._settle_until:
+            self._bad = 0
+            self.state, self.detail = SETTLING, f"DSO started, ignoring odometry for {self._settle_until - now:.0f} s"
+            return None
+        if self._bad >= int(self.w["bad_messages"]):
+            while self._history and now - self._history[0] > float(self.w["window_s"]):
+                self._history.popleft()
+            fast = len(self._history) >= int(self.w["fast_restarts"])
+            gap = float(self.w["retry_s"]) if fast else float(self.w["cooldown_s"])
+            if self._last_restart is not None and now - self._last_restart < gap:
+                self.state = BAD
+                self.detail = f"odometry is NaN, next restart in {gap - (now - self._last_restart):.0f} s"
+                return None
+            self._busy = True
+            self.state, self.detail = RESTARTING, "odometry is NaN, restarting DSO"
+            return "restart"
+        if self._last_msg is None:
+            self.state, self.detail = WAITING, "no odometry received yet"
+        else:
+            self.state, self.detail = OK, "odometry is finite"
+        return None
+
+    def _check_down(self, now: float) -> Optional[str]:
+        if not self._wanted():
+            self._down_since = None
+            self.state, self.detail = IDLE, "DSO is not running"
+            return None
+        if self._down_since is None:
+            self._down_since = now
+        since = max(self._down_since, self._last_try or 0.0)
+        wait = float(self.w["retry_s"]) - (now - since)
+        if wait > 0:
+            self.state, self.detail = RETRYING, f"DSO is not running, trying again in {wait:.0f} s"
+            return None
+        self._busy = True
+        self.state, self.detail = RESTARTING, "DSO is not running, starting it"
+        return "start"
+
+    def _do(self, action: str) -> None:
+        if action == "restart":
+            self.events.add("warning", "watchdog", "DSO odometry is NaN: restarting DSO",
+                            "AIO NAV is not restarted")
+        elif not self._outage_logged:
+            self._outage_logged = True
+            self.events.add("warning", "watchdog", "DSO is not running: starting it again",
+                            f"trying every {float(self.w['retry_s']):.0f} s until it stays up")
         try:
-            result = self._restart()
+            result = (self._restart if action == "restart" else self._start)()
         except Exception as e:  # keep the watchdog alive whatever the action does
-            logger.exception("DSO restart failed")
+            logger.exception("DSO %s failed", action)
             result = {"success": False, "summary": f"error: {e}"}
         now = self._clock()
         with self._lock:
             self._busy = False
             self._bad = 0
-            self._last_restart = now
-            self._history.append(now)
+            self._last_try = now
+            if action == "restart":
+                self._last_restart = now
+                self._history.append(now)
+                self.restarts_total += 1
+            else:
+                self.starts_total += 1
             self._settle_until = now + float(self.w["settle_s"])
-            self.restarts_total += 1
             self.last_restart_ts = time.time()
-            self.last_result = ("restarted" if result.get("success") else "failed") + \
-                (": " + result["summary"] if result.get("summary") else "")
+            verb = "restarted" if action == "restart" else "started"
+            self.last_result = verb if result.get("success") else f"{action} failed"
+            if result.get("summary"):
+                self.last_result += ": " + result["summary"]
         self._publish()
 
     # ---------------------------------------------------------------- output
@@ -147,7 +185,7 @@ class DsoWatchdog:
         with self._lock:
             return {
                 "enabled": self.enabled, "state": self.state, "detail": self.detail,
-                "topic": self.w["topic"], "restarts": self.restarts_total,
+                "topic": self.w["topic"], "restarts": self.restarts_total, "starts": self.starts_total,
                 "last_restart_ts": self.last_restart_ts, "last_result": self.last_result,
                 "bad_messages": self._bad,
                 "last_msg_age_s": None if self._last_msg is None else self._clock() - self._last_msg,

@@ -52,10 +52,14 @@ class DashboardContext:
         self.services = ServicesCollector(self.store, cfg, self.fake)
         self.network = NetworkCollector(self.store, cfg, self.fake)
         self.preview = PreviewTap(cfg, fake=cfg.fake, fake_state=self.fake)
+        dso = cfg["dso_watchdog"]["service"]
         self.dso_watchdog = DsoWatchdog(
             cfg, self.store, self.events,
-            restart=lambda: self.actions.run("restart_process", cfg["dso_watchdog"]["service"]),
-            process_running=lambda: bool(process_control.running_pids(cfg, cfg["dso_watchdog"]["service"])))
+            restart=lambda: self.actions.run("restart_process", dso),
+            start=lambda: self.actions.run("start_process", dso),
+            process_running=lambda: bool(process_control.running_pids(cfg, dso)),
+            wanted=lambda: process_control.wanted(cfg, dso),
+            adopt=lambda: process_control.set_wanted(cfg, dso, True))
         self.gnss = GnssMonitor(cfg, self.store)
         self.ros = Ros2Collector(self.store, cfg, self.fake, self.preview,
                                  watchers=[self.dso_watchdog, self.gnss] if not cfg.fake else [])

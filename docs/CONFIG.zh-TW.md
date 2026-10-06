@@ -231,8 +231,8 @@ ros:
 | 項目 | 預設值 | 說明 |
 |------|--------|------|
 | `enabled` | `true` | `false` 會關閉 ROS 2 監看，topic 指示燈會顯示 Unknown。 |
-| `mode` | `null`(預設設定檔:`live`) | 在維護頁面 **ROS 2** 另外選擇之前使用的 ROS 環境預設組。`null` 表示沿用服務的環境變數。在維護頁面選的組合存在 `state/ros_mode.json`(優先於這個設定),會套用到儀表板自己的 ROS 連線,以及從首頁啟動的 AIO NAV 與 DSO。 |
-| `modes` | `live`:網域 10、僅本機;`bag`:網域 13、網路 | 預設組(`label`、`domain_id`、`localhost_only`)。**Live** 與相機、IMU 驅動一致;只有播放 bag 時才用 **Bag replay**。在維護頁面切換會停止 AIO NAV 與 DSO 並重啟儀表板(幾秒鐘),之後需要再次啟動 AIO NAV。相機與 IMU 驅動不受影響。 |
+| `mode` | `null`(預設設定檔:`live`) | 在維護頁面 **ROS 2** 另外選擇之前使用的模式(選擇存在 `state/ros_mode.json`,優先於這個設定)。`null` 表示沿用服務的環境變數。 |
+| `modes` | `live`:`aio_nav.yaml`;`bag`:`aio_nav_bag.yaml` | 每個模式對應一份 aio-nav-ros 設定檔(與一般的 `aio_nav.yaml` 同一個資料夾)。啟動 AIO NAV 與 DSO 時會把該檔案當參數,檔案裡的 `ros_domain_id` / `ros_localhost_only` 也會成為儀表板自己的 ROS 環境,所以三者一定一致。`use_sim_time` 也由該檔案決定。模式可另加 `domain_id` / `localhost_only` 覆蓋檔案的值。找不到設定檔的模式無法選取。切換會停止 AIO NAV 與 DSO 並重啟儀表板(幾秒鐘),之後需要再次啟動 AIO NAV。相機與 IMU 驅動不受影響。 |
 | `graph_interval_s` | `2` | 重新整理節點與 topic 清單的間隔。 |
 | `rate_window_s` | `2` | 計算每個 topic 頻率所用的時間窗。 |
 | `nodes` | `[]` | 必須存在的節點名稱（顯示於 ROS 2 頁面，缺少時會產生警告）。 |
@@ -262,7 +262,7 @@ Topic 狀態：
 
 監看使用 raw 訂閱，只計數、不解碼訊息。長時間監看請盡量選擇輕量的 topic（例如用 `camera_info` 而非 `image_raw`）。
 
-### 4.7a `dso_watchdog`:DSO 里程計壞掉時自動重啟
+### 4.7a `dso_watchdog`:維持 DSO 正常
 
 ```yaml
 dso_watchdog:
@@ -271,19 +271,33 @@ dso_watchdog:
   service: dso
 ```
 
-DSO 追蹤失敗時,`/dso/odometry` 會變成 NaN,必須重啟 DSO。監控程式會看這個 topic,並且**只重啟 DSO**(與 `restart_process dso` 相同),AIO NAV 不受影響。首頁沒有任何操作,狀態在維護頁面的 ROS 2,每次重啟都會記錄在事件紀錄。
+只處理 DSO,不會動 AIO NAV。狀態在維護頁面的 ROS 2,首頁沒有任何操作,每個動作都有事件紀錄。
+
+* **里程計變成 NaN**(DSO 追蹤失敗):**立刻**重啟 DSO。
+* **DSO 沒有在跑、但應該要跑**(崩潰,或剛啟動就結束):**每 `retry_s`(30 秒)**再啟動一次,直到穩定為止。
+* 你主動停掉的 DSO 會保持停止。「應該在跑」是在儀表板啟動或停止 AIO NAV、DSO 時記錄的(`state/processes.json`),正在執行的 DSO 也視為需要。
+* 如果 NaN 一直出現(`window_s` 內重啟 `fast_restarts` 次),之後的重啟也改成間隔 `retry_s`,避免畫面不好時一直迴圈重啟。
 
 | 設定 | 預設 | 說明 |
 |-----|------|------|
 | `enabled` | `false`(預設設定檔:`true`) | 開啟監控。 |
 | `topic` | `/dso/odometry` | 要監看的 `nav_msgs/Odometry`。位置或速度中有任何 NaN 或無限大就算異常。 |
-| `service` | `dso` | 要重啟的 `services` 項目(需設定 `launch`)。 |
-| `bad_messages` | `3` | 連續幾筆異常才重啟,單筆雜訊不會觸發。 |
-| `settle_s` | `15` | 重啟後給 DSO 初始化的時間,這段時間不判斷。 |
-| `cooldown_s` | `30` | 兩次重啟的最短間隔。 |
-| `max_restarts` / `window_s` | `5` / `600` | 時間窗口內重啟達此次數後不再重啟,狀態顯示 **Gave up**,直到里程計恢復正常。 |
+| `service` | `dso` | 要重啟或啟動的 `services` 項目(需設定 `launch`)。 |
+| `bad_messages` | `1` | 連續幾筆 NaN 才重啟(1 = 立刻)。 |
+| `cooldown_s` | `2` | 兩次 NaN 重啟的最短間隔。 |
+| `settle_s` | `3` | 重啟後忽略里程計的時間。 |
+| `retry_s` | `30` | DSO 沒在跑時的重試間隔,以及 NaN 持續出現時的重啟間隔。 |
+| `fast_restarts` / `window_s` | `3` / `60` | 見上方說明。 |
 
-只在 DSO 程序執行中才會動作,所以你主動停掉的 DSO 不會被拉起來。
+### 4.7b `gnss`:GNSS 燈號
+
+```yaml
+gnss:
+  topic: /openrtk330/gnss/fix
+  timeout_s: 3
+```
+
+GNSS 燈號顯示接收機的定位品質,來自 `NavSatFix.status.status`(已用一段實際行車紀錄核對):**綠色** RTK fix(status 2,約 3 公分)、**黃色** RTK float(status 1,約 10 公分)、**紅色** SPP(status 0,10 公尺)或沒有訊號(status -1,或超過 `timeout_s` 沒收到訊息)。這只是提示,不會影響 Ready。它和 Navigation 頁面的「GNSS」輔助燈不同,後者是顯示導航濾波器最近一秒有沒有使用 GNSS。
 
 ### 4.8 `data`：資料下載頁面
 

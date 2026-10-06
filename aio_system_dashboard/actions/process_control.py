@@ -12,6 +12,7 @@ command. The children get a clean environment and the active mode's aio-nav-ros 
 ros_domain_id, ros_localhost_only and use_sim_time.
 """
 
+import json
 import logging
 import os
 import signal
@@ -93,9 +94,39 @@ def work_dir(cfg) -> str:
     return str(Path.home())
 
 
+def _wanted_file(cfg) -> Path:
+    return cfg.state_file("processes.json")
+
+
+def wanted(cfg, key: str) -> bool:
+    """Should this program be running? True after a start, False after a stop (kept on disk, so
+    it survives a dashboard restart). The DSO watchdog uses it to tell a crash from a stop."""
+    try:
+        return bool(json.loads(_wanted_file(cfg).read_text(encoding="utf-8")).get(key))
+    except (OSError, ValueError, AttributeError):
+        return False
+
+
+def set_wanted(cfg, key: str, value: bool) -> None:
+    f = _wanted_file(cfg)
+    try:
+        try:
+            data = json.loads(f.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            data = {}
+        if bool(data.get(key)) == value:
+            return
+        data[key] = value
+        f.parent.mkdir(parents=True, exist_ok=True)
+        f.write_text(json.dumps(data) + "\n", encoding="utf-8")
+    except OSError as e:
+        logger.warning("cannot record that %s should %srun: %s", key, "" if value else "not ", e)
+
+
 def start_one(cfg, key: str, wait_s: float = 4.0, stable_s: float = 3.0) -> Dict:
     svc = cfg["services"][key]
     label = svc.get("label", key)
+    set_wanted(cfg, key, True)
     if _pids(cfg, key):
         return {"ok": True, "text": f"{label} already running"}
     launcher = cfg.launcher(svc["launch"])
@@ -134,6 +165,8 @@ def start_one(cfg, key: str, wait_s: float = 4.0, stable_s: float = 3.0) -> Dict
 
 
 def stop_many(cfg, keys: List[str], grace_s: float) -> Dict:
+    for k in keys:
+        set_wanted(cfg, k, False)
     pids = {k: _pids(cfg, k) for k in keys}
     allp = [p for v in pids.values() for p in v]
     if not allp:
@@ -177,6 +210,8 @@ def control(cfg, target: str, verb: str, grace_s: float, fake=None) -> Dict:
     keys = _keys(cfg, target)
     if cfg.fake:
         time.sleep(1.5)
+        for k in keys:
+            set_wanted(cfg, k, verb in ("start", "restart"))
         if fake is not None:
             for k in keys:
                 if verb in ("start", "restart"):

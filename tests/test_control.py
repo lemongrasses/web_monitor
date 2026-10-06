@@ -4,10 +4,21 @@ import stat
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
+from pathlib import Path
 
 from aio_system_dashboard.actions import process_control
 from aio_system_dashboard.actions.registry import ActionError, ActionRegistry
 from aio_system_dashboard.config import DEFAULTS, Config
+
+
+def _isolate_state(test):
+    """process_control records 'should be running' in state/; keep tests out of the real one."""
+    tmp = tempfile.TemporaryDirectory()
+    test.addCleanup(tmp.cleanup)
+    patch = mock.patch.object(Config, "state_file", lambda _self, name: Path(tmp.name) / name)
+    patch.start()
+    test.addCleanup(patch.stop)
 
 
 class FakeEvents:
@@ -37,6 +48,9 @@ class FakeFake:
 
 
 class ControlActionsTest(unittest.TestCase):
+    def setUp(self):
+        _isolate_state(self)
+
     def test_targets_cover_each_process_and_the_group(self):
         reg = ActionRegistry(make(), {}, FakeEvents(), lambda d: {})
         self.assertEqual(set(reg.actions["start_process"].targets), {"aio_nav", "dso", "nav_core"})
@@ -80,6 +94,9 @@ class LauncherTest(unittest.TestCase):
 
 
 class StartStabilityTest(unittest.TestCase):
+    def setUp(self):
+        _isolate_state(self)
+
     def _cfg(self, root, body):
         cfgdir = os.path.join(root, "install", "aio_nav_ros", "share", "aio_nav_ros", "config")
         libdir = os.path.join(root, "install", "aio_nav_ros", "lib", "aio_nav_ros")
@@ -118,6 +135,9 @@ class StartStabilityTest(unittest.TestCase):
 
 
 class WorkDirTest(unittest.TestCase):
+    def setUp(self):
+        _isolate_state(self)
+
     def test_programs_run_next_to_the_output_folder(self):
         with tempfile.TemporaryDirectory() as root:
             cfgdir = os.path.join(root, "install", "aio_nav_ros", "share", "aio_nav_ros", "config")

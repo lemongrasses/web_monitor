@@ -54,8 +54,12 @@ DEFAULTS: Dict[str, Any] = {
     "gnss": {"topic": "/openrtk330/gnss/fix", "timeout_s": 3.0},
     # Watches DSO's odometry and restarts DSO (only DSO) when it turns NaN.
     "dso_watchdog": {"enabled": False, "topic": "/dso/odometry", "service": "dso",
-                     "bad_messages": 3, "settle_s": 15.0, "cooldown_s": 30.0,
-                     "max_restarts": 5, "window_s": 600.0},
+                     "bad_messages": 1,       # NaN messages in a row before restarting (1 = at once)
+                     "cooldown_s": 2.0,       # minimum gap between two NaN restarts
+                     "settle_s": 3.0,         # ignore messages right after a restart
+                     "retry_s": 30.0,         # DSO should run but does not: try again this often
+                     "fast_restarts": 3,      # this many restarts within window_s ...
+                     "window_s": 60.0},       # ... and further restarts wait retry_s too
     "events": {"log_file": "logs/events.jsonl", "max_memory": 500},
     "actions": {"restart_timeout_s": 30.0, "diagnostic_timeout_s": 15.0,
                 "stop_grace_s": 5.0},  # stop_grace_s: SIGTERM -> SIGKILL delay for AIO NAV / DSO
@@ -214,8 +218,11 @@ class Config:
         return self.mode_config_path() or self.data["nav"].get("aio_nav_config", "auto")
 
     # ---- ROS environment mode (live / bag replay)
+    def state_file(self, name: str) -> Path:
+        return resolve_path(f"state/{name}")
+
     def ros_mode_file(self) -> Path:
-        return resolve_path("state/ros_mode.json")
+        return self.state_file("ros_mode.json")
 
     def ros_mode(self) -> Optional[str]:
         """Active preset: the one chosen on the maintenance page, else ros.mode, else None."""
