@@ -24,7 +24,7 @@ nav:
   stale_warn_s: 0.5              # UDP "Stale" after this packet age
   stale_fault_s: 2.0             # UDP "Lost" / product Fault after this packet age
   gnss_timeout_s: 3.0            # GNSS "Unavailable" if no GNSS update for this long
-  ready_requires: [alignment, heading_valid]
+  ready_requires: [alignment, heading_valid, fine_alignment]   # all three lamps must be on
   trajectory: { recent_window_s: 60, recent_hz: 10, older_hz: 1 }
 
 # ROS domain follows the camera/IMU drivers (/opt/point-lab/bin/launch_openrtk330_basler.sh: domain 10,

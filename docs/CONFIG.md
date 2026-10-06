@@ -138,7 +138,7 @@ does not protect against a computer that spoofs that address on the same LAN.
 | `low_rate_ratio` | `0.8` | UDP output shows **Low rate** when the measured rate is below this fraction of the expected rate. |
 | `gnss_timeout_s` | `3.0` | GNSS shows **Unavailable** if no GNSS update arrived for this long. This is only an advisory. It never changes Ready. |
 | `flag_active_s` | `1.0` | ZUPT, ZIHR, NHC and VUPT lamps stay **Active** for this long after the filter last used them. |
-| `ready_requires` | `[alignment, heading_valid]` | Filter flags that must all be set for **Ready**. Until then the state is **Initializing**. Options: `alignment`, `heading_valid`, `fine_alignment`. |
+| `ready_requires` | `[alignment, heading_valid, fine_alignment]` | Filter flags that must all be set for **Ready**. Until then the state is **Initializing**. Options: `alignment`, `heading_valid`, `fine_alignment`. |
 | `trajectory.recent_window_s` | `60` | How many seconds of recent track are drawn at full detail. |
 | `trajectory.recent_hz` | `10` | Points per second kept for that recent track. |
 | `trajectory.older_hz` | `1` | Points per second kept for older parts of the track. |
@@ -364,7 +364,7 @@ services:
 ```
 Then re-run `sudo deploy/install.sh --user jetson`.
 
-**Require fine alignment before Ready.** Change the `ready_requires` line in `nav`:
+**Ready needs all three alignment lamps by default** (Alignment, Initial heading, Fine alignment). To relax it, change the `ready_requires` line in `nav`:
 ```yaml
 nav:
   ready_requires: [alignment, heading_valid, fine_alignment]

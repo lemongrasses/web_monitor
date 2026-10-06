@@ -114,7 +114,7 @@ access:
 | `low_rate_ratio` | `0.8` | 實測頻率低於預期頻率的這個比例時，UDP 輸出顯示 **Low rate**。 |
 | `gnss_timeout_s` | `3.0` | 超過這段時間沒有 GNSS 更新時，GNSS 顯示 **Unavailable**。這只是提示，永遠不會讓 Ready 變成 Fault。 |
 | `flag_active_s` | `1.0` | 濾波器最後一次使用 ZUPT、ZIHR、NHC、VUPT 之後，對應指示燈保持 **Active** 的時間。 |
-| `ready_requires` | `[alignment, heading_valid]` | 必須全部成立才算 **Ready** 的濾波器旗標，在此之前狀態為 **Initializing**。可用值：`alignment`、`heading_valid`、`fine_alignment`。 |
+| `ready_requires` | `[alignment, heading_valid, fine_alignment]` | 必須全部成立才算 **Ready** 的濾波器旗標，在此之前狀態為 **Initializing**。可用值：`alignment`、`heading_valid`、`fine_alignment`。 |
 | `trajectory.recent_window_s` | `60` | 以完整細節顯示的最近軌跡長度（秒）。 |
 | `trajectory.recent_hz` | `10` | 最近軌跡每秒保留的點數。 |
 | `trajectory.older_hz` | `1` | 較早軌跡每秒保留的點數。 |
@@ -328,7 +328,7 @@ services:
 ```
 接著重新執行 `sudo deploy/install.sh --user jetson`。
 
-**要求完成精對準（fine alignment）才算 Ready。** 修改 `nav` 中的 `ready_requires` 這一行：
+**預設三顆對準燈（Alignment、Initial heading、Fine alignment）都亮才算 Ready。** 若要放寬，修改 `nav` 中的 `ready_requires` 這一行：
 ```yaml
 nav:
   ready_requires: [alignment, heading_valid, fine_alignment]

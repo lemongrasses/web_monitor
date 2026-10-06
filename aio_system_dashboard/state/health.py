@@ -22,6 +22,8 @@ _PRODUCT_SEVERITY = {PRODUCT_UNKNOWN: 0, READY: 1, INITIALIZING: 2, PRODUCT_FAUL
 
 SERVICE_DOWN_STATES = ("stopped", "failed", "not_installed")
 
+ALIGN_LAMPS = ("alignment", "heading_valid", "fine_alignment")
+
 FLAG_WAIT_TEXT = {
     "alignment": "Waiting for alignment",
     "heading_valid": "Waiting for valid heading",
@@ -81,7 +83,9 @@ class HealthEngine:
                                        severity=lambda s: _PRODUCT_SEVERITY.get(s, 0), clock=clock)
         self.udp = DebouncedStatus(1.0, 2.0, clock=clock)
         self.gnss = DebouncedStatus(1.0, 2.0, clock=clock)
-        self.alignment = DebouncedStatus(0.5, 0.5, clock=clock)
+        # One lamp per filter-alignment flag; the product is Ready only when all of
+        # nav.ready_requires are set.
+        self.align_lamps = {k: DebouncedStatus(0.5, 0.5, clock=clock) for k in ALIGN_LAMPS}
         ping_s = float(cfg["network"]["ping_interval_s"])
         self.devices = {k: DebouncedStatus(ping_s * 1.2, ping_s * 0.8, clock=clock)
                         for k in cfg["devices"]}
@@ -171,15 +175,15 @@ class HealthEngine:
                     f"UDP NAV output {self._udp_label[0]}", self._udp_label[1])
 
         # Alignment indicator.
-        if not fresh:
-            a_raw, a_label = UNKNOWN, "No data"
-        elif latest.get("alignment") and latest.get("heading_valid"):
-            a_raw, a_label = HEALTHY, "Fine aligned" if latest.get("fine_alignment") else "Aligned"
-        elif latest.get("alignment"):
-            a_raw, a_label = WARNING, "Heading not valid"
-        else:
-            a_raw, a_label = WARNING, "In progress"
-        a_level = self.alignment.update(a_raw, now)
+        align_lamps = {}
+        for flag in ALIGN_LAMPS:
+            if not fresh:
+                raw, label = UNKNOWN, "No data"
+            elif latest.get(flag):
+                raw, label = HEALTHY, "Done"
+            else:
+                raw, label = WARNING, "In progress"
+            align_lamps[flag] = {"level": self.align_lamps[flag].update(raw, now), "label": label}
 
         # GNSS (advisory only).
         gnss_age = flag_age.get("gnss")
@@ -202,7 +206,7 @@ class HealthEngine:
 
         network = self.store.get("network", {}) or {}
         indicators = {
-            "alignment": {"level": a_level, "label": a_label},
+            **align_lamps,
             "gnss": {"level": g_level,
                      "label": {HEALTHY: "Available", WARNING: "Unavailable"}.get(g_level, "Unknown"),
                      "detail": "Inertial navigation remains active." if g_level == WARNING else ""},

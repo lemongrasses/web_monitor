@@ -50,6 +50,8 @@
 
 <div class="annun-row mt-3">
   {{ annun('Alignment', "ind('alignment')") }}
+  {{ annun('Initial heading', "ind('heading_valid')") }}
+  {{ annun('Fine alignment', "ind('fine_alignment')") }}
   {{ annun('GNSS', "ind('gnss')") }}
   {% for key, dev in devices.items() %}{{ annun(dev.label, "ind('" ~ key ~ "')") }}{% endfor %}
   {{ annun('Network', "ind('network')") }}

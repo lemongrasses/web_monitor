@@ -30,7 +30,7 @@ DEFAULTS: Dict[str, Any] = {
         "low_rate_ratio": 0.8,
         "gnss_timeout_s": 3.0,
         "flag_active_s": 1.0,
-        "ready_requires": ["alignment", "heading_valid"],
+        "ready_requires": ["alignment", "heading_valid", "fine_alignment"],
         "trajectory": {"recent_window_s": 60.0, "recent_hz": 10.0, "older_hz": 1.0},
     },
     "services": {},

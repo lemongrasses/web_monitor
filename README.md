@@ -38,7 +38,7 @@ polls `/api/state` at 5 Hz and the trajectory every 2 s.
 | State | Condition |
 |-------|-----------|
 | **FAULT** | AIO NAV process/service down, or no NAV packet for `stale_fault_s` (2 s) |
-| **INITIALIZING** | Packets fresh but `ready_requires` flags (default `alignment`, `heading_valid`) not all set |
+| **INITIALIZING** | Packets fresh but `ready_requires` flags (default `alignment`, `heading_valid`, `fine_alignment`) not all set |
 | **READY** | Process up, packets fresh, alignment complete |
 
 GNSS loss, camera/LiDAR not connected, sensor-LAN link down and low disk are
