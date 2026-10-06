@@ -9,7 +9,6 @@ import argparse
 import logging
 import signal
 import os
-import socket
 import threading
 
 from werkzeug.serving import make_server
@@ -18,6 +17,7 @@ from .actions.registry import ActionRegistry
 from .collectors.fake import FakeState
 from .actions import process_control
 from .collectors.dso_watchdog import DsoWatchdog
+from .collectors.gnss_monitor import GnssMonitor
 from .collectors.nav_udp import NavUdpCollector
 from .collectors.network import NetworkCollector
 from .collectors.ros2 import Ros2Collector
@@ -39,7 +39,6 @@ class DashboardContext:
 
     def __init__(self, cfg):
         self.cfg = cfg
-        self.hostname = socket.gethostname()
         self.store = StateStore()
         ev = cfg["events"]
         self.events = EventLog(resolve_path(ev["log_file"]) if ev.get("log_file") else None,
@@ -57,8 +56,9 @@ class DashboardContext:
             cfg, self.store, self.events,
             restart=lambda: self.actions.run("restart_process", cfg["dso_watchdog"]["service"]),
             process_running=lambda: bool(process_control.running_pids(cfg, cfg["dso_watchdog"]["service"])))
+        self.gnss = GnssMonitor(cfg, self.store)
         self.ros = Ros2Collector(self.store, cfg, self.fake, self.preview,
-                                 watchers=[self.dso_watchdog] if not cfg.fake else [])
+                                 watchers=[self.dso_watchdog, self.gnss] if not cfg.fake else [])
         self.health = HealthEngine(cfg, self.store, self.nav, self.events)
         self.actions = ActionRegistry(cfg, self.store, self.events, self.network.check_device,
                                       self.fake)

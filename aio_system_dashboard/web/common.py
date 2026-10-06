@@ -52,7 +52,7 @@ def create_base_app(name: str, ctx) -> Flask:
 
     @app.context_processor
     def _inject():
-        return {"fake_mode": ctx.cfg.fake, "hostname": ctx.hostname,
+        return {"fake_mode": ctx.cfg.fake,
                 "devices": ctx.cfg["devices"]}
 
     @app.after_request

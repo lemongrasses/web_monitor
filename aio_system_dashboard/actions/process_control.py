@@ -7,9 +7,9 @@
 * Processes are found by command-line pattern, so ones started by the app are controlled too.
 
 Targets come from config only (``services.<key>.launch``); the web request never carries a
-command. The children get a clean environment. ROS_DOMAIN_ID / ROS_LOCALHOST_ONLY are the
-dashboard's ros.domain_id / ros.localhost_only when set (live 10 / 1, bag replay 13 / 0);
-otherwise the wrappers read them from aio_nav.yaml.
+command. The children get a clean environment and the active mode's aio-nav-ros config file
+(aio_nav.yaml for live, aio_nav_bag.yaml for bag replay) as their argument; that file decides
+ros_domain_id, ros_localhost_only and use_sim_time.
 """
 
 import logging
@@ -102,11 +102,12 @@ def start_one(cfg, key: str, wait_s: float = 4.0, stable_s: float = 3.0) -> Dict
     if not launcher:
         return {"ok": False, "text": f"{label}: launcher '{svc['launch']}' not found "
                                      "(aio-nav-ros install folder)"}
+    argv = [launcher] + ([cfg.mode_config_path()] if cfg.mode_config_path() else [])
     log = resolve_path(f"logs/{key}.log")
     try:
         log.parent.mkdir(parents=True, exist_ok=True)
         with open(log, "wb") as out:
-            proc = subprocess.Popen([launcher], stdin=subprocess.DEVNULL, stdout=out,
+            proc = subprocess.Popen(argv, stdin=subprocess.DEVNULL, stdout=out,
                                     stderr=subprocess.STDOUT, start_new_session=True,
                                     env=child_env(cfg), cwd=work_dir(cfg))
     except OSError as e:

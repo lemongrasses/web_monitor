@@ -41,13 +41,17 @@ DEFAULTS: Dict[str, Any] = {
     "network": {"sensor_interface": "auto", "ping_interval_s": 5.0},
     "system": {"interval_s": 2.0, "disk_paths": ["/"], "disk_warn_percent": 90, "temp_warn_c": 85},
     "ros": {"enabled": True, "graph_interval_s": 2.0, "rate_window_s": 2.0, "nodes": [], "topics": [],
-            # ROS environment presets; the active one is chosen on Maintenance > ROS 2 (stored in
-            # state/ros_mode.json) or by ros.mode here. It is set before ROS starts and also given
-            # to AIO NAV and DSO when the dashboard launches them. mode: null keeps the environment.
+            # Modes: the active one is chosen on Maintenance > ROS 2 (stored in state/ros_mode.json) or
+            # by ros.mode here. Each mode names an aio-nav-ros config file (in the folder of the
+            # normal aio_nav.yaml); AIO NAV and DSO are started with it, and its ros_domain_id /
+            # ros_localhost_only become the dashboard's own ROS environment. A mode may also set
+            # domain_id / localhost_only itself to override the file. mode: null keeps the environment.
             "mode": None,
-            "modes": {"live": {"label": "Live", "domain_id": 10, "localhost_only": 1},
-                      "bag": {"label": "Bag replay", "domain_id": 13, "localhost_only": 0}}},
+            "modes": {"live": {"label": "Live", "config": "aio_nav.yaml"},
+                      "bag": {"label": "Bag replay", "config": "aio_nav_bag.yaml"}}},
     "data": {"roots": "auto"},  # "auto": the aio-nav-ros output folder
+    # Receiver quality lamp (RTK fix / RTK float / SPP / no signal) from this NavSatFix topic.
+    "gnss": {"topic": "/openrtk330/gnss/fix", "timeout_s": 3.0},
     # Watches DSO's odometry and restarts DSO (only DSO) when it turns NaN.
     "dso_watchdog": {"enabled": False, "topic": "/dso/odometry", "service": "dso",
                      "bad_messages": 3, "settle_s": 15.0, "cooldown_s": 30.0,
@@ -137,7 +141,8 @@ def read_aio_nav_params(path: str) -> Dict[str, Any]:
     if auto:
         path = discover_aio_nav_config()
     result: Dict[str, Any] = {"path": path, "auto": auto, "loaded": False, "output_udp": "",
-                              "output_rate": None, "fusion_txt_path": ""}
+                              "output_rate": None, "fusion_txt_path": "", "ros_domain_id": None,
+                              "ros_localhost_only": None, "use_sim_time": None}
     if not path:
         result["error"] = "aio_nav.yaml not found in the usual locations; set nav.aio_nav_config"
         return result
@@ -156,6 +161,11 @@ def read_aio_nav_params(path: str) -> Dict[str, Any]:
             rate = params.get("output_rate")
             result["output_rate"] = float(rate) if isinstance(rate, (int, float)) else None
             result["fusion_txt_path"] = str(params.get("fusion_txt_path") or "")
+            for key in ("ros_domain_id", "ros_localhost_only"):
+                v = params.get(key)
+                result[key] = int(v) if isinstance(v, (int, float)) and not isinstance(v, bool) else None
+            if isinstance(params.get("use_sim_time"), bool):
+                result["use_sim_time"] = params["use_sim_time"]
             break
     return result
 
@@ -164,7 +174,9 @@ class Config:
     def __init__(self, data: Dict[str, Any], source: Optional[Path] = None):
         self.data = data
         self.source = source
-        self.aio_nav = read_aio_nav_params(data["nav"].get("aio_nav_config", "auto"))
+        self.aio_nav = read_aio_nav_params(self._aio_nav_path())
+        if data["nav"].get("aio_nav_config", "auto") in ("", "auto", None):
+            self.aio_nav["auto"] = True  # found in the install folder, not named in the config
         if data["data"].get("roots") in ("auto", None):
             out = aio_nav_output_dir(self.aio_nav.get("path", ""), self.aio_nav.get("fusion_txt_path", ""))
             data["data"]["roots"] = ([{"id": "aio-nav-logs", "name": "AIO NAV logs", "path": out}]
@@ -182,7 +194,26 @@ class Config:
         rate = self.data["nav"].get("expected_rate_hz")
         return float(rate) if rate else self.aio_nav.get("output_rate")
 
-    # ---- ROS environment mode (live 10/1, bag replay 13/0)
+    # ---- ROS mode -> aio-nav-ros config file
+    def _aio_nav_base(self) -> str:
+        """The normal aio_nav.yaml (configured, or found in the aio-nav-ros install folder)."""
+        configured = self.data["nav"].get("aio_nav_config", "auto")
+        return discover_aio_nav_config() if configured in ("", "auto", None) else str(resolve_path(configured))
+
+    def mode_config_path(self, mode: Optional[str] = None) -> Optional[str]:
+        """Path of the aio-nav-ros config file belonging to a mode (default: the active one)."""
+        mode = mode if mode is not None else self.ros_mode()
+        name = (self.data["ros"]["modes"].get(mode) or {}).get("config") if mode else None
+        base = self._aio_nav_base()
+        if not name or not base:
+            return None
+        cand = Path(base).resolve().parent / name
+        return str(cand) if cand.is_file() else None
+
+    def _aio_nav_path(self) -> str:
+        return self.mode_config_path() or self.data["nav"].get("aio_nav_config", "auto")
+
+    # ---- ROS environment mode (live / bag replay)
     def ros_mode_file(self) -> Path:
         return resolve_path("state/ros_mode.json")
 
@@ -205,26 +236,44 @@ class Config:
         f.parent.mkdir(parents=True, exist_ok=True)
         f.write_text(json.dumps({"mode": mode}) + "\n", encoding="utf-8")
 
+    def _mode_ros(self, mode: str, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Domain / localhost-only of a mode: its own override, else the values in its config file."""
+        m = self.data["ros"]["modes"][mode]
+        domain = m.get("domain_id") if m.get("domain_id") is not None else params.get("ros_domain_id")
+        local = m.get("localhost_only") if m.get("localhost_only") is not None else params.get("ros_localhost_only")
+        env: Dict[str, str] = {}
+        if domain is not None:
+            env["ROS_DOMAIN_ID"] = str(int(domain))
+        if local is not None:
+            env["ROS_LOCALHOST_ONLY"] = "1" if int(local) else "0"
+        return {"domain_id": None if domain is None else int(domain),
+                "localhost_only": None if local is None else bool(int(local)), "env": env}
+
     def ros_env(self) -> Dict[str, str]:
         """ROS_DOMAIN_ID / ROS_LOCALHOST_ONLY of the active mode ({} = keep the environment)."""
         mode = self.ros_mode()
-        if mode is None:
-            return {}
-        m = self.data["ros"]["modes"][mode]
-        return {"ROS_DOMAIN_ID": str(int(m["domain_id"])),
-                "ROS_LOCALHOST_ONLY": "1" if int(m["localhost_only"]) else "0"}
+        return {} if mode is None else self._mode_ros(mode, self.aio_nav)["env"]
 
     def ros_mode_info(self) -> Dict[str, Any]:
         mode = self.ros_mode()
         modes = self.data["ros"]["modes"]
-        cur = modes.get(mode) if mode else None
+        listed = []
+        for name, m in modes.items():
+            path = self.mode_config_path(name)
+            params = read_aio_nav_params(path) if path else {}
+            ros = self._mode_ros(name, params)
+            listed.append({"name": name, "label": m["label"], "config": m.get("config") or "",
+                           "found": bool(path), "domain_id": ros["domain_id"],
+                           "localhost_only": ros["localhost_only"],
+                           "use_sim_time": params.get("use_sim_time")})
+        cur = next((m for m in listed if m["name"] == mode), None)
         return {
             "mode": mode,
             "label": cur["label"] if cur else "Environment",
+            "config": cur["config"] if cur else "",
             "domain_id": cur["domain_id"] if cur else None,
-            "localhost_only": bool(cur["localhost_only"]) if cur else None,
-            "modes": [{"name": k, "label": v["label"], "domain_id": v["domain_id"],
-                       "localhost_only": bool(v["localhost_only"])} for k, v in modes.items()],
+            "localhost_only": cur["localhost_only"] if cur else None,
+            "modes": listed,
         }
 
     def launcher(self, name: str) -> Optional[str]:

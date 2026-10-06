@@ -148,5 +148,4 @@ class NetworkCollector(PeriodicCollector):
             "default_route": default_route(),
             "nav_routes": routes,
             "devices": {k: self.check_device(k) for k in self.cfg["devices"]},
-            "hostname": socket.gethostname(),
         }

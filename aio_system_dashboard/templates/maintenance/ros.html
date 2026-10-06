@@ -9,19 +9,22 @@
 
 <section class="panel mb-3" aria-labelledby="rosenv-title">
   <div class="panel-h"><strong id="rosenv-title">ROS environment</strong>
-    <span class="muted small">same for the dashboard, AIO NAV and DSO</span></div>
+    <span class="muted small">config file, domain and sim time follow the mode</span></div>
   <div class="panel-b">
     <div class="vrow"><span class="k">Active</span>
       <span><strong x-text="rosMode.label"></strong>
-        <span class="muted small" x-show="rosMode.domain_id !== null" x-text="'domain ' + rosMode.domain_id + ', ' + (rosMode.localhost_only ? 'this computer only' : 'network')"></span>
+        <span class="muted small" x-show="rosMode.domain_id !== null" x-text="rosMode.config + ': domain ' + rosMode.domain_id + ', ' + (rosMode.localhost_only ? 'this computer only' : 'network')"></span>
         <span class="muted small" x-show="rosMode.domain_id === null">taken from the service environment</span></span></div>
     <fieldset class="ros-modes mt-2" :disabled="rosBusy">
       <legend class="visually-hidden">ROS environment</legend>
       <template x-for="m in rosMode.modes" :key="m.name">
-        <label class="ros-mode" :class="rosPick === m.name ? 'on' : ''">
-          <input type="radio" name="rosmode" :value="m.name" x-model="rosPick">
-          <span class="ros-mode-name" x-text="m.label"></span>
-          <span class="muted small" x-text="'domain ' + m.domain_id + ', ' + (m.localhost_only ? 'this computer only' : 'network')"></span>
+        <label class="ros-mode" :class="(rosPick === m.name ? 'on ' : '') + (m.found ? '' : 'off')">
+          <input type="radio" name="rosmode" :value="m.name" x-model="rosPick" :disabled="!m.found">
+          <span>
+            <span class="ros-mode-name" x-text="m.label"></span><br>
+            <span class="muted small" x-show="m.found" x-text="m.config + ': domain ' + m.domain_id + ', ' + (m.localhost_only ? 'this computer only' : 'network') + (m.use_sim_time ? ', sim time' : '')"></span>
+            <span class="small text-danger" x-show="!m.found" x-text="m.config + ' not found'"></span>
+          </span>
         </label>
       </template>
     </fieldset>
@@ -40,7 +43,7 @@
       </template>
     </div>
     <div class="ctl-msg mt-2" :class="rosMsgClass" role="status" aria-live="polite" x-text="rosMsg"></div>
-    <p class="muted small mt-2 mb-0">Live matches the camera and IMU drivers (domain 10). Use Bag replay only while playing a bag. After a switch, start AIO NAV again from the Overview page.</p>
+    <p class="muted small mt-2 mb-0">Each mode starts AIO NAV and DSO with its own aio-nav-ros config file, and that file sets the ROS domain. Live matches the camera and IMU drivers. Use Bag replay only while playing a bag. After a switch, start AIO NAV again from the Overview page.</p>
   </div>
 </section>
 

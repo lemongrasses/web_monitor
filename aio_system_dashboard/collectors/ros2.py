@@ -159,6 +159,13 @@ class Ros2Collector:
                     age, pubs = 1.0 / max(rate, 0.1), 1
                 topics.append(self._topic_entry(t, pubs > 0, pubs, 1 if pubs else 0, rate, age))
             nodes = [{"name": n, "present": self.fake.node_present(n)} for n in self.nodes_cfg]
+            q = self.fake.get().get("gnss", "fixed")   # fixed | float | spp | none
+            self.store.set("gnss", {"available": True, "quality": q,
+                                    "label": {"fixed": "RTK fix", "float": "RTK float",
+                                              "spp": "SPP", "none": "No signal"}.get(q, "No signal"),
+                                    "status": {"fixed": 2, "float": 1, "spp": 0}.get(q, -1),
+                                    "sigma_h_m": {"fixed": 0.03, "float": 0.09, "spp": 10.0}.get(q),
+                                    "age_s": 0.5, "topic": "(fake)", "messages": 0})
             self.store.set(self.section, {
                 "available": True, "fake": True, "error": None, "nodes": nodes,
                 "watched": topics,

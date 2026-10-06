@@ -22,6 +22,10 @@ _PRODUCT_SEVERITY = {PRODUCT_UNKNOWN: 0, READY: 1, INITIALIZING: 2, PRODUCT_FAUL
 
 SERVICE_DOWN_STATES = ("stopped", "failed", "not_installed")
 
+# GNSS receiver quality -> (lamp level, label)
+GNSS_LEVEL = {"fixed": (HEALTHY, "RTK fix"), "float": (WARNING, "RTK float"),
+              "spp": (FAULT, "SPP"), "none": (FAULT, "No signal")}
+
 ALIGN_LAMPS = ("alignment", "heading_valid", "fine_alignment")
 
 FLAG_WAIT_TEXT = {
@@ -83,6 +87,7 @@ class HealthEngine:
                                        severity=lambda s: _PRODUCT_SEVERITY.get(s, 0), clock=clock)
         self.udp = DebouncedStatus(1.0, 2.0, clock=clock)
         self.gnss = DebouncedStatus(1.0, 2.0, clock=clock)
+        self._gnss_label = "No data"
         # One lamp per filter-alignment flag; the product is Ready only when all of
         # nav.ready_requires are set.
         self.align_lamps = {k: DebouncedStatus(0.5, 0.5, clock=clock) for k in ALIGN_LAMPS}
@@ -185,21 +190,16 @@ class HealthEngine:
                 raw, label = WARNING, "In progress"
             align_lamps[flag] = {"level": self.align_lamps[flag].update(raw, now), "label": label}
 
-        # GNSS (advisory only).
-        gnss_age = flag_age.get("gnss")
-        gnss_recent = gnss_age is not None and gnss_age <= ncfg["gnss_timeout_s"]
-        if not fresh:
-            g_raw = UNKNOWN
-        elif gnss_recent:
-            g_raw = HEALTHY
-        elif now - self._fresh_since < ncfg["gnss_timeout_s"]:
-            g_raw = UNKNOWN  # stream just (re)started: too early to call GNSS unavailable
-        else:
-            g_raw = WARNING
+        # GNSS receiver quality (advisory only): green RTK fix, yellow RTK float, red SPP / no signal.
+        gq = self.store.get("gnss", {}) or {}
+        quality = gq.get("quality") if gq.get("available") else None
+        g_raw, g_text = GNSS_LEVEL.get(quality, (UNKNOWN, "No data"))
         g_level = self.gnss.update(g_raw, now)
-        self._track("gnss", g_level, "warning" if g_level == WARNING else "info", "gnss",
-                    {WARNING: "GNSS unavailable", HEALTHY: "GNSS available"}.get(g_level, "GNSS unknown"),
-                    "Inertial navigation remains active." if g_level == WARNING else "")
+        if g_level == g_raw:
+            self._gnss_label = g_text
+        self._track("gnss", g_level, {HEALTHY: "info", WARNING: "warning", FAULT: "warning"}.get(g_level, "info"),
+                    "gnss", f"GNSS {self._gnss_label}",
+                    "Inertial navigation remains active." if g_level in (WARNING, FAULT) else "")
 
         aiding = {k: (flag_age.get(k) is not None and flag_age[k] <= ncfg["flag_active_s"] and fresh)
                   for k in ("zupt", "zihr", "nhc", "vupt", "gnss")}
@@ -207,14 +207,13 @@ class HealthEngine:
         network = self.store.get("network", {}) or {}
         indicators = {
             **align_lamps,
-            "gnss": {"level": g_level,
-                     "label": {HEALTHY: "Available", WARNING: "Unavailable"}.get(g_level, "Unknown"),
-                     "detail": "Inertial navigation remains active." if g_level == WARNING else ""},
+            "gnss": {"level": g_level, "label": self._gnss_label if g_level != UNKNOWN else "No data",
+                     "detail": self._gnss_detail(gq)},
         }
         advisories: List[Dict] = []
-        if g_level == WARNING:
-            advisories.append({"level": WARNING, "title": "GNSS signal unavailable",
-                               "detail": "Inertial navigation remains active."})
+        if g_level == FAULT:
+            advisories.append({"level": WARNING, "title": f"GNSS: {self._gnss_label}",
+                               "detail": "Position accuracy is poor. Inertial navigation remains active."})
 
         for key, dev_cfg in self.cfg["devices"].items():
             d = (network.get("devices") or {}).get(key) or {}
@@ -272,6 +271,13 @@ class HealthEngine:
         })
         self.store.set("maint", self._maintenance(now, services, network, system,
                                                   shown, u_shown, nav, expected))
+
+    @staticmethod
+    def _gnss_detail(gq: Dict) -> str:
+        s = gq.get("sigma_h_m")
+        if not gq.get("available") or s is None or gq.get("quality") == "none":
+            return ""
+        return f"horizontal accuracy {s * 100:.0f} cm" if s < 1 else f"horizontal accuracy {s:.1f} m"
 
     def _nav_control(self, nav_svc: Dict) -> Dict:
         """What the Overview page may offer for starting/stopping AIO NAV."""

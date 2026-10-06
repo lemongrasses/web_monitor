@@ -231,3 +231,4 @@ h1, h2, h3 { font-family: var(--cond); font-weight: 600; letter-spacing: .005em;
 .ros-mode input { accent-color: var(--ink); }
 .ctl-mode { margin-left: .6rem; padding: .05rem .5rem; border: 1px solid var(--rule); border-radius: 2px; font-size: var(--t-xs); font-weight: 600; color: var(--ink-2); white-space: nowrap; }
 .ctl-mode.bag { color: var(--caution); border-color: var(--caution); }
+.ros-mode.off { opacity: .55; cursor: not-allowed; }
