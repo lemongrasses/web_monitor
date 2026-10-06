@@ -21,8 +21,9 @@ nav:
   ready_requires: [alignment, heading_valid]
   trajectory: { recent_window_s: 60, recent_hz: 10, older_hz: 1 }
 
-# ROS domain follows aio_nav.yaml (ros_domain_id 13, ros_localhost_only 0), set in deploy/aio-dashboard.service.
-# Topics published on another domain (e.g. the Basler driver on domain 10) are not visible here.
+# ROS domain follows the camera/IMU drivers (/opt/point-lab/bin/launch_openrtk330_basler.sh: domain 10,
+# localhost only), set in deploy/aio-dashboard.service. AIO NAV runs on domain 13, so its data comes
+# over UDP only and /nav/odometry and /aio_nav_node are not monitored through ROS here.
 # systemd units. A unit that does not exist shows "Not installed" and raises no warning.
 # AIO NAV is also detected by process name, so the desktop app start works too.
 # Units with restartable: true get a Restart button (re-run install.sh after changing).
@@ -41,7 +42,7 @@ devices:
     host: 192.168.116.82           # Basler camera (MAC 00:30:53:..) on eno1
     service: camera
     topic_group: camera
-    preview: { kind: image, topic: auto, max_width: 960 }
+    preview: { kind: image, topic: /basler/image_raw, max_width: 960 }
   lidar:
     label: LiDAR
     host: ""
@@ -65,10 +66,10 @@ ros:
   enabled: true
   graph_interval_s: 2
   rate_window_s: 2
-  nodes: [/aio_nav_node]
+  nodes: [/basler/pylon_ros2_camera_node, /openrtk330_driver]
   topics:
-    - { name: /nav/odometry, group: nav, label: NAV odometry, expected_hz: 100 }
-    - { name: auto, type: sensor_msgs/msg/CameraInfo,  group: camera, label: Camera }
+    - { name: /openrtk330/imu/data_raw, group: nav, label: INS IMU, expected_hz: 100 }
+    - { name: /basler/camera_info, group: camera, label: Camera, expected_hz: 20 }
     - { name: auto, type: sensor_msgs/msg/PointCloud2, group: lidar,  label: LiDAR points, hint: ouster }
     - { name: auto, type: sensor_msgs/msg/Imu,         group: lidar,  label: Ouster IMU,   hint: ouster, strict: true }
 
