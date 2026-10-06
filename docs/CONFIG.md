@@ -180,6 +180,7 @@ services:
 | `restartable` | `true` adds a **Restart driver** button on the Camera or LiDAR page. Re-run the installer after changing this (see section 2). |
 | `launch` | Name of a wrapper in the aio-nav-ros `install/aio_nav_ros/lib/aio_nav_ros/` folder (`aio-nav`, `aio-nav-dso`), or an absolute path. Lets the dashboard start and stop this program, which is found again by its `process_pattern`. The program runs as the dashboard's user in its own session; its ROS domain comes from `aio_nav.yaml`, not from the dashboard. Output goes to `logs/<name>.log`. The dashboard service uses `KillMode=process`, so AIO NAV keeps running when the dashboard restarts. |
 | `optional` | `true` means the program being stopped is not a warning (used for DSO). |
+| `user_unit` | Name of a systemd **user** unit (`systemctl --user`), such as `openrtk330-basler-drivers.service` (the camera and IMU/GNSS drivers). It adds a **Sensor drivers** panel with Start / Stop / Restart on **Maintenance > ROS 2**, so the live drivers can be stopped before playing a bag (otherwise live and recorded data mix). It runs as the dashboard's user, with no sudo. Stop and Restart ask for confirmation; the driver unit waits about 15 s before the drivers publish. |
 
 A unit that does not exist on the device shows **Not installed** and raises no
 warning, so unused entries are harmless. To find your real unit names:

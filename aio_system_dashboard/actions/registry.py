@@ -46,6 +46,8 @@ class ActionRegistry:
         devices = {k: d.get("label", k) for k, d in cfg["devices"].items()}
         restartable = {k: s.get("label", k) for k, s in cfg["services"].items()
                        if s.get("restartable") and s.get("unit")}
+        drivers = {k: s.get("label", k) for k, s in cfg["services"].items() if s.get("user_unit")}
+        driver_timeout = acfg["restart_timeout_s"] + 30    # the unit waits a while before starting
         launchable = process_control.targets(cfg)
         grace = acfg["stop_grace_s"]
         self.actions: Dict[str, Action] = {
@@ -57,6 +59,21 @@ class ActionRegistry:
                 "restart_service", "Restart driver", restartable, True, acfg["restart_timeout_s"],
                 lambda target: service_control.restart_service(cfg, target, acfg["restart_timeout_s"],
                                                                fake),
+                "restart"),
+            "start_driver": Action(
+                "start_driver", "Start", drivers, False, driver_timeout,
+                lambda target: service_control.control_user_service(cfg, target, "start",
+                                                                    driver_timeout, fake),
+                "start"),
+            "stop_driver": Action(
+                "stop_driver", "Stop", drivers, True, driver_timeout,
+                lambda target: service_control.control_user_service(cfg, target, "stop",
+                                                                    driver_timeout, fake),
+                "stop"),
+            "restart_driver": Action(
+                "restart_driver", "Restart", drivers, True, driver_timeout,
+                lambda target: service_control.control_user_service(cfg, target, "restart",
+                                                                    driver_timeout, fake),
                 "restart"),
             "start_process": Action(
                 "start_process", "Start", launchable, False, acfg["restart_timeout_s"],

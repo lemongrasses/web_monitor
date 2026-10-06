@@ -1,18 +1,29 @@
 """systemd unit status for configured services (plus process fallback)."""
 
+import os
 import subprocess
 from typing import Dict, List, Optional
 
 from .base import PeriodicCollector
 
 
-def systemd_unit_state(unit: str, timeout: float = 3.0) -> Dict:
+def user_bus_env() -> Dict[str, str]:
+    """Environment `systemctl --user` needs when run from a system service (no login session)."""
+    env = dict(os.environ)
+    run = f"/run/user/{os.getuid()}"
+    env.setdefault("XDG_RUNTIME_DIR", run)
+    env.setdefault("DBUS_SESSION_BUS_ADDRESS", f"unix:path={run}/bus")
+    return env
+
+
+def systemd_unit_state(unit: str, timeout: float = 3.0, user: bool = False) -> Dict:
     try:
         out = subprocess.run(
-            ["systemctl", "show", unit, "--no-pager",
+            ["systemctl"] + (["--user"] if user else []) + ["show", unit, "--no-pager",
              "-p", "LoadState", "-p", "ActiveState", "-p", "SubState",
              "-p", "MainPID", "-p", "ActiveEnterTimestamp", "-p", "NRestarts"],
             capture_output=True, text=True, timeout=timeout, check=False,
+            env=user_bus_env() if user else None,
         )
     except (OSError, subprocess.TimeoutExpired) as e:
         return {"load": "unknown", "active": "unknown", "error": str(e)}
@@ -72,14 +83,18 @@ class ServicesCollector(PeriodicCollector):
                             "unit_state": {"active": "active" if state == "running" else "inactive"},
                             "restartable": bool(svc.get("restartable"))}
                 continue
-            unit_state = systemd_unit_state(svc["unit"]) if svc.get("unit") else {"load": "none"}
+            if svc.get("user_unit"):
+                unit_state = systemd_unit_state(svc["user_unit"], user=True)
+            else:
+                unit_state = systemd_unit_state(svc["unit"]) if svc.get("unit") else {"load": "none"}
             pids = pgrep(svc["process_pattern"]) if svc.get("process_pattern") else None
             state = summarize(unit_state, pids)
             if state in ("not_installed", "unknown") and svc.get("process_pattern"):
                 state = "stopped"  # detected by process too (e.g. desktop app): no unit is fine
             out[key] = {
                 "label": svc.get("label", key),
-                "unit": svc.get("unit", ""),
+                "unit": svc.get("user_unit") or svc.get("unit", ""),
+                "user_unit": bool(svc.get("user_unit")),
                 "state": state,
                 "pids": pids or ([unit_state["main_pid"]] if unit_state.get("main_pid") else []),
                 "unit_state": unit_state,

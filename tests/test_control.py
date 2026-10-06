@@ -193,5 +193,66 @@ class UserResultTest(unittest.TestCase):
         self.assertEqual(process_control.user_result(self.cfg, "start", res)["summary"], "AIO NAV already running")
 
 
+
+class UserUnitTest(unittest.TestCase):
+    def setUp(self):
+        _isolate_state(self)
+        cfg = make()
+        cfg.data["services"]["drivers"] = {"label": "Sensor drivers", "user_unit": "drv.service",
+                                           "optional": True}
+        cfg.data["fake"]["enabled"] = False
+        self.cfg = cfg
+
+    def _run(self, returncode=0, stderr="", active="active"):
+        from aio_system_dashboard.actions import service_control
+        done = types_ns(returncode=returncode, stdout="", stderr=stderr)
+        for patch in (mock.patch.object(service_control.subprocess, "run", return_value=done),
+                      mock.patch.object(service_control, "systemd_unit_state",
+                                        return_value={"active": active, "sub": "x"})):
+            m = patch.start()
+            self.addCleanup(patch.stop)
+            if "run" in str(patch.attribute):
+                run = m
+        return service_control, run
+
+    def test_runs_systemctl_user_with_a_bus_environment(self):
+        sc, run = self._run(active="active")
+        r = sc.control_user_service(self.cfg, "drivers", "start", 30)
+        self.assertTrue(r["success"])
+        args, kw = run.call_args
+        self.assertEqual(args[0], ["systemctl", "--user", "start", "drv.service"])
+        self.assertIn("XDG_RUNTIME_DIR", kw["env"])
+        self.assertIn("DBUS_SESSION_BUS_ADDRESS", kw["env"])
+
+    def test_stop_needs_the_unit_to_be_inactive(self):
+        sc, _ = self._run(active="active")
+        self.assertFalse(sc.control_user_service(self.cfg, "drivers", "stop", 30)["success"])
+        sc, _ = self._run(active="inactive")
+        self.assertTrue(sc.control_user_service(self.cfg, "drivers", "stop", 30)["success"])
+
+    def test_systemctl_error_is_reported(self):
+        sc, _ = self._run(returncode=1, stderr="Unit drv.service not found.\n")
+        r = sc.control_user_service(self.cfg, "drivers", "start", 30)
+        self.assertEqual((r["success"], r["summary"]), (False, "Unit drv.service not found."))
+
+    def test_only_listed_verbs(self):
+        sc, run = self._run()
+        self.assertFalse(sc.control_user_service(self.cfg, "drivers", "disable", 30)["success"])
+        run.assert_not_called()
+
+    def test_actions_target_only_user_unit_services(self):
+        reg = ActionRegistry(self.cfg, {}, FakeEvents(), lambda d: {})
+        for a in ("start_driver", "stop_driver", "restart_driver"):
+            self.assertEqual(set(reg.actions[a].targets), {"drivers"})
+        self.assertTrue(reg.actions["stop_driver"].confirm and not reg.actions["start_driver"].confirm)
+        with self.assertRaises(ActionError):
+            reg.run("stop_driver", "camera")
+
+
+def types_ns(**kw):
+    import types
+    return types.SimpleNamespace(**kw)
+
+
 if __name__ == "__main__":
     unittest.main()

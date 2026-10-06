@@ -60,6 +60,25 @@
       // ---------- system / services
       get sys() { return (this.d && this.d.system) || {}; },
       get services() { return (this.d && this.d.services) || {}; },
+      // Sensor drivers (a systemd user unit): deliberately stopped is not an alarm, so grey, not red.
+      driverChip(key) {
+        const s = this.services[key];
+        if (!s) return this.lvl("unknown", "Unknown");
+        if (s.unit_state && s.unit_state.active === "activating") return this.lvl("warning", "Starting");
+        if (s.state === "running") return this.lvl("healthy", "Running");
+        if (s.state === "failed") return this.lvl("fault", "Failed");
+        return this.lvl("unknown", "Stopped");
+      },
+      driverNote(key) {
+        const s = this.services[key];
+        if (!s) return "";
+        const running = s.state === "running";
+        if (this.rosMode.mode === "bag" && running)
+          return "Bag replay is selected but the sensor drivers are running. Stop them before playing a bag so live and recorded data do not mix.";
+        if (this.rosMode.mode === "live" && !running)
+          return "Live is selected but the sensor drivers are stopped. Start them to get camera and IMU data.";
+        return "";
+      },
       serviceChip(key) {
         const s = this.services[key];
         const m = SERVICE[(s && s.state) || "unknown"] || SERVICE.unknown;

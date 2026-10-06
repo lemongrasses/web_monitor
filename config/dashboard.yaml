@@ -39,13 +39,13 @@ nav:
 services:
   aio_nav:   { label: AIO NAV, unit: aio-nav.service, process_pattern: '^[^ ]*lib/aio_nav_ros/aio_nav_node', launch: aio-nav }
   dso:       { label: DSO, process_pattern: '^[^ ]*lib/dso_ros/dso_live', launch: aio-nav-dso, optional: true }
+  drivers:   { label: Sensor drivers, user_unit: openrtk330-basler-drivers.service, process_pattern: '^[^ ]*aceinna_openrtk330_driver_node', optional: true }
   camera:    { label: Camera driver, unit: camera.service, restartable: true, process_pattern: '^[^ ]*pylon_ros2_camera_wrapper' }   # Basler, started by ros2 launch
-  ouster:    { label: Ouster driver, unit: ouster.service, restartable: true }   # optional
   dashboard: { label: Dashboard, unit: aio-dashboard.service }
 
 # host (optional): IP to ping. Empty = shown as "Not set up", no warnings.
 # preview topic: auto = first CompressedImage/Image (camera) or PointCloud2 (LiDAR) topic.
-#   Use hint to prefer a name, e.g. hint: ouster, or set topic: /exact/name.
+#   Use hint to prefer a name, or set topic: /exact/name.
 devices:
   camera:
     label: Camera
@@ -53,12 +53,6 @@ devices:
     service: camera
     topic_group: camera
     preview: { kind: image, topic: auto, max_width: 960 }
-  lidar:
-    label: LiDAR
-    host: ""
-    service: ouster
-    topic_group: lidar
-    preview: { kind: pointcloud, topic: auto, max_points: 30000 }
 
 network:
   sensor_interface: auto         # auto = interface used to reach the sensors / default route
@@ -86,8 +80,6 @@ ros:
   topics:
     - { name: /openrtk330/imu/data_raw, group: nav, label: INS IMU, expected_hz: 100 }
     - { name: auto, type: sensor_msgs/msg/CameraInfo,  group: camera, label: Camera, expected_hz: 20 }
-    - { name: auto, type: sensor_msgs/msg/PointCloud2, group: lidar,  label: LiDAR points, hint: ouster, strict: true }
-    - { name: auto, type: sensor_msgs/msg/Imu,         group: lidar,  label: Ouster IMU,   hint: ouster, strict: true }
 
 # DSO watchdog (Maintenance > ROS 2). Only DSO is touched, never AIO NAV.
 #  - /dso/odometry turns NaN: restart DSO at once.

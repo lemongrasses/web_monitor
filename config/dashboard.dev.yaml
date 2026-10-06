@@ -15,6 +15,7 @@ nav:
 services:
   aio_nav:   { label: AIO NAV, unit: aio-nav.service, process_pattern: '^[^ ]*lib/aio_nav_ros/aio_nav_node', launch: aio-nav }
   dso:       { label: DSO, process_pattern: '^[^ ]*lib/dso_ros/dso_live', launch: aio-nav-dso, optional: true }
+  drivers:   { label: Sensor drivers, user_unit: openrtk330-basler-drivers.service, process_pattern: '^[^ ]*aceinna_openrtk330_driver_node', optional: true }
   camera:    { label: Camera driver, unit: camera.service, restartable: true }
   ouster:    { label: Ouster driver, unit: ouster.service, restartable: true }
   dashboard: { label: Dashboard, unit: aio-dashboard.service }

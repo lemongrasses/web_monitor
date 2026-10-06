@@ -47,6 +47,35 @@
   </div>
 </section>
 
+{% for key, svc in services_cfg.items() if svc.get('user_unit') %}
+<section class="panel mb-3" aria-labelledby="drv-title-{{ key }}">
+  <div class="panel-h"><strong id="drv-title-{{ key }}">{{ svc.label or key }}</strong>
+    <span class="muted small">camera and IMU / GNSS drivers, run as <span class="mono">{{ svc.user_unit }}</span></span></div>
+  <div class="panel-b">
+    <div class="vrow"><span class="k">State</span>{{ chip("driverChip('" ~ key ~ "')") }}</div>
+    <div class="d-flex flex-wrap gap-2 mt-3">
+      <button type="button" class="btn btn-sm btn-primary" x-show="!services['{{ key }}'] || services['{{ key }}'].state !== 'running'"
+              :disabled="isRunning('start_driver', '{{ key }}')" @click="ask('start_driver', '{{ key }}', 'Start {{ svc.label or key }}', false)">
+        <span x-show="isRunning('start_driver', '{{ key }}')" class="spinner-border spinner-border-sm me-1"></span>Start</button>
+      <button type="button" class="btn btn-sm btn-outline-danger" x-show="services['{{ key }}'] && services['{{ key }}'].state === 'running'"
+              :disabled="isRunning('stop_driver', '{{ key }}')" @click="ask('stop_driver', '{{ key }}', 'Stop {{ svc.label or key }}', true)">
+        <span x-show="isRunning('stop_driver', '{{ key }}')" class="spinner-border spinner-border-sm me-1"></span>Stop</button>
+      <button type="button" class="btn btn-sm btn-outline-primary" x-show="services['{{ key }}'] && services['{{ key }}'].state === 'running'"
+              :disabled="isRunning('restart_driver', '{{ key }}')" @click="ask('restart_driver', '{{ key }}', 'Restart {{ svc.label or key }}', true)">
+        <span x-show="isRunning('restart_driver', '{{ key }}')" class="spinner-border spinner-border-sm me-1"></span>Restart</button>
+    </div>
+    {% for action in ['start_driver', 'stop_driver', 'restart_driver'] %}
+    <template x-if="result('{{ action }}', '{{ key }}')">
+      <div class="mt-2 small" :class="result('{{ action }}', '{{ key }}').success ? 'check-ok' : 'check-fail'"
+           x-text="(result('{{ action }}', '{{ key }}').outcome || (result('{{ action }}', '{{ key }}').success ? 'SUCCESS' : 'FAILED')) + ' — ' + (result('{{ action }}', '{{ key }}').summary || '')"></div>
+    </template>
+    {% endfor %}
+    <p class="small mt-2 mb-0 text-danger" x-show="driverNote('{{ key }}')" x-text="driverNote('{{ key }}')" role="status"></p>
+    <p class="muted small mt-2 mb-0">Stop the drivers before playing a bag, so the live camera and IMU do not publish the same topics. Starting takes about 15 s before the drivers publish.</p>
+  </div>
+</section>
+{% endfor %}
+
 <div class="row g-3">
   <div class="col-lg-4">
     <div class="panel h-100">

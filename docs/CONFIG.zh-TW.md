@@ -151,6 +151,7 @@ services:
 | `restartable` | `true` 會在相機或光達頁面加上 **Restart driver** 按鈕。修改後請重新執行安裝程式（見第 2 節）。 |
 | `launch` | aio-nav-ros `install/aio_nav_ros/lib/aio_nav_ros/` 資料夾內的啟動程式名稱(`aio-nav`、`aio-nav-dso`),或絕對路徑。設定後儀表板可以啟動與停止這個程式,並用 `process_pattern` 找到它。程式以儀表板的使用者身分在獨立的 session 中執行,ROS 網域由 `aio_nav.yaml` 決定,不是儀表板的設定。輸出寫到 `logs/<name>.log`。儀表板服務使用 `KillMode=process`,所以重啟儀表板時 AIO NAV 不會被停掉。 |
 | `optional` | `true` 代表這個程式停止時不算警告(DSO 使用)。 |
+| `user_unit` | systemd **使用者**服務名稱(`systemctl --user`),例如 `openrtk330-basler-drivers.service`(相機與 IMU/GNSS 驅動)。設定後,維護頁面 **ROS 2** 會多一個 **Sensor drivers** 面板,可以 Start / Stop / Restart,方便播 bag 前先停掉即時驅動(否則即時與錄製的資料會混在一起)。以儀表板的使用者身分執行,不需要 sudo。Stop 與 Restart 需要確認;驅動服務啟動後約 15 秒才會開始發布資料。 |
 
 裝置上不存在的服務會顯示 **Not installed**，不會產生警告，所以用不到的項目放著也沒關係。查詢實際的服務名稱：
 ```bash
