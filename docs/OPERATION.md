@@ -35,7 +35,7 @@ state, and download its logs.
 | **Product view** | `http://<device-ip>:8080` | Operators | Overview, Navigation and Data pages: is navigation usable, where is the vehicle, is the output streaming. |
 | **AIO NAV control** | Overview page | Operators | Start, stop and restart the navigation filter (if enabled on this device). |
 | **Data download** | Product view, Data page | Operators | Download AIO NAV log files to your computer. |
-| **Maintenance view** | `http://<device-ip>:8081` | Engineers | Pinpoint whether a problem is in the system, a service, ROS, a sensor or the network; live camera and LiDAR view; driver diagnostics and restarts. |
+| **Maintenance view** | `http://<device-ip>:8081` | Engineers | Pinpoint whether a problem is in the system, a service, ROS, a sensor or the network; live camera and LiDAR view; driver diagnostics and restarts; switching between live and bag replay; starting and stopping the sensor drivers. |
 | **`aio-dashboard` command** | Device terminal | Engineers | Start, stop, check and configure the dashboard itself. |
 
 The dashboard only **monitors** the system. Navigation keeps running even if the
@@ -89,14 +89,14 @@ something needs attention.**
 | **Alignment** | Coarse alignment (leveling) is done. |
 | **Initial heading** | The filter has a valid heading. |
 | **Fine alignment** | Fine alignment is done: heading accuracy reached its target. |
-| **GNSS** | GNSS updates are arriving. "Unavailable" is a warning only: inertial navigation continues, but accuracy slowly degrades. |
-| **Camera / LiDAR** | The sensor answers on the network. "Not set up" means no IP is configured; this is normal if not needed. |
+| **GNSS** | Position quality of the GNSS receiver: **green** = *RTK fix* (centimeter level), **amber** = *RTK float* (about 10 cm, less accurate), **red** = *SPP* (single-point positioning, meters) or *No signal*. Amber and red are warnings only: inertial navigation continues, but accuracy slowly degrades. |
+| **Camera / LiDAR** (if fitted) | The sensor answers on the network. "Not set up" means no IP is configured; this is normal if not needed. |
 | **Network** | The sensor network link is up. |
 | **ZUPT / ZIHR / NHC / VUPT** (Navigation page) | Which aiding the filter is using at the moment (see the [glossary](#10-glossary)). Cyan = active, grey = idle. Idle is normal. |
 
 GNSS, camera, LiDAR and network problems are shown as **advisories** (amber bars under
 the lamps). They never change the state from Ready to Fault, because the navigation
-solution is still usable.
+solution is still usable. A red GNSS lamp adds the advisory *GNSS: SPP* or *GNSS: No signal*.
 
 ### 3.3 UDP output line
 
@@ -112,7 +112,7 @@ solution is still usable.
 
 ### 3.4 Pages
 
-- **Overview**: state, AIO NAV control, UDP output, map with the last 60 s of track,
+- **Overview**: state, AIO NAV control (with the mode in use, *Live* or *Bag replay*), UDP output, map with the last 60 s of track,
   position, heading (with an arrow; up = north), speed, roll and pitch, lamps,
   advisories, storage.
 - **Navigation**: large map with the whole track of this run, and every value with its
@@ -129,41 +129,65 @@ solution is still usable.
 - [ ] The device is powered and the GNSS antenna has a clear view of the sky.
 - [ ] The vehicle is parked in its starting position and will stay **completely still**
       for the first part of alignment.
+- [ ] Live use: the mode is **Live** and the sensor drivers are running (section 4.6; Maintenance → ROS 2).
 - [ ] Your computer opens the product view (section 2).
 - [ ] The state strip is not Unknown (the dashboard is connected).
 
 ### 4.2 Starting AIO NAV
 
-On the **Overview** page, the **AIO NAV** control line shows the filter's service state.
+On the **Overview** page, the **AIO NAV** control line shows whether the filter is running,
+and the mode in use next to it (for example *Live · domain 10*).
 
-1. Click **Start**. The line shows *Waiting for the service to change state…*, then
-   *Navigation filter is running*.
+1. Click **Start**. The line shows *Working…*, then the lamp turns **Running** and the
+   message *AIO NAV started* appears for a few seconds.
 2. The state strip changes to **Initializing**, and the UDP output to **Streaming**.
 3. Continue with the [Alignment SOP](#5-alignment-sop).
 
-If there is no control line, control from the web page is turned off on this device
-(`nav.allow_control`). Start AIO NAV the usual way (the AIO Nav desktop app or
-`sudo systemctl start aio-nav`); the dashboard detects it either way.
+If the lamp shows **Failed**, or the message reads *AIO NAV did not start: …*, see
+[Troubleshooting](#9-troubleshooting). If there is no control line, control from the web page
+is turned off on this device (`nav.allow_control`); ask the administrator to enable it.
+AIO NAV that was started in another way is detected too.
 
 ### 4.3 During operation
 
 - Keep an eye on the state strip. **Ready** means the output can be used.
-- Amber advisories (such as *GNSS signal unavailable*) do not stop navigation, but plan
+- Amber advisories (such as *GNSS: SPP* or *GNSS: No signal*) do not stop navigation, but plan
   for reduced accuracy. Check the ± values on the Navigation page.
 - If the state becomes **Fault**, follow the reason shown in the strip
   ([Troubleshooting](#9-troubleshooting)).
 
 ### 4.4 Restarting or stopping
 
-- **Restart** (asks for confirmation): stops and starts AIO NAV. **Alignment starts over**,
+- **Restart** (asks for confirmation: choose **Restart now**, or **Cancel** / Esc): stops and starts AIO NAV. **Alignment starts over**,
   so only restart while the vehicle can stand still.
-- **Stop** (asks for confirmation): ends the navigation output. Your application stops
+- **Stop** (asks for confirmation: choose **Stop now**, or **Cancel** / Esc): ends the navigation output. Your application stops
   receiving data.
 
 ### 4.5 After the run
 
 1. Stop the vehicle and click **Stop** if no more navigation output is needed.
 2. Open the **Data** page and download the log files of the run (section 7.2).
+
+### 4.6 Replaying a recorded bag (engineers)
+
+Live and recorded data must not mix, so switch the whole system to **Bag replay**:
+
+1. Maintenance → **ROS 2** → **Sensor drivers** → **Stop**. Otherwise the live camera and IMU
+   keep publishing while the bag plays.
+2. On the same page, under **ROS environment**, choose **Bag replay**, click **Apply**, then
+   **Switch now**. AIO NAV is stopped and the dashboard restarts (a few seconds). Bag replay
+   uses the settings file `aio_nav_bag.yaml` (ROS domain 13, simulated time) instead of
+   `aio_nav.yaml` (domain 10, this computer only).
+3. On the Overview page the tag next to AIO NAV now reads *Bag replay · domain 13*.
+   Click **Start**.
+4. Play the bag in the same domain, with the clock:
+   ```bash
+   ROS_DOMAIN_ID=13 ROS_LOCALHOST_ONLY=0 ros2 bag play <bag folder> --clock
+   ```
+   A terminal may default to another domain (check `echo $ROS_DOMAIN_ID`), so set it on the
+   command line as shown.
+5. Back to live use: stop the replay, switch to **Live** (as in step 2), start the sensor
+   drivers (**Start**; they publish after about 15 s), then click **Start** on the Overview page.
 
 ## 5. Alignment SOP
 
@@ -183,8 +207,9 @@ turns **Ready**.
 
 ### 5.2 Step by step
 
-1. Park the vehicle at the start point under open sky. GNSS lamp should be green once
-   the filter runs.
+1. Park the vehicle at the start point under open sky. Wait until the GNSS lamp shows
+   **RTK fix** (green): the initial position comes from GNSS. **RTK float** (amber) works but
+   starts less accurately.
 2. On the Overview page, click **Start**. The state becomes **Initializing**: *Waiting for
    alignment*.
 3. **Do not move** for at least 10 s, until the **Alignment** lamp turns pale green.
@@ -199,7 +224,7 @@ turns **Ready**.
 | Situation | Action |
 |-----------|--------|
 | The vehicle moved during stage 1 | Stop the vehicle, click **Restart**, and repeat from step 3. |
-| **Alignment** stays amber for well over 10 s | Check the GNSS lamp (initial position comes from GNSS) and that the vehicle is really still. Then restart. |
+| **Alignment** stays amber for well over 10 s | Check the GNSS lamp (initial position comes from GNSS; it should not be red) and that the vehicle is really still. Then restart. |
 | **Initial heading** does not turn green while driving | GNSS may be blocked (trees, buildings, tunnel). Drive in an open area. |
 | **Fine alignment** takes long | It completes at the latest when the fine-alignment time limit passes (default 300 s). Keep driving in open sky. |
 | GNSS is lost after Ready | Navigation continues on inertial sensors (advisory only). Accuracy degrades over time; watch the ± values. |
@@ -225,11 +250,14 @@ turns **Ready**.
 | Starts | As soon as AIO NAV runs, **before** alignment completes. Use the flags to know when the data is valid. |
 
 Each destination gets its own copy of every packet. Your receiver and the dashboard do
-not compete for data.
+not compete for data. The dashboard is the only program that listens on `127.0.0.1:9000`:
+only one program can hold that address, so do not run another listener there (for example the
+old AIO Nav desktop app), or the dashboard would show no data.
 
 ### 6.2 Setting the destination
 
-1. On the device, edit AIO NAV's settings:
+1. On the device, edit AIO NAV's settings. Edit the file of the mode you use: `aio_nav.yaml`
+   (Live) and `aio_nav_bag.yaml` (Bag replay); change both if you use both.
    ```bash
    nano ~/aio-nav-ros/install/aio_nav_ros/share/aio_nav_ros/config/aio_nav.yaml
    ```
@@ -357,12 +385,12 @@ output is the product interface. They are published **only after coarse alignmen
 | `/nav/path` | `nav_msgs/Path` | Recent track |
 | TF `map` → `imu_link` | — | Pose in the TWD97 map frame |
 
-ROS domain and network settings must match AIO NAV's (default domain 13).
+ROS domain and network settings must match AIO NAV's: **Live** uses domain 10 (this computer only), **Bag replay** uses domain 13 (network). The Overview page shows the one in use.
 
 ### 7.2 Log files (Data page)
 
 When enabled in `aio_nav.yaml` (`save_fusion_txt`, `save_parsed_txt`), AIO NAV writes
-tab-separated text logs once alignment is complete, in its `output/` folder:
+tab-separated text logs once alignment is complete, in the `output/` folder of aio-nav-ros (next to `install/`; both settings files point there):
 
 | File | Content |
 |------|---------|
@@ -379,12 +407,13 @@ Download them from the **Data** page of the product view.
 |------|-----------|
 | **Overview** | See the four layers (System, Services, Data flow, Network) and the list of active issues. Each issue links to the page that explains it. |
 | **System** | CPU, GPU, memory, disk, temperatures, systemd services, network interfaces. |
-| **ROS 2** | Required nodes, monitored topics (rate, freshness, publishers, subscribers), all topics. |
-| **Camera / LiDAR** | Reachability, driver state, topic health, **Live view** (camera image; LiDAR point cloud with top/3D view), **Run diagnostic**, **Restart driver** (asks for confirmation). |
+| **ROS 2** | Required nodes, monitored topics (rate, freshness, publishers, subscribers), all topics. Also here: **Sensor drivers** (Start / Stop / Restart the camera and IMU/GNSS drivers) and **ROS environment** (switch between Live and Bag replay, section 4.6). |
+| **Camera / LiDAR** (if fitted) | Reachability, driver state, topic health, **Live view** (camera image; LiDAR point cloud with top/3D view), **Run diagnostic**, **Restart driver** (asks for confirmation). |
 | **Network** | Interfaces and addresses, sensor reachability, the NAV output destinations and their route. |
 | **Diagnostics** | Active faults and warnings, results of diagnostics and restarts, and the event history. |
 
-The Live view reads the sensor's ROS topic only while its page is open.
+The Live view reads the sensor's ROS topic only while its page is open. Stop the sensor drivers
+before replaying a bag (section 4.6); a deliberately stopped driver is not reported as a problem.
 Device commands:
 
 ```bash
@@ -403,10 +432,12 @@ aio-dashboard config     # edit settings, check, restart
 | Grey strip, "Lost connection to the dashboard" | Your browser cannot reach the device | Check the network; the page recovers by itself. |
 | **Fault**: AIO NAV process is not running | The filter is stopped | Click **Start** (section 4.2). |
 | **Fault**: NAV output stopped | The filter froze or its sensors stopped | Check the IMU/GNSS driver on the Maintenance view; **Restart** AIO NAV. |
-| AIO NAV line: "The service stopped with an error" | AIO NAV crashed | Click **Start** again. If it repeats, collect `journalctl -u aio-nav -n 100` for the navigation team. |
-| AIO NAV line: "aio-nav.service is not installed" | Web control is not set up on this device | Start AIO NAV the usual way; ask the administrator to re-run the installer. |
+| AIO NAV line: *AIO NAV did not start: …* (or lamp **Failed**) | AIO NAV exited or could not start; the message gives the reason | Click **Start** again. If it repeats, collect `/opt/aio-dashboard/logs/aio_nav.log` for the navigation team. |
+| AIO NAV line: *AIO NAV launcher not found…* | The aio-nav-ros `install/` folder is missing or incomplete on this device | Ask the administrator to check that aio-nav-ros is installed. |
+| Live: no camera or IMU data | The sensor drivers are stopped | Maintenance → ROS 2 → Sensor drivers → **Start**; wait about 15 s. |
+| Bag replay: AIO NAV receives no data | The bag is played in another ROS domain, or the live drivers are still running | Section 4.6: stop the sensor drivers and play with `ROS_DOMAIN_ID=13 ROS_LOCALHOST_ONLY=0 ros2 bag play … --clock`. |
 | Stuck at **Initializing** | Alignment not finished | Follow the [Alignment SOP](#5-alignment-sop) and 5.3. |
-| **GNSS signal unavailable** advisory | Sky view blocked, antenna or GNSS receiver issue | Navigation continues; move to open sky; check the antenna. |
+| **GNSS** lamp amber or red (*RTK float*, *SPP*, *No signal*) | Sky view blocked, no RTK correction data, antenna or GNSS receiver issue | Navigation continues; move to open sky; check the antenna and the correction link. |
 | **Low rate** / **Stale** | Device overloaded or filter input interrupted | Check the System page (CPU, temperature) and the ROS 2 page. |
 | Camera/LiDAR **Not connected** | Sensor powered off, cable, or wrong IP | Check power and cable; Maintenance → Camera/LiDAR → **Run diagnostic**. |
 | Your application receives nothing, dashboard says Streaming | Destination or firewall | Check **Sending to** matches your computer; open the UDP port in its firewall (section 6.7). |
@@ -419,6 +450,9 @@ aio-dashboard config     # edit settings, check, restart
 | AIO NAV | The navigation filter that runs on the device (`aio_nav_node`). |
 | Alignment | Finding the initial attitude and position before navigation. |
 | GNSS | Satellite positioning (GPS, Galileo, BeiDou, …). |
+| RTK fix / RTK float | Receiver solutions that use correction data: *fix* is centimeter level, *float* is about a decimeter. |
+| SPP | Single-point positioning without corrections: meter-level accuracy. |
+| Live / Bag replay | The two modes of the system: live sensors (ROS domain 10) or a recorded bag (domain 13). |
 | IMU | Inertial measurement unit: gyroscopes and accelerometers. |
 | ZUPT | Zero-velocity update: the filter uses "the vehicle is not moving". |
 | ZIHR | Zero integrated heading rate: the filter uses "the heading is not changing" while stationary. |
