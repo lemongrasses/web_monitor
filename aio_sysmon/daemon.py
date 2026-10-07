@@ -12,6 +12,7 @@ from typing import Dict, List, Optional
 
 from . import __version__, config as cfgmod, sources
 from .kmsg import KmsgReader
+from .priority import Escalation, lock_memory, locked_kb
 from .probes import LatencyProbe
 from .ring import RingFile, SLOT, read_ring
 from .store import CRITICAL, OK, Store
@@ -60,6 +61,7 @@ class Daemon:
         self._last_tick: Optional[float] = None
         self._last_wall_minus_mono: Optional[float] = None
         self.boot_id = sources.boot_id()
+        self.prio = Escalation(cfg, mono)
 
     # ------------------------------------------------------------------- previous run
     def boot_analysis(self) -> Optional[Dict]:
@@ -189,6 +191,11 @@ class Daemon:
     def on_trigger(self, t: Dict, light: Dict, m: float) -> None:
         self.store.write_event("anomaly", {"trigger": t["kind"], "msg": t["msg"], "value": t["value"],
                                            "limit": t["limit"], "light": light})
+        if self.prio.wants(t["kind"]):
+            r = self.prio.raise_for()
+            if r is not None:
+                self.store.write_event("priority", {"raised": bool(r), "for_s": self.prio.seconds,
+                                                    "trigger": t["kind"]})
         level = self.store.disk_level()
         if level == OK:
             self.burst_until = max(self.burst_until, m + float(self.cfg["burst_s"]))
@@ -212,6 +219,7 @@ class Daemon:
     # ------------------------------------------------------------------------- the loop
     def tick(self) -> None:
         now, m = self.wall(), self.mono()
+        self.prio.beat()
         # the recorder itself running late is evidence of a system-wide stall
         if self._last_tick is not None and m - self._last_tick > 3.0 * float(self.cfg["ring_interval_s"]) + 1.0:
             self.store.write_event("tick_gap", {"gap_s": round(m - self._last_tick, 1)}, now)
@@ -256,11 +264,16 @@ class Daemon:
             self._next_budget = m + 600.0
 
     def run(self) -> None:
+        threading.stack_size(512 * 1024)       # small thread stacks: locking memory in RAM must stay cheap
         verdict = self.boot_analysis()
         self.store.write_event("start", {"version": __version__, "boot_id": self.boot_id[:8], "capacity": self.cap,
                                          "limits": self.limits, "kmsg": bool(self.kmsg and self.kmsg.start()),
                                          "previous_run": (verdict or {}).get("summary", "clean")})
         self.probe.start()
+        self.prio.bind()
+        locked = lock_memory() if self.cfg.get("lock_memory", True) else False
+        if self.cfg.get("lock_memory", True):
+            self.store.write_event("memory_lock", {"locked": locked, "locked_kb": locked_kb()})
         # prime the samplers so the first record has rates
         self.light_sample(self.wall(), self.mono())
         self.full_sample(self.wall(), self.mono(), False, "normal")
@@ -282,6 +295,7 @@ class Daemon:
         self._stop.set()
 
     def shutdown(self) -> None:
+        self.prio.close()
         self.probe.stop()
         if self.kmsg:
             self.kmsg.stop()

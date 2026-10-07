@@ -411,3 +411,44 @@ class KmsgRepeatTest(unittest.TestCase):
         r.handle("3,41,3,-;new problem")
         self.assertEqual([d["msg"] for k, d in self.seen], ["new problem"])
         self.assertEqual(r.last_seq, 41)
+
+
+class EscalationTests(unittest.TestCase):
+    def make(self, **cfg):
+        from aio_sysmon.priority import Escalation
+        self.now = [100.0]
+        self.calls = []
+        e = Escalation(cfg, lambda: self.now[0], set_policy=lambda tid, p: self.calls.append(p))
+        e.tid = 1234
+        return e
+
+    def test_raise_and_timed_drop(self):
+        e = self.make(escalate_s=30)
+        self.assertTrue(e.raise_for())
+        self.assertIsNone(e.raise_for())              # already raised: only extends
+        self.assertEqual(self.calls, [10])
+        self.now[0] += 29; e.beat(); self.assertTrue(e.active)
+        self.now[0] += 2; e.beat(); self.assertFalse(e.active)
+        self.assertEqual(self.calls, [10, 0])
+
+    def test_only_unresponsive_kinds_raise(self):
+        e = self.make()
+        for k in ("stall", "iowait", "disk_wait_tasks", "memory_low", "hot"):
+            self.assertTrue(e.wants(k), k)
+        for k in ("cpu_saturated", "load", "disk_space", "power_dip"):
+            self.assertFalse(e.wants(k), k)         # busy is not the same as stuck
+
+    def test_disabled_and_refused(self):
+        self.assertFalse(self.make(escalate=False).raise_for())
+        from aio_sysmon.priority import Escalation
+        def refuse(tid, p): raise PermissionError()
+        e = Escalation({}, time.monotonic, set_policy=refuse); e.tid = 1
+        self.assertFalse(e.raise_for()); self.assertFalse(e.active)
+
+    def test_watchdog_drops_when_loop_stops(self):
+        e = self.make(escalate_s=600, escalate_stuck_s=5)
+        e.raise_for(); e.beat()
+        self.now[0] += 6                               # no heartbeat for 6 s
+        stuck = e.mono() - e.heartbeat > e.stuck_s
+        self.assertTrue(stuck)
+        e.drop(); self.assertFalse(e.active)

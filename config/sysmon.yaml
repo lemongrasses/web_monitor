@@ -25,6 +25,11 @@ retention_days: 30
 min_free_mb: null
 critical_free_mb: 512
 
+lock_memory: true        # keep the recorder in RAM (about 11 MB)
+escalate: true           # when the machine stops responding: low real-time priority for escalate_s
+escalate_s: 60
+escalate_priority: 10
+
 kmsg: true               # copy kernel warnings and errors to disk (needs root)
 
 # Override any derived limit (see docs/SYSMON.md for the list and what they are derived from):

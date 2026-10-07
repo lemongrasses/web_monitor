@@ -16,12 +16,16 @@ Restart=always
 RestartSec=5
 KillSignal=SIGTERM
 TimeoutStopSec=15
-# It has to keep running while the machine is struggling: a little priority, and the OOM killer
-# should pick other processes first. The caps keep it from ever becoming the problem.
+# It has to keep running while the machine is struggling: a little priority, its memory kept in
+# RAM, and the OOM killer should pick other processes first. The caps keep it from becoming the
+# problem. Only when the machine stops responding does it raise itself to a low real-time priority
+# for a minute; LimitRTTIME is the kernel's own guard for that: a real-time task that computes for
+# 1 s without sleeping is killed (and restarted). (No I/O priority: this disk's scheduler is
+# "none", which ignores it.)
 Nice=-5
-IOSchedulingClass=best-effort
-IOSchedulingPriority=2
 OOMScoreAdjust=-900
+LimitMEMLOCK=infinity
+LimitRTTIME=1000000
 CPUQuota=15%
 MemoryMax=96M
 # Sandbox: read-only system, no home directories, only its own log directory is writable.

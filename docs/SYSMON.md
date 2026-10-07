@@ -121,6 +121,19 @@ All commands:
 The files are plain text and gzip in `/var/log/aio-sysmon/`: `ring.bin` (fixed ring),
 `samples/` (daily JSON lines), `events.jsonl`, `snapshots/`, `last_known.json`, `run.json`.
 
+## 3b. Staying alive when the machine struggles
+
+Normally the recorder is a quiet ordinary process (slightly favoured: nice -5, hard to OOM-kill,
+its memory pinned in RAM so memory pressure cannot swap it out; about 11 MB).
+Only when a trigger shows the machine has **stopped responding** (`stall`, `iowait`,
+`disk_wait_tasks`, `memory_low`, `swapping`, `swap_high`, `hot`, `slow_disk_write`) does it raise
+itself to a low real-time priority for 60 s, so its detailed sampling is not starved, and then it drops back (event
+`priority`). A machine that is merely busy (`load`, `cpu_saturated`) does not trigger this. It
+never pauses or touches other programs. Guards: the priority is far below the kernel's own threads;
+a watchdog thread drops it if the loop stops progressing; the service sets `LimitRTTIME`, so the
+kernel itself kills a real-time task that computes 1 s without sleeping (systemd restarts it).
+If the machine is too stuck to run the recorder at all, the ring and `last-crash` are what remain.
+
 ## 4. Settings
 
 `/opt/aio-dashboard/config/sysmon.yaml` (restart with `sudo systemctl restart aio-sysmon`).
@@ -135,6 +148,8 @@ Everything is optional. The most useful keys:
 | `min_free_mb`, `critical_free_mb` | derived, `512` | the disk guard levels above |
 | `burst_s`, `burst_interval_s` | `60`, `1` | detailed sampling after a trigger |
 | `triggers` | `{}` | override any limit, e.g. `{iowait_pct: 15, temp_c: 80}` |
+| `lock_memory` | `true` | keep the recorder in RAM |
+| `escalate`, `escalate_s`, `escalate_priority` | `true`, `60`, `10` | the temporary real-time raise above |
 | `kmsg` | `true` | copy kernel warnings and errors (needs root) |
 
 ## 5. What it cannot see

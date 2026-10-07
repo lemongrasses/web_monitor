@@ -101,6 +101,15 @@ aio-sysmon snapshots stall       # 開啟名稱含 "stall" 的最新一份
 
 檔案都是純文字或 gzip,放在 `/var/log/aio-sysmon/`:`ring.bin`(固定大小的環狀檔)、`samples/`(每日 JSON 行)、`events.jsonl`、`snapshots/`、`last_known.json`、`run.json`。
 
+## 3b. 機器吃緊時它怎麼保持運作
+
+平常它只是一個安靜的一般程式(稍微優先:nice −5、不容易被 OOM 殺掉、記憶體固定在 RAM 裡,記憶體吃緊時不會被換出去,約 11 MB)。
+只有觸發條件顯示機器**已經沒有回應**(`stall`、`iowait`、`disk_wait_tasks`、`memory_low`、`swapping`、`swap_high`、`hot`、`slow_disk_write`)時,
+它才把自己暫時提高為低優先序的即時排程 60 秒,讓詳細取樣不被餓到,之後自動降回(事件 `priority`)。
+只是忙(`load`、`cpu_saturated`)不會觸發。它不會暫停或影響其他程式。保險:優先序遠低於核心自己的執行緒;
+監看執行緒在主迴圈停止前進時會降回一般;服務設有 `LimitRTTIME`,即時排程的程式連續運算 1 秒沒有睡眠,核心會直接終止它(systemd 再重啟)。
+如果機器卡到連紀錄器都跑不動,留下來的就是環狀檔與 `last-crash`。
+
 ## 4. 設定
 
 `/opt/aio-dashboard/config/sysmon.yaml`(修改後執行 `sudo systemctl restart aio-sysmon`)。全部都是選填。最常用的項目:
@@ -114,6 +123,8 @@ aio-sysmon snapshots stall       # 開啟名稱含 "stall" 的最新一份
 | `min_free_mb`、`critical_free_mb` | 推算、`512` | 上述磁碟保護的各級門檻 |
 | `burst_s`、`burst_interval_s` | `60`、`1` | 觸發後的詳細取樣 |
 | `triggers` | `{}` | 覆蓋任何門檻,例如 `{iowait_pct: 15, temp_c: 80}` |
+| `lock_memory` | `true` | 把紀錄器固定在 RAM |
+| `escalate`、`escalate_s`、`escalate_priority` | `true`、`60`、`10` | 上述暫時提高優先序 |
 | `kmsg` | `true` | 複製核心的警告與錯誤(需要 root) |
 
 ## 5. 它看不到什麼
