@@ -132,7 +132,7 @@ itself to a low real-time priority for 60 s, so its detailed sampling is not sta
 never pauses or touches other programs. Guards: the priority is far below the kernel's own threads;
 a watchdog thread drops it if the loop stops progressing; the service sets `LimitRTTIME`, so the
 kernel itself kills a real-time task that computes 1 s without sleeping (systemd restarts it).
-If the machine is too stuck to run the recorder at all, the ring and `last-crash` are what remain.
+Measured on this machine: the service's 15% CPU cap does **not** limit a real-time task (a spinning loop used 97%), so while raised the guards above are what protect you; `LimitRTTIME` killed a non-sleeping real-time loop after 1.1 s. `tools/sysmon_rt_test.sh` repeats these tests. If the machine is too stuck to run the recorder at all, the ring and `last-crash` are what remain.
 
 ## 4. Settings
 
