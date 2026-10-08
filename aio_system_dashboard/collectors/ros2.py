@@ -35,6 +35,17 @@ FAKE_TOPIC_BY_TYPE = {
 }
 
 
+def _fake_type(name: str) -> str:
+    """Fake mode only: a plausible message type for a topic named in the config without one."""
+    n = name.lower()
+    for key, typ in (("imu", "sensor_msgs/msg/Imu"), ("odom", "nav_msgs/msg/Odometry"),
+                     ("fix", "sensor_msgs/msg/NavSatFix"), ("points", "sensor_msgs/msg/PointCloud2"),
+                     ("camera_info", "sensor_msgs/msg/CameraInfo"), ("image", "sensor_msgs/msg/Image")):
+        if key in n:
+            return typ
+    return ""
+
+
 def pick_topic(topic_types: Dict[str, List[str]], types, hint: str = "", strict: bool = False,
                avoid=("depth", "/nav/", "/odometry/raw", "/clock")) -> Optional[str]:
     """Choose the topic to watch among those publishing one of ``types``.
@@ -211,7 +222,7 @@ class Ros2Collector:
             self.store.set(self.section, {
                 "available": True, "fake": True, "error": None, "nodes": nodes,
                 "watched": topics,
-                "graph": [{"name": t["name"], "types": [t.get("type", "")],
+                "graph": [{"name": e["name"], "types": [t.get("type") or _fake_type(e["name"])],
                            "publishers": e["publishers"], "subscribers": e["subscribers"]}
                           for t, e in zip(self.watched, topics)],
             })
