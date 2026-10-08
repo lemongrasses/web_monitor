@@ -13,6 +13,11 @@ that was stopped on purpose stays stopped, and one that is running counts as wan
 If NaN keeps coming back (``fast_restarts`` restarts within ``window_s``), further restarts also
 wait ``retry_s`` so a broken camera view does not make DSO restart in a tight loop.
 
+* DSO uses too much memory. Its RAM plus swap is checked every tick; above ``max_memory_mb``
+  (auto: 20% of RAM) DSO is restarted at once. DSO was seen keeping every camera frame (about
+  25 MB/s) until RAM and swap were full and the whole machine hung; restarting DSO in time keeps
+  the rest (AIO NAV, the dashboard, the desktop) alive.
+
 The state machine takes the clock and callbacks as arguments so it can be tested without ROS;
 ``attach`` connects it to the ROS monitor's node.
 """
@@ -49,7 +54,9 @@ class DsoWatchdog:
 
     def __init__(self, cfg, store, events, restart: Callable[[], Dict], start: Callable[[], Dict],
                  process_running: Callable[[], bool], wanted: Callable[[], bool],
-                 adopt: Callable[[], None], clock: Callable[[], float] = time.monotonic):
+                 adopt: Callable[[], None], clock: Callable[[], float] = time.monotonic,
+                 memory_mb: Optional[Callable[[], Optional[float]]] = None,
+                 total_memory_mb: Optional[float] = None):
         self.w = cfg["dso_watchdog"]
         self.store, self.events = store, events
         self._restart, self._start = restart, start
@@ -70,6 +77,13 @@ class DsoWatchdog:
         self.starts_total = 0
         self.last_restart_ts: Optional[float] = None   # wall clock, for display
         self.last_result = ""
+        self._memory = memory_mb
+        self.memory_mb: Optional[float] = None
+        self.memory_restarts = 0
+        limit = self.w.get("max_memory_mb", "auto")
+        if limit in (None, "auto"):
+            limit = 0.2 * total_memory_mb if total_memory_mb else None
+        self.memory_limit_mb: Optional[float] = float(limit) if limit else None   # 0 / None: off
 
     @property
     def enabled(self) -> bool:
@@ -101,13 +115,22 @@ class DsoWatchdog:
                 self._adopt()                      # a running DSO is a wanted DSO
                 self._down_since = None
                 self._outage_logged = False
-                action = self._check_odometry(now)
+                action = self._check_memory() or self._check_odometry(now)
             else:
                 self._bad = 0
                 action = self._check_down(now)
         if action:
             threading.Thread(target=self._do, args=(action,), name="dso-watchdog", daemon=True).start()
         self._publish()
+
+    def _check_memory(self) -> Optional[str]:
+        self.memory_mb = self._memory() if self._memory else None
+        if not self.memory_limit_mb or self.memory_mb is None or self.memory_mb <= self.memory_limit_mb:
+            return None
+        self._busy = True
+        self.state, self.detail = RESTARTING, (f"DSO uses {self.memory_mb:.0f} MB (limit "
+                                               f"{self.memory_limit_mb:.0f} MB), restarting DSO")
+        return "restart_memory"
 
     def _check_odometry(self, now: float) -> Optional[str]:
         if now < self._settle_until:
@@ -152,12 +175,16 @@ class DsoWatchdog:
         if action == "restart":
             self.events.add("warning", "watchdog", "DSO odometry is NaN: restarting DSO",
                             "AIO NAV is not restarted")
+        elif action == "restart_memory":
+            self.events.add("fault", "watchdog", "DSO used too much memory: restarting DSO",
+                            f"{self.memory_mb:.0f} MB of RAM and swap, limit {self.memory_limit_mb:.0f} MB "
+                            "(dso_watchdog.max_memory_mb); AIO NAV is not restarted")
         elif not self._outage_logged:
             self._outage_logged = True
             self.events.add("warning", "watchdog", "DSO is not running: starting it again",
                             f"trying every {float(self.w['retry_s']):.0f} s until it stays up")
         try:
-            result = (self._restart if action == "restart" else self._start)()
+            result = (self._start if action == "start" else self._restart)()
         except Exception as e:  # keep the watchdog alive whatever the action does
             logger.exception("DSO %s failed", action)
             result = {"success": False, "summary": f"error: {e}"}
@@ -166,15 +193,17 @@ class DsoWatchdog:
             self._busy = False
             self._bad = 0
             self._last_try = now
-            if action == "restart":
+            if action in ("restart", "restart_memory"):
                 self._last_restart = now
                 self._history.append(now)
                 self.restarts_total += 1
+                if action == "restart_memory":
+                    self.memory_restarts += 1
             else:
                 self.starts_total += 1
             self._settle_until = now + float(self.w["settle_s"])
             self.last_restart_ts = time.time()
-            verb = "restarted" if action == "restart" else "started"
+            verb = "started" if action == "start" else "restarted"
             self.last_result = verb if result.get("success") else f"{action} failed"
             if result.get("summary"):
                 self.last_result += ": " + result["summary"]
@@ -188,6 +217,9 @@ class DsoWatchdog:
                 "topic": self.w["topic"], "restarts": self.restarts_total, "starts": self.starts_total,
                 "last_restart_ts": self.last_restart_ts, "last_result": self.last_result,
                 "bad_messages": self._bad,
+                "memory_mb": None if self.memory_mb is None else round(self.memory_mb),
+                "memory_limit_mb": None if self.memory_limit_mb is None else round(self.memory_limit_mb),
+                "memory_restarts": self.memory_restarts,
                 "last_msg_age_s": None if self._last_msg is None else self._clock() - self._last_msg,
             }
 

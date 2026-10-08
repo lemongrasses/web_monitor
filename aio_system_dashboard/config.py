@@ -75,7 +75,8 @@ DEFAULTS: Dict[str, Any] = {
                      "settle_s": 3.0,         # ignore messages right after a restart
                      "retry_s": 30.0,         # DSO should run but does not: try again this often
                      "fast_restarts": 3,      # this many restarts within window_s ...
-                     "window_s": 60.0},       # ... and further restarts wait retry_s too
+                     "window_s": 60.0,        # ... and further restarts wait retry_s too
+                     "max_memory_mb": "auto"},  # RAM + swap above this: restart DSO. auto: 20% of RAM; 0: off
     "events": {"log_file": "logs/events.jsonl", "max_memory": 500},
     "actions": {"restart_timeout_s": 30.0, "diagnostic_timeout_s": 15.0,
                 "stop_grace_s": 5.0},  # stop_grace_s: SIGTERM -> SIGKILL delay for AIO NAV / DSO

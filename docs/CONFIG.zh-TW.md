@@ -295,6 +295,7 @@ dso_watchdog:
 | `settle_s` | `3` | 重啟後忽略里程計的時間。 |
 | `retry_s` | `30` | DSO 沒在跑時的重試間隔,以及 NaN 持續出現時的重啟間隔。 |
 | `fast_restarts` / `window_s` | `3` / `60` | 見上方說明。 |
+| `max_memory_mb` | `auto` | DSO 使用的記憶體（RAM 加 swap）超過這個值時，立刻重新啟動 DSO（不影響 AIO NAV）。`auto`：RAM 的 20%（16 GB 的 Orin NX 約 3.1 GB）；`0`：關閉。起因是 DSO 曾經保留每一張相機影像（約 25 MB/s），直到 RAM 與 swap 用完、整台機器卡死。 |
 
 ### 4.7b `gnss`:GNSS 燈號
 

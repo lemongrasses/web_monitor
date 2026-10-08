@@ -68,6 +68,32 @@ def _pids(cfg, key: str) -> List[int]:
     return [p for p in pgrep(pattern, max_age_s=0.0) if p != me] if pattern else []
 
 
+def memory_mb(cfg, key: str) -> Optional[float]:
+    """RAM plus swap of the processes behind a service, in MB (None if none is running).
+    Swap counts too: a process that keeps growing pushes its own pages out, so RAM alone drops."""
+    total, found = 0, False
+    for pid in _pids(cfg, key):
+        try:
+            for line in Path(f"/proc/{pid}/status").read_text().splitlines():
+                if line.startswith(("VmRSS:", "VmSwap:")):
+                    total += int(line.split()[1])
+                    found = True
+        except (OSError, ValueError, IndexError):
+            continue
+    return total / 1024.0 if found else None
+
+
+def total_memory_mb() -> Optional[float]:
+    try:
+        with open("/proc/meminfo") as f:
+            for line in f:
+                if line.startswith("MemTotal:"):
+                    return int(line.split()[1]) / 1024.0
+    except (OSError, ValueError, IndexError):
+        pass
+    return None
+
+
 def _reap(proc: subprocess.Popen) -> None:
     threading.Thread(target=proc.wait, daemon=True, name="reap").start()
 

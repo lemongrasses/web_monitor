@@ -334,6 +334,7 @@ operate on the Overview page, and every action is in the event log.
 | `settle_s` | `3` | After a restart, odometry is ignored for this long. |
 | `retry_s` | `30` | Interval between tries when DSO is not running, and between restarts when NaN keeps coming back. |
 | `fast_restarts` / `window_s` | `3` / `60` | See above. |
+| `max_memory_mb` | `auto` | DSO's RAM plus swap above this restarts DSO at once (AIO NAV is not touched). `auto`: 20% of RAM (about 3.1 GB on a 16 GB Orin NX); `0`: off. Added after DSO kept every camera frame (about 25 MB/s) until RAM and swap were full and the whole machine hung. |
 
 ### 4.7b `gnss`: GNSS lamp
 

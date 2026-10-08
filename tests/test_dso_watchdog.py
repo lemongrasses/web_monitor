@@ -51,9 +51,11 @@ class Rig:
             self.running = self.starts_ok
             return {"success": self.starts_ok, "summary": ""}
         self.starts_ok = False
+        self.mem = None                            # DSO's RAM + swap in MB (None: not measured)
         self.dog = DsoWatchdog(Config(data, None), Store(), self.events, restart, start,
                                lambda: self.running, lambda: self.wanted,
-                               lambda: setattr(self, "wanted", True), self.clock)
+                               lambda: setattr(self, "wanted", True), self.clock,
+                               memory_mb=lambda: self.mem, total_memory_mb=16000.0)
         real = threading.Thread
         threading.Thread = lambda target, args=(), **k: types.SimpleNamespace(start=lambda: target(*args))
         test.addCleanup(setattr, threading, "Thread", real)
@@ -183,6 +185,67 @@ class DownTest(unittest.TestCase):
         r.tick(100)
         self.assertEqual((r.dog.state, r.starts, r.restarts), ("disabled", [], []))
 
+
+class MemoryGuardTest(unittest.TestCase):
+    """DSO growing without bound (it kept every camera frame) is restarted before the machine hangs."""
+
+    def test_restart_above_the_limit_only(self):
+        r = Rig(self)
+        self.assertEqual(r.dog.memory_limit_mb, 3200.0)            # auto: 20% of RAM
+        r.mem = 3000
+        r.dog.tick()
+        self.assertEqual(r.restarts, [])
+        r.mem = 3300
+        r.dog.tick()
+        self.assertEqual(len(r.restarts), 1)
+        self.assertIn(("fault", "DSO used too much memory: restarting DSO"), r.events.items)
+        self.assertEqual(r.dog.status()["memory_restarts"], 1)
+        self.assertEqual(r.dog.status()["memory_mb"], 3300)
+
+    def test_memory_wins_over_settling(self):
+        r = Rig(self)
+        r.dog._settle_until = r.clock.t + 100                     # just started: odometry ignored ...
+        r.mem = 9000
+        r.dog.tick()
+        self.assertEqual(len(r.restarts), 1)                       # ... but memory is not
+
+    def test_configurable_and_off(self):
+        r = Rig(self, max_memory_mb=1000)
+        self.assertEqual(r.dog.memory_limit_mb, 1000.0)
+        r = Rig(self, max_memory_mb=0)
+        r.mem = 99999
+        r.dog.tick()
+        self.assertEqual(r.restarts, [])
+
+    def test_not_running_is_not_measured(self):
+        r = Rig(self, running=False, wanted=False)
+        r.mem = 99999
+        r.dog.tick()
+        self.assertEqual(r.restarts, [])
+
+
+
+class MemoryMeasureTest(unittest.TestCase):
+    def test_counts_a_real_process(self):
+        import subprocess, sys, time
+        from aio_system_dashboard.actions import process_control
+        code = "x = bytearray(150 * 1024 * 1024); import time; time.sleep(30)  # aio-memtest"
+        proc = subprocess.Popen([sys.executable, "-c", code])
+        self.addCleanup(proc.wait)
+        self.addCleanup(proc.kill)
+        data = copy.deepcopy(DEFAULTS)
+        data["nav"]["aio_nav_config"] = ""
+        data["services"] = {"memtest": {"process_pattern": "aio-memtest"}}
+        cfg = Config(data, None)
+        mb = None
+        for _ in range(30):
+            mb = process_control.memory_mb(cfg, "memtest")
+            if mb and mb > 150:
+                break
+            time.sleep(0.1)
+        self.assertGreater(mb, 150)
+        self.assertLess(mb, 400)
+        self.assertGreater(process_control.total_memory_mb(), 1000)
 
 if __name__ == "__main__":
     unittest.main()
