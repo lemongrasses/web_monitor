@@ -8,7 +8,7 @@ dev/sample_data/
 *.tar.gz
 build/
 dist/
-state/
+/state/
 
 # reports written by tools/target_survey.sh
 tools/target-*.txt
