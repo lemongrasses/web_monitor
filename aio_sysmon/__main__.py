@@ -48,7 +48,7 @@ def cmd_status(args) -> int:
             print("WARNING: the recorder is not writing (last record is older than 30 s)")
     else:
         print("no records yet")
-    ev = rp.events(base, time.time() - 86400, time.time() + 1, ["anomaly", "unclean_stop"])
+    ev = rp.events(base, time.time() - 86400, float("inf"), ["anomaly", "unclean_stop"])   # incl. a clock running ahead
     print(f"in the last 24 h: {sum(1 for e in ev if e['kind'] == 'anomaly')} anomalies, "
           f"{sum(1 for e in ev if e['kind'] == 'unclean_stop')} unclean stops")
     return 0
@@ -92,22 +92,33 @@ def cmd_last_crash(args) -> int:
         print("kernel messages shortly before the end:")
         for k in e["kernel_before_end"]:
             print(f"  {k.get('ts')}  {k.get('msg')}")
-    ring = [r for r in read_ring(os.path.join(base, "ring.bin")) if r.get("t", 0) <= (e.get("last_record_t") or 0) + 1]
+    if not e.get("kernel_before_end"):
+        print("kernel messages shortly before the end: none (nothing was logged in the last 5 minutes)")
+    try:
+        ring = [r for r in read_ring(os.path.join(base, "ring.bin")) if r.get("t", 0) <= (e.get("last_record_t") or 0) + 1]
+    except PermissionError:
+        print("\n(the second-by-second records are readable by root only: run with sudo to see them)")
+        return 0
     print("\nthe last records second by second (ring):")
     print(rp.ring_table(ring[-args.rows:]))
     return 0
 
 
 def cmd_ring(args) -> int:
-    recs = read_ring(os.path.join(_base(args), "ring.bin"))
+    try:
+        recs = read_ring(os.path.join(_base(args), "ring.bin"))
+    except PermissionError:
+        print("the ring file is readable by root only: run with sudo")
+        return 1
     print(f"ring: {len(recs)} records, {rp.fmt_ts(recs[0]['t']) if recs else '-'} -> {rp.fmt_ts(recs[-1]['t']) if recs else '-'}")
     print(rp.ring_table(recs[-args.rows:]))
     return 0
 
 
 def cmd_events(args) -> int:
-    until = time.time() + 1
-    for e in rp.events(_base(args), until - args.hours * 3600, until, [args.kind] if args.kind else None)[-args.rows:]:
+    since = time.time() - args.hours * 3600
+    # no upper bound: records written while the clock ran ahead (just after a boot) still show
+    for e in rp.events(_base(args), since, float("inf"), [args.kind] if args.kind else None)[-args.rows:]:
         text = e.get("msg") or e.get("summary") or ""
         if not text:
             text = ", ".join(f"{k}={v}" for k, v in e.items() if k not in ("t", "ts", "kind", "light", "capacity", "limits"))

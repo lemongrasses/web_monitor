@@ -92,8 +92,16 @@ def ring_table(recs: List[Dict]) -> str:
 
 
 def last_unclean(base: str) -> Optional[Dict]:
-    evs = events(base, 0, time.time() + 1, ["unclean_stop"])
-    return evs[-1] if evs else None
+    """The newest unclean stop, by the order it was written, whatever its clock says. Right after a
+    reboot the clock can be hours off (RTC in local time, no network yet), so a time window can
+    miss the very record this command is for."""
+    files = sorted(glob.glob(os.path.join(base, "events-*.jsonl.gz"))) + [os.path.join(base, "events.jsonl")]
+    last = None
+    for p in files:
+        for e in _lines(p):
+            if e.get("kind") == "unclean_stop":
+                last = e
+    return last
 
 
 def describe_snapshot(path: str) -> str:

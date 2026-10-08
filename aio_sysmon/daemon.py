@@ -74,9 +74,12 @@ class Daemon:
         except (OSError, ValueError):
             run = None
         if run is not None and not run.get("clean"):
-            verdict = analyze_unclean(run, self._read_json(self.store.path("last_known.json")),
-                                      self.ring.read_all(), self.boot_id, self.wall(),
-                                      self.kernel_events_since(run.get("last_t", 0) - 120))
+            ring = self.ring.read_all()
+            last_known = self._read_json(self.store.path("last_known.json"))
+            end = max([r.get("t", 0) for r in ring[-5:]] + [(last_known or {}).get("t", 0)])
+            # kernel messages of the last minutes before the end (not just the newest ever logged)
+            verdict = analyze_unclean(run, last_known, ring, self.boot_id, self.wall(),
+                                      self.kernel_events_between(end - 300, end + 5))
             kind = "unclean_stop" if not verdict["same_boot"] else "recorder_killed"
             self.store.write_event(kind, verdict)
             self.store.write_snapshot("postmortem", {"verdict": verdict, "ring_tail": self.ring.read_all()[-600:]})
@@ -94,7 +97,7 @@ class Daemon:
         except (OSError, ValueError):
             return None
 
-    def kernel_events_since(self, t: float) -> List[Dict]:
+    def kernel_events_between(self, t0: float, t1: float) -> List[Dict]:
         out = []
         try:
             with open(self.store.path("events.jsonl")) as f:
@@ -103,7 +106,7 @@ class Daemon:
                         e = json.loads(line)
                     except ValueError:
                         continue
-                    if e.get("kind") == "kernel" and e.get("t", 0) >= t:
+                    if e.get("kind") == "kernel" and t0 <= e.get("t", 0) <= t1:
                         out.append({"ts": e.get("ts"), "msg": e.get("msg")})
         except OSError:
             pass

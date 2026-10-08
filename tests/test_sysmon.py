@@ -452,3 +452,17 @@ class EscalationTests(unittest.TestCase):
         stuck = e.mono() - e.heartbeat > e.stuck_s
         self.assertTrue(stuck)
         e.drop(); self.assertFalse(e.active)
+
+
+class ClockAheadTest(unittest.TestCase):
+    """After a reboot the clock ran 8 h ahead (RTC kept in local time): the unclean-stop record got a
+    future time stamp, and last-crash missed it."""
+
+    def test_last_crash_finds_a_future_stamped_record(self):
+        with tempfile.TemporaryDirectory() as d:
+            with open(os.path.join(d, "events.jsonl"), "w") as f:
+                f.write(json.dumps({"t": time.time() - 3600, "kind": "unclean_stop", "ts": "old"}) + "\n")
+                f.write(json.dumps({"t": time.time() + 8 * 3600, "kind": "unclean_stop", "ts": "ahead"}) + "\n")
+                f.write(json.dumps({"t": time.time(), "kind": "start", "ts": "now"}) + "\n")
+            self.assertEqual(report.last_unclean(d)["ts"], "ahead")
+
