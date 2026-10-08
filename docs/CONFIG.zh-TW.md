@@ -85,6 +85,8 @@ maintenance:  { host: 0.0.0.0, port: 8081 }
 |------|--------|------|
 | `host` | `0.0.0.0` | 監聽的網路位址。`0.0.0.0` = 所有網路介面，其他電腦可以開啟頁面；`127.0.0.1` = 只有這台 Jetson 本身可以開啟。 |
 | `port` | `8080` / `8081` | 產品頁面／維護頁面的連接埠。 |
+| `maintenance.password_file` | `config/maint_password` | 維護密碼雜湊值存放的位置（用 `aio-dashboard password` 設定）。它用來解鎖 AIO NAV 設定編輯器與終端機；沒有這個檔案時兩者都會保持鎖住。 |
+| `maintenance.unlock_minutes` | `15` | 解鎖後這麼多分鐘沒有使用，就會重新鎖上。 |
 
 產品頁面給操作人員使用；維護頁面給工程人員使用，且可以重新啟動驅動程式。若希望維護頁面只能從 Jetson 本機開啟，請設定 `maintenance.host: 127.0.0.1`。
 

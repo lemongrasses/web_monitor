@@ -22,6 +22,12 @@
       </a>
       {% endfor %}
       </nav>
+      <div class="side-lock" :class="auth.unlocked ? 'open' : ''">
+        <span class="side-lock-ico" aria-hidden="true" x-text="auth.unlocked ? '🔓' : '🔒'"></span>
+        <span class="lbl" x-text="auth.unlocked ? 'Tools unlocked' : 'Tools locked'"></span>
+        <button type="button" class="btn btn-sm side-lock-btn" x-show="auth.unlocked" @click="lockTools()">Lock</button>
+        <button type="button" class="btn btn-sm side-lock-btn" x-show="!auth.unlocked" @click="needUnlock()">Unlock</button>
+      </div>
     </aside>
 
     <div class="mwrap">
@@ -50,6 +56,26 @@
         </div>
       </div>
     </div>
+    </div>
+  </div>
+
+  <!-- Password for the tools that change the system (config editor, terminal) -->
+  <div x-show="unlockOpen" x-cloak class="modal-veil" @keydown.escape.window="unlockOpen && cancelUnlock()">
+    <div class="d-flex align-items-center justify-content-center h-100">
+    <form class="panel shadow unlock-box" role="dialog" aria-modal="true" aria-labelledby="unlock-title" @submit.prevent="unlock()">
+      <div class="panel-h"><strong id="unlock-title">Unlock maintenance tools</strong></div>
+      <div class="panel-b">
+        <p class="small muted mb-2">The config editor and the terminal change this device. Enter the maintenance password. It stays unlocked for <span x-text="Math.round(auth.idle_s / 60)"></span> minutes without use.</p>
+        <label class="small" for="unlock-pw">Password</label>
+        <input id="unlock-pw" type="password" class="form-control" autocomplete="current-password" x-model="unlockPw" :disabled="!auth.configured">
+        <p class="small mt-2 mb-0" :class="auth.configured ? 'text-danger' : 'muted'" x-show="unlockMsg" x-text="unlockMsg" role="alert"></p>
+        <div class="d-flex justify-content-end gap-2 mt-3">
+          <button type="button" class="btn btn-outline-secondary btn-sm" @click="cancelUnlock()">Cancel</button>
+          <button type="submit" class="btn btn-primary btn-sm" :disabled="unlockBusy || !unlockPw || !auth.configured">
+            <span x-show="unlockBusy" class="spinner-border spinner-border-sm me-1"></span>Unlock</button>
+        </div>
+      </div>
+    </form>
     </div>
   </div>
 

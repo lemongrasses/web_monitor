@@ -19,6 +19,7 @@ Usage: aio-dashboard <command>
   check                    check the settings file for mistakes
   urls                     print the web addresses
   version                  print the installed version
+  password                 set the password that unlocks the Maintenance config editor and terminal
   run [args]               run in the foreground (used by systemd; also for debugging)
 
 Settings: $CONFIG
@@ -94,6 +95,21 @@ case "${1:-}" in
     ;;
   version)
     cat "$APP_DIR/VERSION" 2>/dev/null || echo "unknown"
+    ;;
+  password)
+    # Only a salted hash is stored, readable by root and the service user. The password goes to
+    # Python on stdin, never on a command line.
+    read -r -s -p "New maintenance password: " p1; echo
+    read -r -s -p "Repeat it: " p2; echo
+    [[ "$p1" == "$p2" ]] || { echo "The two passwords differ; nothing changed." >&2; exit 1; }
+    (( ${#p1} >= 8 )) || { echo "Use at least 8 characters; nothing changed." >&2; exit 1; }
+    owner="$(stat -c %U "$APP_DIR/logs" 2>/dev/null || echo root)"
+    printf '%s' "$p1" | sudo env PYTHONPATH="$APP_DIR/lib:$APP_DIR" python3 -c \
+      'import sys; from aio_system_dashboard.web.auth import write_password_file; write_password_file(sys.argv[1], sys.stdin.read())' \
+      "$APP_DIR/config/maint_password"
+    sudo chown "root:$owner" "$APP_DIR/config/maint_password"
+    sudo chmod 0640 "$APP_DIR/config/maint_password"
+    echo "Password set. Open Maintenance > Config or Terminal and unlock with it."
     ;;
   -h|--help|help|"")
     usage

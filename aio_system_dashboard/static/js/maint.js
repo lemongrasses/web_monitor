@@ -21,11 +21,70 @@
       running: {},          // "action:target" -> true
       results: {},          // "action:target" -> result
       eventFilter: "",
+      // password lock of the config editor and the terminal
+      auth: { configured: true, unlocked: false, expires_in_s: null, idle_s: 900 },
+      unlockOpen: false, unlockPw: "", unlockMsg: "", unlockBusy: false, _afterUnlock: null, _onCancel: null,
 
       init() {
         AIO.poll("/api/maint/snapshot", 1000, (d) => { this.d = d; this.connected = true; lastOk = Date.now(); },
                  () => { if (Date.now() - lastOk > 4000) this.connected = false; });
         AIO.poll("/api/maint/events?limit=200", 3000, (e) => { this.events = e; });
+        AIO.poll("/api/maint/auth", 15000, (a) => { this.auth = a; });
+      },
+
+      // ---------- password lock
+      async loadAuth() {
+        try { this.auth = await (await fetch("/api/maint/auth", { cache: "no-store" })).json(); } catch (e) { /* keep */ }
+        return this.auth;
+      },
+      /* Run cb now if the tools are unlocked, else ask for the password first. */
+      needUnlock(cb, onCancel) {
+        if (this.auth.unlocked) { if (cb) cb(); return; }
+        this._afterUnlock = cb || null; this._onCancel = onCancel || null;
+        this.unlockPw = ""; this.unlockMsg = this.auth.configured ? "" :
+          "No password is set on this device yet. Run 'aio-dashboard password' on it first.";
+        this.unlockOpen = true;
+        setTimeout(() => { const el = document.getElementById("unlock-pw"); if (el) el.focus(); }, 50);
+      },
+      async unlock() {
+        this.unlockBusy = true; this.unlockMsg = "";
+        try {
+          const r = await fetch("/api/maint/auth/unlock", {
+            method: "POST", headers: { "Content-Type": "application/json", "X-Requested-With": "aio-dashboard" },
+            body: JSON.stringify({ password: this.unlockPw }) });
+          const j = await r.json();
+          this.unlockPw = "";
+          if (!j.success) { this.unlockMsg = j.summary || "wrong password"; return; }
+          await this.loadAuth();
+          this.unlockOpen = false;
+          const cb = this._afterUnlock; this._afterUnlock = null; this._onCancel = null;
+          if (cb) cb();
+        } catch (e) { this.unlockMsg = "request failed: " + e.message; }
+        finally { this.unlockBusy = false; }
+      },
+      cancelUnlock() {
+        this.unlockOpen = false; this.unlockPw = "";
+        const c = this._onCancel; this._onCancel = null; this._afterUnlock = null;
+        if (c) c();
+      },
+      async lockTools() {
+        await fetch("/api/maint/auth/lock", { method: "POST",
+          headers: { "Content-Type": "application/json", "X-Requested-With": "aio-dashboard" }, body: "{}" });
+        await this.loadAuth();
+        window.dispatchEvent(new CustomEvent("tools-locked"));
+      },
+      /* fetch + JSON for the protected tools: a 401 opens the password dialog and retries after it. */
+      async toolFetch(url, opts) {
+        const r = await fetch(url, Object.assign({ headers: { "Content-Type": "application/json", "X-Requested-With": "aio-dashboard" } }, opts || {}));
+        let j = {};
+        try { j = await r.json(); } catch (e) { j = { success: false, summary: "HTTP " + r.status }; }
+        if (r.status === 401 && j.locked) {
+          this.auth.unlocked = false;
+          return await new Promise((resolve) => this.needUnlock(
+            async () => resolve(await this.toolFetch(url, opts)),
+            () => resolve({ success: false, locked: true, summary: "locked: not saved" })));
+        }
+        return j;
       },
 
       // ---------- generic
@@ -45,6 +104,7 @@
         return this.lvl(l, { healthy: "OK", warning: "Warning", fault: "Fault" }[l]);
       },
       pageLevel(page) {
+        if (["config", "terminal", "replay"].includes(page)) return "idle";   // tools, not health
         if (!this.d) return "unknown";
         if (page === "overview") return { READY: "healthy", FAULT: "fault", INITIALIZING: "warning" }[this.productState] || "unknown";
         const rel = this.issues.filter((i) => page === "diagnostics" || i.link === page ||

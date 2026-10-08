@@ -444,6 +444,14 @@ Download them from the **Data** page of the product view.
 | **Camera / LiDAR** (if fitted) | Reachability, driver state, topic health, **Live view** (camera image; LiDAR point cloud with top/3D view), **Run diagnostic**, **Restart driver** (asks for confirmation). |
 | **Network** | Interfaces and addresses, sensor reachability, the NAV output destinations and their route. |
 | **Diagnostics** | Active faults and warnings, results of diagnostics and restarts, and the event history. |
+| **AIO NAV config** | Edit AIO NAV's settings files (`aio_nav.yaml` for Live, `aio_nav_bag.yaml` for Bag replay). **Settings** is a form of the most used values (output, ROS, logs, alignment, aiding, lever arms); **Edit file** is the whole file. Comments in the file are kept. **Review changes** checks the file and shows exactly what changes; then **Save**, or **Save and restart AIO NAV** so it takes effect at once. Every save keeps the previous version (**Earlier versions**, to go back). Needs the maintenance password. |
+| **Terminal** | A shell on the device, in the browser, for quick checks (`ros2 topic hz …`, `journalctl …`, `top`). It runs as the dashboard's user with your normal profile; **Use active ROS domain** types the export line for the mode in use. Up to 3 at once; closed after 30 min without typing. Needs the maintenance password. |
+
+The **AIO NAV config** and **Terminal** pages change the device, so they are locked with a separate
+password, set on the device with `aio-dashboard password` (there is no default password; until one
+is set they stay locked). **Unlock** at the bottom of the sidebar asks for it; it stays unlocked for
+15 minutes without use, or until **Lock**. Unlocks, failed attempts, saved settings and opened
+terminals are recorded in the event log (Diagnostics).
 
 The Live view reads the sensor's ROS topic only while its page is open. A deliberately stopped
 driver is not reported as a problem.

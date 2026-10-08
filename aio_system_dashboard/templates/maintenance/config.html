@@ -1,0 +1,124 @@
+{% extends "maintenance/base.html" %}
+{% block title %}AIO NAV config{% endblock %}
+{% block heading %}AIO NAV config{% endblock %}
+{% block content %}
+<div x-data="configPage()" x-init="cfgInit()">
+
+  <!-- which file -->
+  <div class="d-flex flex-wrap align-items-center gap-2 mb-3">
+    <template x-for="f in files" :key="f.mode">
+      <button type="button" class="btn btn-sm cfg-file" :class="f.mode === mode ? 'btn-primary' : 'btn-outline-secondary'"
+              @click="pick(f.mode)">
+        <span x-text="f.label"></span> <span class="mono small" x-text="f.name"></span>
+        <span class="cfg-active" x-show="f.active">in use</span>
+      </button>
+    </template>
+    <span class="muted small ms-auto" x-show="file" x-text="file ? file.path : ''"></span>
+  </div>
+  <div class="alert alert-warning py-2" x-show="loadError" x-text="loadError" x-cloak></div>
+
+  <template x-if="file">
+  <div>
+    <div class="d-flex flex-wrap align-items-center gap-2 mb-2">
+      <div class="btn-group btn-group-sm" role="group" aria-label="Editor">
+        <button type="button" class="btn" :class="view === 'form' ? 'btn-primary' : 'btn-outline-primary'" @click="setView('form')" :disabled="!!parseError">Settings</button>
+        <button type="button" class="btn" :class="view === 'raw' ? 'btn-primary' : 'btn-outline-primary'" @click="setView('raw')">Edit file</button>
+      </div>
+      <span class="small muted" x-show="view === 'form'">The most used settings. Everything else: Edit file. Comments in the file are kept.</span>
+      <span class="small muted" x-show="view === 'raw'">The whole file as text. It is checked before it is saved.</span>
+      <span class="small ms-auto" :class="dirty() ? 'cfg-dirty' : 'muted'" x-text="dirty() ? 'Unsaved changes' : 'No changes'"></span>
+    </div>
+    <p class="small text-danger" x-show="parseError" x-text="'This file cannot be read as YAML (' + parseError + '); fix it in Edit file.'"></p>
+
+    <!-- form -->
+    <div class="cfg-groups" x-show="view === 'form'" @input="preview = null" @change="preview = null">
+      <template x-for="g in groups()" :key="g">
+        <section class="panel">
+          <div class="panel-h"><strong x-text="g"></strong></div>
+          <div class="panel-b cfg-fields">
+            <template x-for="f in fields.filter(x => x.group === g)" :key="key(f)">
+              <div class="cfg-field" :class="changed(f) ? 'changed' : ''">
+                <label class="small" :for="'cf-' + key(f)" x-text="f.label"></label>
+                <div>
+                  <template x-if="f.type === 'bool'">
+                    <div class="form-check form-switch m-0"><input class="form-check-input" type="checkbox" role="switch" :id="'cf-' + key(f)" x-model="form[key(f)]" :disabled="orig[key(f)] === null"></div>
+                  </template>
+                  <template x-if="f.type === 'choice'">
+                    <select class="form-select form-select-sm cfg-in" :id="'cf-' + key(f)" x-model.number="form[key(f)]" :disabled="orig[key(f)] === null">
+                      <template x-for="c in f.choices" :key="c[0]"><option :value="c[0]" x-text="c[1]"></option></template></select>
+                  </template>
+                  <template x-if="f.type === 'int' || f.type === 'float'">
+                    <input type="number" class="form-control form-control-sm cfg-in cfg-num" :id="'cf-' + key(f)" :min="f.min" :max="f.max" :step="f.type === 'int' ? 1 : 'any'" x-model.number="form[key(f)]" :disabled="orig[key(f)] === null">
+                  </template>
+                  <template x-if="['str', 'topic', 'hostport'].includes(f.type)">
+                    <input type="text" class="form-control form-control-sm cfg-in mono" :id="'cf-' + key(f)" x-model="form[key(f)]" :disabled="orig[key(f)] === null">
+                  </template>
+                  <template x-if="f.type === 'list3'">
+                    <div class="d-flex gap-1">
+                      <template x-for="i in [0, 1, 2]" :key="i">
+                        <input type="number" step="any" class="form-control form-control-sm cfg-in cfg-num3" :aria-label="f.label + ' ' + (i + 1)" x-model.number="form[key(f)][i]" :disabled="orig[key(f)] === null">
+                      </template>
+                    </div>
+                  </template>
+                  <div class="muted cfg-help" x-text="orig[key(f)] === null ? 'Not in this file (add it in Edit file).' : f.help"></div>
+                </div>
+              </div>
+            </template>
+          </div>
+        </section>
+      </template>
+    </div>
+
+    <!-- raw -->
+    <div x-show="view === 'raw'" @input="preview = null">
+      <textarea class="form-control mono cfg-raw" spellcheck="false" x-model="raw" aria-label="File contents"
+                @keydown.tab.prevent="insertTab($event)"></textarea>
+    </div>
+
+    <!-- review + save -->
+    <div class="cfg-bar">
+      <button type="button" class="btn btn-sm btn-outline-primary" :disabled="!dirty() || busy" @click="review()">Review changes</button>
+      <button type="button" class="btn btn-sm btn-outline-secondary" :disabled="!dirty() || busy" @click="discard()">Discard</button>
+      <span class="small muted ms-auto" x-show="!auth.unlocked">Saving needs the maintenance password.</span>
+    </div>
+
+    <section class="panel mt-3" x-show="preview" x-cloak aria-labelledby="rev-title">
+      <div class="panel-h"><strong id="rev-title">Changes</strong>
+        <span class="small" :class="preview && preview.errors.length ? 'check-fail' : 'check-ok'"
+              x-text="preview ? (preview.errors.length ? 'Cannot be saved' : (preview.changed ? 'Checked' : 'No changes')) : ''"></span></div>
+      <div class="panel-b">
+        <template x-for="e in (preview ? preview.errors : [])" :key="e"><p class="small text-danger mb-1" x-text="'✕ ' + e"></p></template>
+        <template x-for="w in (preview ? preview.warnings : [])" :key="w"><p class="small cfg-warn mb-1" x-text="'! ' + w"></p></template>
+        <pre class="cfg-diff" x-show="preview && preview.diff"><template x-for="(l, i) in (preview ? preview.diff.split('\n') : [])" :key="i"><span :class="l.startsWith('+') && !l.startsWith('+++') ? 'add' : (l.startsWith('-') && !l.startsWith('---') ? 'del' : (l.startsWith('@@') ? 'hunk' : ''))" x-text="l + '\n'"></span></template></pre>
+        <div class="d-flex flex-wrap align-items-center gap-2 mt-2" x-show="preview && preview.changed && !preview.errors.length">
+          <button type="button" class="btn btn-sm btn-primary" :disabled="busy" @click="save(false)">
+            <span x-show="busy === 'save'" class="spinner-border spinner-border-sm me-1"></span>Save</button>
+          <button type="button" class="btn btn-sm btn-danger" x-show="file.active && navRunning()" :disabled="busy" @click="save(true)">
+            <span x-show="busy === 'restart'" class="spinner-border spinner-border-sm me-1"></span>Save and restart AIO NAV</button>
+          <span class="small muted" x-text="saveHint()"></span>
+        </div>
+      </div>
+    </section>
+    <div class="ctl-msg mt-2" :class="msgClass" role="status" aria-live="polite" x-text="msg"></div>
+
+    <!-- earlier versions -->
+    <details class="mt-3">
+      <summary class="small"><strong>Earlier versions</strong> <span class="muted" x-text="'(' + backups.length + ' kept)'"></span></summary>
+      <div class="muted small mt-1" x-show="!backups.length">None yet. Each save keeps the previous version here.</div>
+      <table class="table table-sm mt-1 mb-0" x-show="backups.length">
+        <tbody>
+          <template x-for="b in backups" :key="b.id">
+            <tr><td class="mono small" x-text="fmt.datetime(b.time)"></td><td class="mono small muted" x-text="b.id"></td>
+              <td class="text-end"><button type="button" class="btn btn-sm btn-outline-secondary py-0" @click="loadBackup(b.id)">Open in editor</button></td></tr>
+          </template>
+        </tbody>
+      </table>
+      <p class="small muted mt-1 mb-0">Opening a version puts it in Edit file; review and save it to go back to it.</p>
+    </details>
+  </div>
+  </template>
+</div>
+{% endblock %}
+{% block scripts %}
+<script src="{{ url_for('static', filename='js/tools.js') }}"></script>
+{% endblock %}

@@ -8,13 +8,15 @@ from ..actions import process_control
 from ..actions.registry import ActionError
 from ..media.tap import PreviewError, meta_header
 from .common import create_base_app
+from .tools import register_tools
 
 logger = logging.getLogger(__name__)
 
 PAGES = ("overview", "system", "ros", "camera", "lidar", "network", "diagnostics")
 NAV = [("overview", "Overview", "/"), ("system", "System", "/system"), ("ros", "ROS 2", "/ros"),
        ("camera", "Camera", "/camera"), ("lidar", "LiDAR", "/lidar"),
-       ("network", "Network", "/network"), ("diagnostics", "Diagnostics", "/diagnostics")]
+       ("network", "Network", "/network"), ("diagnostics", "Diagnostics", "/diagnostics"),
+       ("config", "AIO NAV config", "/config"), ("terminal", "Terminal", "/terminal")]
 
 
 def create_maintenance_app(ctx):
@@ -113,6 +115,8 @@ def create_maintenance_app(ctx):
             return jsonify(ctx.actions.run(action_id, target))
         except ActionError as e:
             return jsonify({"success": False, "summary": str(e)}), e.status
+
+    register_tools(ctx, app, page_context)        # config editor + terminal (password protected)
 
     for m in ctx.modules:
         try:

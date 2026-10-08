@@ -1,0 +1,45 @@
+{% extends "maintenance/base.html" %}
+{% block title %}Terminal{% endblock %}
+{% block heading %}Terminal{% endblock %}
+{% block content %}
+<link rel="stylesheet" href="{{ url_for('static', filename='vendor/xterm/xterm.css') }}">
+<div x-data="terminalPage()" x-init="termInit()">
+  <template x-if="!auth.unlocked">
+    <section class="panel">
+      <div class="panel-b">
+        <p class="mb-2">The terminal is a shell on this device, as the dashboard's user. It needs the maintenance password.</p>
+        <button type="button" class="btn btn-primary btn-sm" @click="needUnlock()">Unlock</button>
+        <p class="small muted mt-2 mb-0" x-show="!auth.configured">No password is set yet: run <span class="mono">aio-dashboard password</span> on the device.</p>
+      </div>
+    </section>
+  </template>
+
+  <div x-show="auth.unlocked" x-cloak>
+    <div class="term-bar">
+      <div class="btn-group btn-group-sm" role="tablist" aria-label="Terminals">
+        <template x-for="(s, i) in sessions" :key="s.id">
+          <button type="button" class="btn" :class="s.id === current ? 'btn-primary' : 'btn-outline-secondary'" role="tab"
+                  :aria-selected="s.id === current" @click="attach(s.id)" x-text="'Shell ' + (i + 1)"></button>
+        </template>
+      </div>
+      <button type="button" class="btn btn-sm btn-outline-primary" @click="openNew()" :disabled="sessions.length >= 3" title="At most 3 at once">New</button>
+      <button type="button" class="btn btn-sm btn-outline-danger" @click="closeCurrent()" :disabled="!current">Close</button>
+      <button type="button" class="btn btn-sm btn-outline-secondary" @click="typeRosEnv()" x-show="rosEnv()" :title="rosEnv()">Use active ROS domain</button>
+      <span class="ms-auto d-flex align-items-center gap-1">
+        <button type="button" class="btn btn-sm btn-outline-secondary" @click="zoom(-1)" aria-label="Smaller text">A−</button>
+        <button type="button" class="btn btn-sm btn-outline-secondary" @click="zoom(1)" aria-label="Larger text">A+</button>
+      </span>
+    </div>
+    <div id="term" class="term-box"></div>
+    <div class="small mt-1 d-flex flex-wrap gap-3">
+      <span :class="status ? 'cfg-warn' : 'muted'" x-text="status || 'Your profile and .bashrc are loaded, as in an SSH login. sudo asks for the password as usual.'"></span>
+      <span class="muted ms-auto">Closed after 30 min without typing. Opening and closing are logged.</span>
+    </div>
+  </div>
+</div>
+{% endblock %}
+{% block scripts %}
+<script src="{{ url_for('static', filename='vendor/xterm/xterm.js') }}"></script>
+<script src="{{ url_for('static', filename='vendor/xterm/addon-fit.js') }}"></script>
+<script src="{{ url_for('static', filename='js/tools.js') }}"></script>
+{% endblock %}

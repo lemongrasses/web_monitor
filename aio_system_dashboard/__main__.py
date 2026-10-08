@@ -110,6 +110,8 @@ class DashboardContext:
             w.start()
 
     def stop(self):
+        if getattr(self, "terminals", None) is not None:
+            self.terminals.shutdown()                  # no shells are left behind
         for w in self._workers:
             w.stop()
         for w in self._workers:

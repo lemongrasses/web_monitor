@@ -17,7 +17,9 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent
 
 DEFAULTS: Dict[str, Any] = {
     "product": {"host": "0.0.0.0", "port": 8080},
-    "maintenance": {"host": "0.0.0.0", "port": 8081},
+    "maintenance": {"host": "0.0.0.0", "port": 8081,
+                    # The config editor and the terminal need this password (aio-dashboard password).
+                    "password_file": "config/maint_password", "unlock_minutes": 15},
     # Browsers allowed to open the pages (IPs or CIDRs). Loopback is always allowed.
     # Empty = no restriction.
     "access": {"allowed_clients": []},
