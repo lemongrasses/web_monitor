@@ -256,8 +256,9 @@ class TerminalManagerTest(unittest.TestCase):
     def test_shell_runs_commands_with_a_clean_environment(self):
         sid = self.m.open("127.0.0.1", 90, 20)["id"]
         s = self.m.get(sid)
-        self.m.write(sid, "echo R=$AIO_DASHBOARD_TERMINAL:${PYTHONPATH:-none}:$(tput cols)\r")
-        self.assertIn("R=1:none:90", self.output_until(s, "R=1"))
+        # the dashboard's own environment (its bundled libraries) does not leak into the shell
+        self.m.write(sid, "echo R=$AIO_DASHBOARD_TERMINAL:$(tput cols):$(echo \"$PYTHONPATH\" | grep -c aio-dashboard)\r")
+        self.assertIn("R=1:90:0", self.output_until(s, "R=1"))
         self.m.resize(sid, 120, 30)
         self.m.write(sid, "exit\r")
         for _ in range(50):
@@ -265,6 +266,16 @@ class TerminalManagerTest(unittest.TestCase):
                 break
             time.sleep(0.1)
         self.assertFalse(s.alive)
+
+    def test_shell_reads_bashrc_like_a_desktop_terminal(self):
+        """A login shell skips ~/.bashrc when there is no ~/.profile, and ROS is set up there."""
+        sid = self.m.open("127.0.0.1")["id"]
+        s = self.m.get(sid)
+        rc = self.m.rcfile.read_text()
+        self.assertIn("/etc/profile", rc)
+        self.assertIn('"$HOME/.bashrc"', rc)
+        self.m.write(sid, "case $- in *i*) echo IS=interactive;; esac\r")
+        self.assertIn("IS=interactive", self.output_until(s, "IS=interactive"))
 
     def test_limit_close_and_orphans(self):
         a = self.m.open("127.0.0.1")["id"]

@@ -1,12 +1,14 @@
 """Shell sessions for the Maintenance terminal page.
 
-Each session is a login shell (`bash -l`) of the service user on its own pseudo-terminal, so job
-control, Ctrl+C, colors and full-screen programs (top, vim) work. The browser gets the output as
+Each session is an interactive shell of the service user on its own pseudo-terminal, so job
+control, Ctrl+C, colors and full-screen programs (top, vim) work. It reads /etc/profile and then
+~/.bashrc, like a desktop terminal (a login shell would skip ~/.bashrc when there is no
+~/.profile, and with it the ROS setup). The browser gets the output as
 a stream with byte offsets (it can reconnect and continue) and sends keystrokes and size changes.
 
 * At most `max_sessions` at once; a session with no input for `idle_s` is closed.
-* The shell gets a clean environment (not the dashboard's), so the user's own profile and .bashrc
-  decide ROS and Python settings, as in an SSH login.
+* The shell gets a clean environment (not the dashboard's), so the user's own .bashrc decides ROS
+  and Python settings.
 * Shells are marked (AIO_DASHBOARD_TERMINAL=1) and recorded in state/terminals.json, so leftovers
   of a dashboard that died are closed at the next start.
 """
@@ -29,6 +31,10 @@ from typing import Dict, Optional, Tuple
 logger = logging.getLogger(__name__)
 
 MARK = "AIO_DASHBOARD_TERMINAL"
+RCFILE = """# Written by the AIO dashboard: start-up file of its terminal shells.
+[ -r /etc/profile ] && . /etc/profile
+[ -r "$HOME/.bashrc" ] && . "$HOME/.bashrc"
+"""
 KEEP_BYTES = 512 * 1024          # output kept per session for reconnects
 
 
@@ -74,6 +80,7 @@ class TerminalManager:
         self._lock = threading.Lock()
         self.sessions: Dict[str, Session] = {}
         self._stop = threading.Event()
+        self.rcfile = state_file.with_name("terminal_bashrc")
         threading.Thread(target=self._janitor, name="term-janitor", daemon=True).start()
 
     # ------------------------------------------------------------------ bookkeeping
@@ -126,11 +133,17 @@ class TerminalManager:
             if len(live) >= self.max_sessions:
                 return {"success": False, "summary": f"at most {self.max_sessions} terminals at once; close one first"}
             env = self._shell_env()
+            try:
+                self.rcfile.parent.mkdir(parents=True, exist_ok=True)
+                self.rcfile.write_text(RCFILE)
+                argv = ["bash", "--rcfile", str(self.rcfile), "-i"]
+            except OSError:
+                argv = ["bash", "-l"]
             pid, fd = pty.fork()
             if pid == 0:                                  # child: becomes the shell right away
                 try:
                     os.chdir(env["HOME"])
-                    os.execvpe("bash", ["bash", "-l"], env)
+                    os.execvpe("bash", argv, env)
                 finally:
                     os._exit(127)
             sid = secrets.token_hex(8)
