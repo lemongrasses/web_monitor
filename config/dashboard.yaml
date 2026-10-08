@@ -88,6 +88,7 @@ ros:
   nodes: [/basler/pylon_ros2_camera_node, /openrtk330_driver]
   topics:
     - { name: /openrtk330/imu/data_raw, group: nav, label: INS IMU, expected_hz: 100 }
+    - { name: /openrtk330/gnss/fix, group: nav, label: GNSS, expected_hz: 1 }
     - { name: auto, type: sensor_msgs/msg/CameraInfo,  group: camera, label: Camera, expected_hz: 20 }
 
 # DSO watchdog (Maintenance > ROS 2). Only DSO is touched, never AIO NAV.
