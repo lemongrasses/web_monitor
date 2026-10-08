@@ -188,3 +188,48 @@ class DataAccessTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class NavStopClearsStateTest(unittest.TestCase):
+    """AIO NAV always starts from scratch, so its last run must not stay on screen after it stops."""
+
+    def collector(self):
+        from aio_system_dashboard.collectors.nav_udp import NavUdpCollector
+        resets = []
+        c = NavUdpCollector("127.0.0.1:59999", {}, on_session_reset=lambda s, r: resets.append(r))
+        pkt = encode_nav_packet(time_s=10.0, latitude=22.99, longitude=120.22, height=30.0,
+                                velocity_north=1.0, velocity_east=0.0, velocity_up=0.0, heading=90.0,
+                                flags_c=flags_to_int(alignment=True, heading_valid=True))
+        c.handle_datagram(pkt, 100.0)
+        return c, resets, pkt
+
+    def test_clear_forgets_solution_trajectory_and_session(self):
+        c, resets, pkt = self.collector()
+        st = c.status(100.1)
+        self.assertIsNotNone(st["latest"]); self.assertTrue(st["flag_age_s"])
+        session = c.trajectory.session
+        c.clear("AIO NAV stopped")
+        st = c.status(101.0)
+        self.assertIsNone(st["latest"]); self.assertIsNone(st["age_s"])
+        self.assertEqual(st["flag_age_s"], {}); self.assertEqual(st["rate_hz"], 0)
+        self.assertIsNone(st["session_started"])
+        self.assertNotEqual(c.trajectory.session, session)
+        self.assertEqual(c.trajectory.snapshot(None)["recent"], [])
+        self.assertEqual(resets, ["AIO NAV stopped"])
+        c.handle_datagram(pkt, 105.0)                    # the next run starts a fresh session clock
+        self.assertIsNotNone(c.status(105.1)["session_started"])
+
+    def test_health_clears_on_stop_only(self):
+        from types import SimpleNamespace
+        from aio_system_dashboard.state.health import HealthEngine
+        calls = []
+        nav = SimpleNamespace(clear=lambda r: calls.append(("clear", r)),
+                              new_session=lambda r: calls.append(("new", r)))
+        h = SimpleNamespace(cfg={"nav": {"service": "aio_nav"}}, nav=nav, _last_nav_pids=None)
+        step = lambda pids: HealthEngine._check_nav_restart(h, {"aio_nav": {"pids": pids}})
+        step([]); self.assertEqual(calls, [])                 # never ran: nothing to clear
+        step([11]); step([11]); self.assertEqual(calls, [])  # running
+        step([]);  self.assertEqual(calls, [("clear", "AIO NAV stopped")])
+        step([]);  self.assertEqual(len(calls), 1)            # cleared once, not every tick
+        step([12]); step([13])
+        self.assertEqual(calls[-1], ("new", "aio_nav_node restarted"))

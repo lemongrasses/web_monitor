@@ -139,8 +139,9 @@ class HealthEngine:
         pids = tuple(sorted(svc.get("pids") or []))
         if pids and self._last_nav_pids and pids != self._last_nav_pids:
             self.nav.new_session("aio_nav_node restarted")
-        if pids:
-            self._last_nav_pids = pids
+        elif not pids and self._last_nav_pids:
+            self.nav.clear("AIO NAV stopped")          # its next start begins from scratch
+        self._last_nav_pids = pids or None
 
     def step(self) -> None:
         now = self._clock()
@@ -267,7 +268,7 @@ class HealthEngine:
             "advisories": advisories,
             "storage": storage,
             "uptime_s": system.get("uptime_s"),
-            "session_uptime_s": time.time() - nav.get("session_started", time.time()),
+            "session_uptime_s": (time.time() - nav["session_started"]) if nav.get("session_started") else None,
         })
         self.store.set("maint", self._maintenance(now, services, network, system,
                                                   shown, u_shown, nav, expected))

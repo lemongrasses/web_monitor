@@ -35,6 +35,8 @@
             const r = headingRot(sol.heading);
             if (r !== null) this.hdgRot = r;
             if (navMap) navMap.setPosition(sol.latitude, sol.longitude, sol.heading, !d.nav.fresh);
+          } else if (navMap) {
+            navMap.clearPosition();                 // AIO NAV stopped: nothing from the old run stays
           }
         }, () => {
           if (Date.now() - lastOk > 3000) this.connected = false;

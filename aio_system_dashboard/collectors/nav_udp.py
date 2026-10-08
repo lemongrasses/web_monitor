@@ -45,7 +45,7 @@ class NavUdpCollector:
         self._packets = 0
         self._bad = 0
         self._last_bad_log = 0.0
-        self._session_started = time.time()
+        self._session_started: Optional[float] = time.time()
 
     # ------------------------------------------------------------------ thread
     def start(self) -> None:
@@ -119,6 +119,8 @@ class NavUdpCollector:
             if self._last_rx is not None and now - self._last_rx > STREAM_GAP_RESET_S:
                 self._rx_times.clear()  # rate after a dropout reflects only the resumed stream
             self._last_rx = now
+            if self._session_started is None:          # first packet after a stop: the session starts now
+                self._session_started = time.time()
             self._packets += 1
             self._rx_times.append(now)
             for name in FLAG_NAMES:
@@ -134,6 +136,20 @@ class NavUdpCollector:
             self._session_started = time.time()
         session = self.trajectory.reset()
         logger.info("new NAV session %d (%s)", session, reason)
+        if self._on_session_reset:
+            self._on_session_reset(session, reason)
+
+    def clear(self, reason: str) -> None:
+        """AIO NAV stopped: forget its last solution, trajectory and flags. A restarted AIO NAV
+        always starts from scratch, so nothing from the previous run should stay on screen."""
+        with self._lock:
+            self._latest = None
+            self._last_rx = None
+            self._rx_times.clear()
+            self._flag_last_seen.clear()
+            self._session_started = None
+        session = self.trajectory.reset()
+        logger.info("NAV state cleared, session %d (%s)", session, reason)
         if self._on_session_reset:
             self._on_session_reset(session, reason)
 

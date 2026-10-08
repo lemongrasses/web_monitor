@@ -75,6 +75,10 @@
       }
     }
 
+    clearPosition() {
+      if (this.marker) { this.marker.remove(); this.marker = null; }
+    }
+
     applyTrajectory(d) {
       if (d.reset || d.session !== this.session) {
         this.older = this.full ? d.older.slice() : [];
