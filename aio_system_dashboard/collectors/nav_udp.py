@@ -45,7 +45,7 @@ class NavUdpCollector:
         self._packets = 0
         self._bad = 0
         self._last_bad_log = 0.0
-        self._session_started: Optional[float] = time.time()
+        self._session_started: Optional[float] = None    # set by the first packet
 
     # ------------------------------------------------------------------ thread
     def start(self) -> None:
