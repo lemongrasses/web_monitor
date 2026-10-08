@@ -439,9 +439,28 @@ def command_text(opts: Dict, bag_path: str, env: Dict[str, str]) -> str:
     return (pre + " " if pre else "") + "ros2 bag play " + " ".join(shlex.quote(a) for a in args)
 
 
-def preconditions(cfg, services: Dict, playing: bool) -> Tuple[List[Dict], bool]:
-    """What has to be true before playing; each item says how to fix it. (items, all_ok)"""
+def process_domain(pid: int) -> Optional[int]:
+    """ROS domain a running process uses (from its environment; unset = 0). None: unreadable."""
+    try:
+        raw = Path(f"/proc/{pid}/environ").read_bytes().split(b"\0")
+    except OSError:
+        return None
+    env = dict(kv.decode(errors="replace").split("=", 1) for kv in raw if b"=" in kv)
+    try:
+        return int(env.get("ROS_DOMAIN_ID") or 0)
+    except ValueError:
+        return None
+
+
+def preconditions(cfg, services: Dict, playing: bool, driver_domains=None) -> Tuple[List[Dict], bool]:
+    """What has to be true before playing; each item says how to fix it. (items, all_ok)
+
+    driver_domains(key) -> the ROS domains the driver's processes run in (None: unknown). Running
+    drivers only matter when they publish in the bag's domain: different domains never see each
+    other, so live and recorded data cannot mix."""
     items = []
+    info = cfg.ros_mode_info() if hasattr(cfg, "ros_mode_info") else {"modes": []}
+    bag_domain = next((m.get("domain_id") for m in info["modes"] if m["name"] == "bag"), None)
     mode = cfg.ros_mode()
     bag_mode = "bag"
     label = (cfg["ros"]["modes"].get(bag_mode) or {}).get("label", "Bag replay")
@@ -457,11 +476,21 @@ def preconditions(cfg, services: Dict, playing: bool) -> Tuple[List[Dict], bool]
             continue
         running = (services.get(key) or {}).get("state") == "running"
         name = svc.get("label", key)
-        items.append({"key": f"driver:{key}", "ok": not running,
-                      "text": f"{name}: stopped" if not running else
-                              f"{name}: running, so live and recorded data would mix",
-                      "fix": None if not running else {"kind": "action", "action": "stop_driver",
-                                                       "target": key, "label": f"Stop {name}"}})
+        domains = driver_domains(key) if (running and driver_domains) else None
+        if not running:
+            ok, text = True, f"{name}: stopped"
+        elif domains and bag_domain is not None and bag_domain not in domains:
+            ok = True
+            text = (f"{name}: running in domain {', '.join(str(d) for d in sorted(domains))}, separate "
+                    f"from the bag (domain {bag_domain}), so they do not mix. They still use CPU and "
+                    f"camera bandwidth.")
+        elif domains:
+            ok, text = False, f"{name}: running in the bag's domain {bag_domain}, so live and recorded data would mix"
+        else:
+            ok, text = False, f"{name}: running, and its ROS domain cannot be read; stop it to be sure the data do not mix"
+        items.append({"key": f"driver:{key}", "ok": ok, "text": text,
+                      "fix": None if ok else {"kind": "action", "action": "stop_driver",
+                                              "target": key, "label": f"Stop {name}"}})
     items.append({"key": "idle", "ok": not playing,
                   "text": "No other playback" if not playing else "A bag is already playing",
                   "fix": None})

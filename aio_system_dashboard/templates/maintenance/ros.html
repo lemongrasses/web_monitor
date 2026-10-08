@@ -47,7 +47,7 @@
     </template>
     {% endfor %}
     <p class="small mt-2 mb-0 text-danger" x-show="driverNote('{{ key }}')" x-text="driverNote('{{ key }}')" role="status"></p>
-    <p class="muted small mt-2 mb-0">{% if 'replay' in modules %}Stop the drivers before playing a bag, so the live camera and IMU do not publish the same topics. {% endif %}Starting takes about 15 s before the drivers publish.</p>
+    <p class="muted small mt-2 mb-0">{% if 'replay' in modules %}The drivers may keep running during bag replay: they publish in the Live domain, which the bag domain does not see (the Replay page checks this). {% endif %}Starting takes about 15 s before the drivers publish.</p>
   </div>
 </section>
 {% endfor %}

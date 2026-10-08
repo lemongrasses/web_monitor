@@ -180,8 +180,10 @@ Everything is on Maintenance → **Replay**:
    - the ROS environment is **Bag replay** (button *Switch to Bag replay*: AIO NAV and DSO are
      stopped and the dashboard restarts, a few seconds). Bag replay uses `aio_nav_bag.yaml`
      (ROS domain 13, simulated time) instead of `aio_nav.yaml` (domain 10, this computer only);
-   - the sensor drivers are stopped (button *Stop Sensor drivers*), so live and recorded data do
-     not mix;
+   - the sensor drivers do not publish into the bag's domain. They normally run in the Live domain
+     (10), which the bag domain (13) does not see, so they may keep running (they still use CPU
+     and camera bandwidth). Only if they run in the bag's domain, or their domain cannot be read,
+     do they have to be stopped (button *Stop Sensor drivers*);
    - no other bag is playing.
 2. On the Overview page click **Start** so AIO NAV processes the bag (the player works without it,
    but nothing is computed).
@@ -197,8 +199,8 @@ Everything is on Maintenance → **Replay**:
 6. **Save preset** keeps a bag with its topics and options under a name; pick it from **Presets…**
    next time. The last settings used with each bag are also remembered.
 7. Back to live use: **Stop** the playback, switch the ROS environment to **Live** on the same
-   page, start the sensor drivers (Maintenance → ROS 2; they publish after about 15 s), then click
-   **Start** on the Overview page.
+   page, start the sensor drivers if they were stopped (Maintenance → ROS 2; they publish after
+   about 15 s), then click **Start** on the Overview page.
 
 Playing from a terminal instead: use the bag domain and the clock, because a terminal may default
 to another domain (`echo $ROS_DOMAIN_ID`):
@@ -430,8 +432,8 @@ Download them from the **Data** page of the product view.
 | **Network** | Interfaces and addresses, sensor reachability, the NAV output destinations and their route. |
 | **Diagnostics** | Active faults and warnings, results of diagnostics and restarts, and the event history. |
 
-The Live view reads the sensor's ROS topic only while its page is open. Stop the sensor drivers
-before replaying a bag (section 4.6); a deliberately stopped driver is not reported as a problem.
+The Live view reads the sensor's ROS topic only while its page is open. A deliberately stopped
+driver is not reported as a problem.
 Device commands:
 
 ```bash
@@ -453,7 +455,7 @@ aio-dashboard config     # edit settings, check, restart
 | AIO NAV line: *AIO NAV did not start: …* (or lamp **Failed**) | AIO NAV exited or could not start; the message gives the reason | Click **Start** again. If it repeats, collect `/opt/aio-dashboard/logs/aio_nav.log` for the navigation team. |
 | AIO NAV line: *AIO NAV launcher not found…* | The aio-nav-ros `install/` folder is missing or incomplete on this device | Ask the administrator to check that aio-nav-ros is installed. |
 | Live: no camera or IMU data | The sensor drivers are stopped | Maintenance → ROS 2 → Sensor drivers → **Start**; wait about 15 s. |
-| Bag replay: AIO NAV receives no data | The bag is played in another ROS domain, the live drivers are still running, or AIO NAV was not started | Section 4.6: play from Maintenance → Replay (it uses the right domain and checks the drivers), and click Start on the Overview page. From a terminal: `ROS_DOMAIN_ID=13 ROS_LOCALHOST_ONLY=0 ros2 bag play … --clock 100`. |
+| Bag replay: AIO NAV receives no data | The bag is played in another ROS domain, or AIO NAV was not started | Section 4.6: play from Maintenance → Replay (it uses the right domain), and click Start on the Overview page. From a terminal: `ROS_DOMAIN_ID=13 ROS_LOCALHOST_ONLY=0 ros2 bag play … --clock 100`. |
 | Stuck at **Initializing** | Alignment not finished | Follow the [Alignment SOP](#5-alignment-sop) and 5.3. |
 | **GNSS** lamp amber or red (*RTK float*, *SPP*, *No signal*) | Sky view blocked, no RTK correction data, antenna or GNSS receiver issue | Navigation continues; move to open sky; check the antenna and the correction link. |
 | **Low rate** / **Stale** | Device overloaded or filter input interrupted | Check the System page (CPU, temperature) and the ROS 2 page. |

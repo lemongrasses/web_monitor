@@ -69,8 +69,6 @@
         const s = this.services[key];
         if (!s) return "";
         const running = s.state === "running";
-        if (this.rosMode.mode === "bag" && running)
-          return "Bag replay is selected but the sensor drivers are running. Stop them before playing a bag so live and recorded data do not mix.";
         if (this.rosMode.mode === "live" && !running)
           return "Live is selected but the sensor drivers are stopped. Start them to get camera and IMU data.";
         return "";

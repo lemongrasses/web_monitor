@@ -148,14 +148,14 @@ Bag 回放屬於選配的 **replay 模組**（安裝時加 `--with-replay`：`su
 
 1. **Before playing** 列出播放前必須滿足的條件，每一項都有一個處理按鈕：
    - ROS 環境是 **Bag replay**（按 *Switch to Bag replay*：AIO NAV 與 DSO 會被停止，儀表板會重新啟動，約幾秒鐘）。Bag replay 使用 `aio_nav_bag.yaml`（ROS domain 13、模擬時間），而不是 `aio_nav.yaml`（domain 10，僅限本機）；
-   - 感測器驅動已停止（按 *Stop Sensor drivers*），避免即時資料與錄製資料混在一起；
+   - 感測器驅動沒有在 bag 的 domain 發布資料。驅動平常在 Live 的 domain（10），bag 的 domain（13）看不到它們，所以可以繼續執行（只是仍會佔用 CPU 與相機頻寬）。只有當驅動在 bag 的 domain 執行、或讀不到它的 domain 時，才需要停止（按 *Stop Sensor drivers*）；
    - 目前沒有其他 bag 在播放。
 2. 到 Overview 頁面按 **Start**，讓 AIO NAV 處理 bag 的資料（沒有啟動 AIO NAV 也能播放，但不會有任何計算結果）。
 3. 在 **Bags** 點選一個 bag。清單列出設定的資料夾中找到的所有 bag（預設：家目錄，往下兩層），並顯示錄製時間、長度、大小與 topic。
 4. 勾選要播放的 **topic**（都不勾：全部播放），再設定 **Rate**（速率）、**Start at**（起始秒數）、**Loop**（循環）與 **Start paused**（暫停開始）。**Advanced** 裡有 `ros2 bag play` 的其他所有參數（`/clock` 頻率、延遲、預讀佇列、topic 重新對應、儲存外掛、QoS 覆寫檔、儲存設定檔、等待全部確認、loaned message、記錄層級）。下方會顯示實際執行的指令，也可以直接貼到終端機使用。
 5. 按 **Play**。**Playback** 會顯示估計的播放位置，並提供 **Pause**／**Resume**、播放中調整 **Rate**，以及 **Stop**。播放器的輸出在 *Player output*。
 6. **Save preset** 會把 bag 連同 topic 與參數存成一組常用設定，下次從 **Presets…** 選取即可。每個 bag 上次使用的設定也會自動記住。
-7. 要回到即時作業：**Stop** 停止播放，在同一頁把 ROS 環境切回 **Live**，啟動感測器驅動（維護頁面 → ROS 2；約 15 秒後開始發布資料），再到 Overview 頁面按 **Start**。
+7. 要回到即時作業：**Stop** 停止播放，在同一頁把 ROS 環境切回 **Live**，如果之前停了感測器驅動就再啟動（維護頁面 → ROS 2；約 15 秒後開始發布資料），再到 Overview 頁面按 **Start**。
 
 改用終端機播放時，要指定 bag 的 domain 並帶上時鐘，因為終端機的預設環境可能是別的 domain（可用 `echo $ROS_DOMAIN_ID` 確認）：
 ```bash
@@ -361,7 +361,7 @@ ROS domain 與網路設定必須和 AIO NAV 相同：**Live** 使用 domain 10�
 | **Network** | 網路介面與位址、感測器連線狀態、導航輸出目的地與其路由。 |
 | **Diagnostics** | 目前的故障與警告、診斷與重新啟動的結果，以及事件紀錄。 |
 
-Live view 只在該頁面開啟時才讀取感測器的 ROS topic。播放 bag 之前請先停止感測器驅動（第 4.6 節）；刻意停止的驅動不會被當成問題。
+Live view 只在該頁面開啟時才讀取感測器的 ROS topic。刻意停止的驅動不會被當成問題。
 裝置上的指令：
 
 ```bash
@@ -384,7 +384,7 @@ aio-dashboard config     # 編輯設定、檢查、重新啟動
 | AIO NAV 控制列：「AIO NAV did not start: …」（或燈號 **Failed**） | AIO NAV 結束了或無法啟動，訊息會說明原因 | 再按一次 **Start**。若重複發生，請收集 `/opt/aio-dashboard/logs/aio_nav.log` 交給導航團隊。 |
 | AIO NAV 控制列：「AIO NAV launcher not found…」 | 此裝置上 aio-nav-ros 的 `install/` 資料夾不見或不完整 | 請管理員確認 aio-nav-ros 已安裝。 |
 | 即時作業：沒有相機或 IMU 資料 | 感測器驅動已停止 | 維護頁面 → ROS 2 → Sensor drivers → **Start**，等約 15 秒。 |
-| Bag 回放：AIO NAV 收不到資料 | Bag 在別的 ROS domain 播放、即時驅動仍在執行，或沒有啟動 AIO NAV | 見 4.6 節：從維護頁面 → Replay 播放（會使用正確的 domain 並檢查驅動），並在 Overview 頁面按 Start。用終端機時：`ROS_DOMAIN_ID=13 ROS_LOCALHOST_ONLY=0 ros2 bag play … --clock 100`。 |
+| Bag 回放：AIO NAV 收不到資料 | Bag 在別的 ROS domain 播放，或沒有啟動 AIO NAV | 見 4.6 節：從維護頁面 → Replay 播放（會使用正確的 domain），並在 Overview 頁面按 Start。用終端機時：`ROS_DOMAIN_ID=13 ROS_LOCALHOST_ONLY=0 ros2 bag play … --clock 100`。 |
 | 一直停在 **Initializing** | 對準尚未完成 | 依照[對準 SOP](#sec5) 與 5.3 處理。 |
 | **GNSS** 燈為琥珀或紅色（*RTK float*、*SPP*、*No signal*） | 天空被遮蔽、沒有 RTK 校正資料、天線或 GNSS 接收器問題 | 導航會繼續；移到開闊處；檢查天線與校正資料連線。 |
 | **Low rate**／**Stale** | 裝置負載過高，或濾波器輸入中斷 | 檢查 System 頁面（CPU、溫度）與 ROS 2 頁面。 |

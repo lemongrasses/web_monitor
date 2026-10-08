@@ -12,7 +12,8 @@ from aio_system_dashboard.config import resolve_path
 from . import DEFAULTS, NAME, TITLE
 from . import mode as ros_mode
 from .bags import BagIndex
-from .player import OPTIONS, OptionError, Player, command_text, defaults, find_ros_setup, preconditions, validate
+from .player import (OPTIONS, OptionError, Player, command_text, defaults, find_ros_setup, preconditions,
+                     process_domain, validate)
 
 
 def register(ctx, app) -> None:
@@ -32,6 +33,12 @@ def register(ctx, app) -> None:
         e = process_control.child_env(ctx.cfg)
         e.pop("DISPLAY", None)
         return e
+
+    def driver_domains(key):
+        """Domains the driver's processes run in; None if none could be read."""
+        found = {process_domain(p) for p in process_control.running_pids(ctx.cfg, key)}
+        found.discard(None)
+        return found or None
 
     def bad_request():
         return request.headers.get("X-Requested-With") != "aio-dashboard" or not request.is_json
@@ -65,7 +72,7 @@ def register(ctx, app) -> None:
     def api_status():
         st = player.status()
         services = ctx.store.get("services", {}) or {}
-        items, ok = preconditions(ctx.cfg, services, st.get("status") == "playing")
+        items, ok = preconditions(ctx.cfg, services, st.get("status") == "playing", driver_domains)
         nav = services.get(ctx.cfg["nav"]["service"]) or {}
         return jsonify({"player": st, "checks": items, "ready": ok and bool(setup()),
                         "ros_setup": setup(), "mode": ctx.cfg.ros_mode_info(),
@@ -106,7 +113,8 @@ def register(ctx, app) -> None:
             opts = validate(body.get("options") or {}, bag)
         except OptionError as e:
             return jsonify({"success": False, "summary": str(e)}), 400
-        items, ok = preconditions(ctx.cfg, ctx.store.get("services", {}) or {}, player.running())
+        items, ok = preconditions(ctx.cfg, ctx.store.get("services", {}) or {}, player.running(),
+                                  driver_domains)
         if not ok:
             return jsonify({"success": False, "summary": "not ready: " +
                             "; ".join(i["text"] for i in items if not i["ok"])}), 409

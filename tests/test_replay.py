@@ -195,21 +195,49 @@ class PlayerProcessTest(unittest.TestCase):
 
 
 class PreconditionsTest(unittest.TestCase):
-    def test_items_and_fixes(self):
-        cfg = type("C", (), {"ros_mode": lambda s: "live",
-                             "__getitem__": lambda s, k: {"ros": {"modes": {"live": {"label": "Live"},
-                                                                            "bag": {"label": "Bag replay"}}},
-                                                          "services": {"drivers": {"label": "Sensor drivers",
-                                                                                   "user_unit": "d.service"}}}[k]})()
-        items, ok = player.preconditions(cfg, {"drivers": {"state": "running"}}, playing=False)
+    @staticmethod
+    def cfg(mode):
+        data = {"ros": {"modes": {"live": {"label": "Live"}, "bag": {"label": "Bag replay"}}},
+                "services": {"drivers": {"label": "Sensor drivers", "user_unit": "d.service"}}}
+        return type("C", (), {
+            "ros_mode": lambda s: mode, "__getitem__": lambda s, k: data[k],
+            "ros_mode_info": lambda s: {"modes": [{"name": "live", "domain_id": 10},
+                                                  {"name": "bag", "domain_id": 13}]}})()
+
+    def test_mode_must_be_bag(self):
+        items, ok = player.preconditions(self.cfg("live"), {}, playing=False)
         self.assertFalse(ok)
         by = {i["key"]: i for i in items}
         self.assertEqual(by["mode"]["fix"], {"kind": "mode", "mode": "bag", "label": "Switch to Bag replay"})
-        self.assertEqual(by["driver:drivers"]["fix"]["action"], "stop_driver")
-        type(cfg).ros_mode = lambda s: "bag"
-        items, ok = player.preconditions(cfg, {"drivers": {"state": "stopped"}}, playing=False)
+        self.assertTrue(player.preconditions(self.cfg("bag"), {}, playing=False)[1])
+        self.assertFalse(player.preconditions(self.cfg("bag"), {}, playing=True)[1])
+
+    def test_drivers_only_matter_in_the_bag_domain(self):
+        run = {"drivers": {"state": "running"}}
+        # the usual case: drivers in Live's domain 10, the bag in 13 -> they never see each other
+        items, ok = player.preconditions(self.cfg("bag"), run, False, driver_domains=lambda k: {10})
         self.assertTrue(ok)
-        self.assertFalse(player.preconditions(cfg, {}, playing=True)[1])
+        self.assertIn("separate from the bag (domain 13)", items[1]["text"])
+        self.assertIsNone(items[1]["fix"])
+        # drivers publishing into the bag's domain would mix with the recording
+        items, ok = player.preconditions(self.cfg("bag"), run, False, driver_domains=lambda k: {13})
+        self.assertFalse(ok)
+        self.assertEqual(items[1]["fix"]["action"], "stop_driver")
+        # domain unreadable: be safe
+        self.assertFalse(player.preconditions(self.cfg("bag"), run, False, driver_domains=lambda k: None)[1])
+        # stopped drivers are always fine
+        self.assertTrue(player.preconditions(self.cfg("bag"), {"drivers": {"state": "stopped"}}, False)[1])
+
+    def test_process_domain(self):
+        import subprocess
+        self.assertIsNone(player.process_domain(999999999))
+        for env, want in (({"ROS_DOMAIN_ID": "13"}, 13), ({}, 0)):        # unset means domain 0
+            proc = subprocess.Popen(["sleep", "5"], env=dict(env, PATH="/usr/bin:/bin"))
+            try:
+                time.sleep(0.1)
+                self.assertEqual(player.process_domain(proc.pid), want)
+            finally:
+                proc.kill(); proc.wait()
 
 
 class ModulePlumbingTest(unittest.TestCase):
