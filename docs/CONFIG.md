@@ -318,6 +318,8 @@ operate on the Overview page, and every action is in the event log.
 * **Odometry turns NaN** (DSO lost tracking): DSO is restarted **at once**.
 * **DSO is not running but should be** (it crashed, or failed right after a start): it is started
   again **every `retry_s` (30 s)** until it stays up.
+* **DSO uses too much memory** (RAM + swap above `max_memory_mb`): DSO is restarted **at once**, so
+  a runaway DSO cannot fill the memory and hang the whole machine.
 * A DSO you stopped on purpose stays stopped. "Should be running" is recorded when AIO NAV and DSO
   are started or stopped from the dashboard (in `state/processes.json`), and a DSO that is running
   counts as wanted.

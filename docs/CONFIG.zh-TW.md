@@ -282,6 +282,7 @@ dso_watchdog:
 
 * **里程計變成 NaN**(DSO 追蹤失敗):**立刻**重啟 DSO。
 * **DSO 沒有在跑、但應該要跑**(崩潰,或剛啟動就結束):**每 `retry_s`(30 秒)**再啟動一次,直到穩定為止。
+* **DSO 用了太多記憶體**(RAM 加 swap 超過 `max_memory_mb`):**立刻**重啟 DSO,避免失控的 DSO 把記憶體用完、讓整台機器卡死。
 * 你主動停掉的 DSO 會保持停止。「應該在跑」是在儀表板啟動或停止 AIO NAV、DSO 時記錄的(`state/processes.json`),正在執行的 DSO 也視為需要。
 * 如果 NaN 一直出現(`window_s` 內重啟 `fast_restarts` 次),之後的重啟也改成間隔 `retry_s`,避免畫面不好時一直迴圈重啟。
 

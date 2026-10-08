@@ -35,11 +35,12 @@ state, and download its logs.
 | **Product view** | `http://<device-ip>:8080` | Operators | Overview, Navigation and Data pages: is navigation usable, where is the vehicle, is the output streaming. |
 | **AIO NAV control** | Overview page | Operators | Start, stop and restart the navigation filter (if enabled on this device). |
 | **Data download** | Product view, Data page | Operators | Download AIO NAV log files to your computer. |
-| **Maintenance view** | `http://<device-ip>:8081` | Engineers | Pinpoint whether a problem is in the system, a service, ROS, a sensor or the network; live camera and LiDAR view; driver diagnostics and restarts; switching between live and bag replay; starting and stopping the sensor drivers. |
+| **Maintenance view** | `http://<device-ip>:8081` (password) | Engineers | Pinpoint whether a problem is in the system, a service, ROS, a sensor or the network; live camera and LiDAR view; driver diagnostics and restarts; starting and stopping the sensor drivers; editing AIO NAV's settings; a terminal; bag replay (optional module). |
 | **`aio-dashboard` command** | Device terminal | Engineers | Start, stop, check and configure the dashboard itself. |
 
-The dashboard only **monitors** the system. Navigation keeps running even if the
-dashboard stops or a browser is closed.
+The dashboard starts and stops AIO NAV (when enabled) and watches everything else. AIO NAV
+runs on its own: navigation keeps running even if the dashboard stops or restarts, or a browser
+is closed.
 
 ## 2. Opening the dashboard
 
@@ -63,6 +64,10 @@ navigation output right now?* It shows the state, a line saying what is happenin
 saying what to do next, and (on Overview and Navigation) the **Start**, **Restart** and
 **Stop** buttons. Red is kept for real problems with AIO NAV.
 
+![Overview page while Ready](images/user/overview-ready.png)
+*The Overview page: status area with the AIO NAV buttons, output line, map with the recent track,
+position and attitude, and the status lamps.*
+
 | State | Color | Meaning | What to do |
 |-------|-------|---------|------------|
 | **Stopped** | Light grey | AIO NAV is not running and nobody asked it to run. This is normal, not a problem. | Click **Start** when you want navigation. |
@@ -71,6 +76,9 @@ saying what to do next, and (on Overview and Navigation) the **Start**, **Restar
 | **Ready** | Green | AIO NAV is running, data is fresh, and alignment is complete. The output can be used. | Operate normally. |
 | **Fault** | Red | AIO NAV has a problem: it stopped although nobody pressed Stop, it runs but has sent nothing for 60 s after starting, or its output stopped for more than 2 s. The reason is shown. | See [Troubleshooting](#9-troubleshooting). |
 | **Unknown** / **Offline** | Dark grey | The dashboard just started, or your browser lost its connection to the device. | Wait a few seconds; check the network if it persists. |
+
+![A fault: what happened and what to do](images/user/status-fault.png)
+*A fault always says what happened and what to do.*
 
 A state only changes after the condition has lasted about a second, and only returns to
 Ready after about 2 stable seconds. A single lost packet never makes it flicker. While AIO
@@ -95,14 +103,13 @@ something needs attention.**
 | **Alignment** | Step 1, coarse alignment (leveling). |
 | **Initial heading** | Step 2, the filter has a valid heading. |
 | **Fine alignment** | Step 3, heading accuracy reached its target. |
-
-The three alignment lamps are steps in order: **Done** (pale green), **In progress** (amber,
-the current step), **Waiting** (grey, a later step), or **—** while AIO NAV sends no output.
-
 | **GNSS** | Position quality of the GNSS receiver: **green** = *RTK fix* (centimeter level), **amber** = *RTK float* (about 10 cm, less accurate), **red** = *SPP* (single-point positioning, meters) or *No signal*. Amber and red are warnings only: inertial navigation continues, but accuracy slowly degrades. |
 | **Camera / LiDAR** (if fitted) | The sensor answers on the network. "Not set up" means no IP is configured; this is normal if not needed. |
 | **Network** | The sensor network link is up. |
 | **ZUPT / ZIHR / NHC / VUPT** (Navigation page) | Which aiding the filter is using at the moment (see the [glossary](#10-glossary)). Cyan = active, grey = idle. Idle is normal. |
+
+The three alignment lamps are steps in order: **Done** (pale green), **In progress** (amber,
+the current step), **Waiting** (grey, a later step), or **—** while AIO NAV sends no output.
 
 GNSS, camera, LiDAR and network problems are shown as **advisories** (amber bars under
 the lamps). They never change the state from Ready to Fault, because the navigation
@@ -111,7 +118,7 @@ solution is still usable. A red GNSS lamp adds the advisory *GNSS: SPP* or *GNSS
 ### 3.3 Output line
 
 One line under the status area tells whether the navigation output (UDP, section 6) is being
-sent, at what rate and to where, for example *Streaming · 100 Hz to 192.168.116.154:9000*.
+sent, at what rate and to where, for example *Streaming · 100 Hz to 192.0.2.50:9000*.
 
 | Label | Meaning |
 |-------|---------|
@@ -137,6 +144,16 @@ application received it.
 - **Data**: AIO NAV log folders. Click a folder to open it and **Download** to save a
   file. Nothing on the device can be changed from this page.
 
+![Navigation page](images/user/navigation.png)
+*Navigation page: the whole track of this run, every value with its accuracy, the aiding lamps.*
+
+![Data page](images/user/data.png)
+*Data page: download the AIO NAV logs.*
+
+<img src="images/user/overview-phone.png" alt="Overview on a phone" width="300">
+
+*The pages also work on a phone or tablet.*
+
 ## 4. Daily operation
 
 ### 4.1 Before starting
@@ -152,9 +169,16 @@ application received it.
 
 The **Start** button is in the status area at the top of the Overview and Navigation pages.
 
+![Stopped, before Start](images/user/overview-stopped.png)
+*Stopped: nothing is wrong, AIO NAV simply is not running. Click Start.*
+
 1. Click **Start**. The state becomes **Starting** (teal), then **Initializing** (amber) as
    soon as AIO NAV sends output; the output line changes from **Off** to **Streaming**.
 2. Follow the step shown in the status area ([Alignment SOP](#5-alignment-sop)).
+
+![Initializing, step 1 of 3](images/user/overview-initializing.png)
+*Initializing: the status area names the current alignment step and what to do; the step's lamp is
+amber, later steps are grey.*
 
 If the state becomes **Fault** with *AIO NAV stopped unexpectedly*, or the message under the
 buttons reads *AIO NAV did not start: …*, see [Troubleshooting](#9-troubleshooting). If there
@@ -188,6 +212,10 @@ Bag replay is part of the optional **replay module** (installed with
 and the steps below are not available.
 
 Everything is on Maintenance → **Replay**:
+
+![Replay page](images/maintenance/replay.png)
+*Replay page: ROS environment, the checks before playing, the bags found, and the playback settings
+with the exact command.*
 
 1. **Before playing** lists what has to be true, each with a button that fixes it:
    - the ROS environment is **Bag replay** (button *Switch to Bag replay*: AIO NAV and DSO are
@@ -263,7 +291,8 @@ turns **Ready**.
 
 > The alignment method and times are set in AIO NAV's own settings file (`aio_nav.yaml`,
 > section `Alignment`): `coarse_duration` (default 10 s), `fine_duration` (300 s),
-> `fine_heading_std_threshold` (1°) and the attitude option. With `att.option: 2`
+> `fine_heading_std_threshold` (1°) and the attitude option (all on Maintenance → **AIO NAV
+> config**). With `att.option: 2`
 > the heading comes from the settings file instead of from driving, and stage 2 needs no
 > motion. Which lamps are required for Ready is set by `nav.ready_requires` in the
 > dashboard settings. The minimum speed and distance needed for the heading depend on the
@@ -288,16 +317,18 @@ old AIO Nav desktop app), or the dashboard would show no data.
 
 ### 6.2 Setting the destination
 
-1. On the device, edit AIO NAV's settings. Edit the file of the mode you use: `aio_nav.yaml`
-   (Live) and `aio_nav_bag.yaml` (Bag replay); change both if you use both.
+1. Set **UDP destination** to your computer's IP and port (for example `192.0.2.50:9000`) on
+   Maintenance → **AIO NAV config** (section 8), in the file of the mode you use: `aio_nav.yaml`
+   (Live) and `aio_nav_bag.yaml` (Bag replay); change both if you use both. Or edit the file on
+   the device:
    ```bash
    nano ~/aio-nav-ros/install/aio_nav_ros/share/aio_nav_ros/config/aio_nav.yaml
    ```
    ```yaml
    output_udp: "192.0.2.50:9000"     # your computer's IP and port
    ```
-2. Restart AIO NAV (**Restart** on the Overview page), then restart the dashboard
-   (`aio-dashboard restart`) so its **Output** line shows the new destination.
+2. Restart AIO NAV (**Save and restart AIO NAV** on the config page, or **Restart** on the
+   Overview page). The dashboard's **Output** line follows the file by itself within a few seconds.
 3. On the receiving computer, allow incoming UDP on that port in the firewall.
 
 Only **one** external destination is supported, and it must be a unicast IPv4 address.
@@ -417,7 +448,7 @@ output is the product interface. They are published **only after coarse alignmen
 | `/nav/path` | `nav_msgs/Path` | Recent track |
 | TF `map` → `imu_link` | — | Pose in the TWD97 map frame |
 
-ROS domain and network settings must match AIO NAV's: **Live** uses domain 10 (this computer only), **Bag replay** uses domain 13 (network). The Overview page shows the one in use.
+ROS domain and network settings must match AIO NAV's: **Live** uses domain 10 (this computer only), **Bag replay** uses domain 13 (network). Maintenance → ROS 2 shows the one in use; the Overview shows a **Bag replay** label when it is not Live.
 
 ### 7.2 Log files (Data page)
 
@@ -426,8 +457,8 @@ tab-separated text logs once alignment is complete, in the `output/` folder of a
 
 | File | Content |
 |------|---------|
-| `…_fusion.txt` | Navigation solution at the output rate: time, position, velocity, attitude, accuracy, IMU errors, flags |
-| `…_imu.txt`, `…_gnss.txt`, `…_odom.txt` | The raw sensor inputs, parsed |
+| `AIO-NAV.txt` (the name set by `fusion_txt_path`) | Navigation solution at the output rate: time, position, velocity, attitude, accuracy, IMU errors, flags |
+| `AIO-NAV_imu.txt`, `AIO-NAV_gnss.txt`, `AIO-NAV_odom.txt` | The raw sensor inputs, parsed (`save_parsed_txt`) |
 
 Download them from the **Data** page of the product view.
 
@@ -445,7 +476,7 @@ Download them from the **Data** page of the product view.
 | **Network** | Interfaces and addresses, sensor reachability, the NAV output destinations and their route. |
 | **Diagnostics** | Active faults and warnings, results of diagnostics and restarts, and the event history. |
 | **AIO NAV config** | Edit AIO NAV's settings files (`aio_nav.yaml` for Live, `aio_nav_bag.yaml` for Bag replay). **Settings** is a form of the most used values (output, ROS, logs, alignment, aiding, lever arms); **Edit file** is the whole file. Comments in the file are kept. **Review changes** checks the file and shows exactly what changes; then **Save**, or **Save and restart AIO NAV** so it takes effect at once. Every save keeps the previous version (**Earlier versions**, to go back). |
-| **Terminal** | A shell on the device, in the browser, for quick checks (`ros2 topic hz …`, `journalctl …`, `top`). It runs as the dashboard's user with your normal profile; **Use active ROS domain** types the export line for the mode in use. Up to 3 at once; closed after 30 min without typing. |
+| **Terminal** | A shell on the device, in the browser, for quick checks (`ros2 topic hz …`, `journalctl …`, `top`). It runs as the dashboard's user and loads your `.bashrc`, like a desktop terminal (so ROS is set up); **Use active ROS domain** types the export line for the mode in use. Up to 3 at once; closed after 30 min without typing. |
 
 The maintenance view can change the device, so it needs a password; the product view does not.
 Set it on the device with `aio-dashboard password` (there is no default password: until one is set,
@@ -457,6 +488,38 @@ saved settings and opened terminals are recorded in the event log (Diagnostics).
 
 The Live view reads the sensor's ROS topic only while its page is open. A deliberately stopped
 driver is not reported as a problem.
+
+![Sign-in page](images/maintenance/login.png)
+*Sign-in page of the maintenance view.*
+
+![Maintenance overview](images/maintenance/overview.png)
+*Overview: the four layers and the active issues. The sidebar lamps point to the page with a problem;
+the tool pages (AIO NAV config, Terminal, Replay) have no lamp.*
+
+![System page](images/maintenance/system.png)
+*System: resources, storage, temperatures and services.*
+
+![ROS 2 page](images/maintenance/ros.png)
+*ROS 2: the environment in use, the sensor drivers (Start / Stop / Restart), nodes and topics.*
+
+![Camera page with Live view](images/maintenance/camera.png)
+*Camera: reachability, driver, topic and the Live view (a simulated picture here).*
+
+![Network page](images/maintenance/network.png)
+*Network: interfaces, sensor reachability and where the navigation output goes.*
+
+![Diagnostics page](images/maintenance/diagnostics.png)
+*Diagnostics: active issues, action results and the event history.*
+
+![AIO NAV config, Settings](images/maintenance/config-form.png)
+*AIO NAV config: the most used settings of the file in use; **Edit file** shows the whole file.*
+
+![AIO NAV config, Review changes](images/maintenance/config-review.png)
+*Review changes: the exact lines that change, checked before saving.*
+
+![Terminal](images/maintenance/terminal.png)
+*Terminal: a shell on the device, for example to check a topic rate.*
+
 Device commands:
 
 ```bash
@@ -464,6 +527,7 @@ aio-dashboard status     # service state and web addresses
 aio-dashboard logs       # follow the log
 aio-dashboard restart
 aio-dashboard config     # edit settings, check, restart
+aio-dashboard password   # set the maintenance password
 ```
 
 ## 9. Troubleshooting
@@ -472,6 +536,9 @@ aio-dashboard config     # edit settings, check, restart
 |--------------|--------------|------------|
 | Page does not open | Wrong address, network, or dashboard not running | Check the IP (`aio-dashboard urls` on the device) and the cable; run `aio-dashboard status`. |
 | **403 Forbidden** | Your computer is not in the allowed list | Ask the administrator to add your IP (`access.allowed_clients`). |
+| Maintenance view: sign-in page says no password is set | No maintenance password yet | On the device: `aio-dashboard password`, then reload the page. |
+| Maintenance view: back on the sign-in page | Signed out after 15 minutes without use | Sign in again; the page you were on opens afterwards. |
+| A page looks unstyled or shows *Unknown* right after an update | The browser still has the old page files | Reload with **Ctrl+Shift+R**. |
 | **Offline**, "Lost connection to the dashboard" | Your browser cannot reach the device | Check the network; the page recovers by itself. |
 | **Stopped** | AIO NAV is not running (normal) | Click **Start** (section 4.2). |
 | **Fault**: AIO NAV stopped unexpectedly | AIO NAV exited by itself | Click **Start**. If it keeps stopping, collect `/opt/aio-dashboard/logs/aio_nav.log` for the navigation team (Maintenance view shows details). |
@@ -482,6 +549,7 @@ aio-dashboard config     # edit settings, check, restart
 | Live: no camera or IMU data | The sensor drivers are stopped | Maintenance → ROS 2 → Sensor drivers → **Start**; wait about 15 s. |
 | Bag replay: AIO NAV receives no data | The bag is played in another ROS domain, or AIO NAV was not started | Section 4.6: play from Maintenance → Replay (it uses the right domain), and click Start on the Overview page. From a terminal: `ROS_DOMAIN_ID=13 ROS_LOCALHOST_ONLY=0 ros2 bag play … --clock 100`. |
 | Stuck at **Initializing** | Alignment not finished | Follow the [Alignment SOP](#5-alignment-sop) and 5.3. |
+| Event *DSO used too much memory: restarting DSO* (Maintenance → Diagnostics) | DSO kept growing (it was seen keeping every camera frame); the watchdog restarted it before the machine ran out of memory | Nothing to do right away; AIO NAV keeps running. If it repeats, report it to the DSO maintainers. The limit is `dso_watchdog.max_memory_mb`. |
 | **GNSS** lamp amber or red (*RTK float*, *SPP*, *No signal*) | Sky view blocked, no RTK correction data, antenna or GNSS receiver issue | Navigation continues; move to open sky; check the antenna and the correction link. |
 | **Low rate** / **Stale** | Device overloaded or filter input interrupted | Check the System page (CPU, temperature) and the ROS 2 page. |
 | Camera/LiDAR **Not connected** | Sensor powered off, cable, or wrong IP | Check power and cable; Maintenance → Camera/LiDAR → **Run diagnostic**. |

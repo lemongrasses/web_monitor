@@ -1,16 +1,16 @@
 # AIO System Dashboard v1
 
-Web dashboard for the Jetson AIO navigation system, implementing
-[`docs/AIO System Dashboard v1 — Implementation Specification.md`](docs/).
+Web dashboard for the Jetson AIO navigation system.
 
 | UI | Port | Audience | Pages |
 |----|------|----------|-------|
-| Product | `:8080` | Operators (no login, read-only) | Overview · Navigation · Data |
-| Maintenance | `:8081` | Engineers (closed LAN, no login) | Overview · System · ROS 2 · Camera · LiDAR · Network · Diagnostics |
+| Product | `:8080` | Operators (no login) | Overview · Navigation · Data, with Start / Restart / Stop of AIO NAV |
+| Maintenance | `:8081` | Engineers (password) | Overview · System · ROS 2 · Camera · LiDAR · Network · Diagnostics · AIO NAV config · Terminal (· Replay with the replay module) |
 
 The main data source is the **AIO NAV 0x04 binary packet** that `aio_nav_node`
-(`../aio-nav-ros`) always sends to `127.0.0.1:9000`. The dashboard only monitors
-the system. It does not start navigation or sensor processes, so a dashboard crash never stops them.
+(`../aio-nav-ros`) always sends to `127.0.0.1:9000`. The dashboard can start and stop AIO NAV and
+DSO (`nav.allow_control`), restarts DSO when it fails, and watches the rest. AIO NAV and DSO run in
+their own sessions, so a dashboard crash or restart never stops them.
 
 
 **Manuals:** operation, alignment SOP and UDP output format:
@@ -24,17 +24,22 @@ Ideas discussed and kept for later (in Traditional Chinese): [docs/IDEAS.md](doc
 ```
 aio_system_dashboard/
   __main__.py          one process, shared state, two HTTP servers (:8080, :8081)
-  config.py            config/dashboard.yaml + read-only output_udp/output_rate from aio_nav.yaml
+  config.py            config/dashboard.yaml + the active aio-nav-ros config file (re-read when it changes)
+  modules.py           optional modules (installed only with --with-<name>)
   nav/decoder.py       0x04 packet decoder (from setup_env, with the VUPT + velocity_up fixes)
   nav/trajectory.py    session trajectory: last 60 s @10 Hz + older @1 Hz, incremental fetch
-  collectors/          read-only: nav_udp (raw rate), system, services, network, ros2, fake
+  collectors/          nav_udp (raw rate), system, services, network, ros2 (sampled), gnss_monitor,
+                       dso_watchdog (NaN / crash / memory), ros_guard (stuck ROS connection), fake
   media/               on-demand camera image / point-cloud preview (tap.py), decoders, fake frames
   state/indicator.py   debounced status (raise/clear hold, no flicker on a single miss)
-  state/health.py      5 Hz evaluator → READY / INITIALIZING / FAULT, advisories, issues, events
-  actions/             whitelisted actions only: run_diagnostic(device), restart_service(unit)
+  state/health.py      5 Hz evaluator: product state, alignment step, advisories, issues, events
+  actions/             fixed actions only: process_control (AIO NAV / DSO), service_control (drivers),
+                       diagnostics, aionav_config (config editor), terminal (shell sessions)
   data_access/         read-only browse/download inside configured roots
-  web/                 Flask apps (product.py, maintenance.py)
-  templates/, static/  Bootstrap + Alpine.js + Leaflet (vendored, offline)
+  web/                 Flask apps: product.py, maintenance.py, tools.py (editor, terminal), auth.py
+  templates/, static/  Bootstrap + Alpine.js + Leaflet + xterm.js (vendored, offline)
+aio_dashboard_replay/  optional module: Live / Bag replay switch and bag player
+aio_sysmon/            optional system recorder (separate service)
 ```
 
 Packet processing runs at the raw rate (100 Hz). Health is evaluated at 5 Hz. The browser
@@ -44,9 +49,11 @@ polls `/api/state` at 5 Hz and the trajectory every 2 s.
 
 | State | Condition |
 |-------|-----------|
-| **FAULT** | AIO NAV process/service down, or no NAV packet for `stale_fault_s` (2 s) |
-| **INITIALIZING** | Packets fresh but `ready_requires` flags (default `alignment`, `heading_valid`, `fine_alignment`) not all set |
-| **READY** | Process up, packets fresh, alignment complete |
+| **STOPPED** | AIO NAV not running and nobody asked it to run (normal, not a fault) |
+| **STARTING** | asked to start, or running without output yet (up to `startup_timeout_s`, 60 s) |
+| **INITIALIZING** | packets fresh but `ready_requires` flags (default `alignment`, `heading_valid`, `fine_alignment`) not all set; reports the current step and what to do |
+| **READY** | process up, packets fresh, alignment complete |
+| **FAULT** | AIO NAV stopped although it should run (start requests are recorded), no output after the start-up time, output stopped for `stale_fault_s` (2 s), or the UDP listener failed |
 
 GNSS loss, camera/LiDAR not connected, sensor-LAN link down and low disk are
 **advisories**: they never change READY. A state only changes after the new condition has held
@@ -75,7 +82,7 @@ The Camera and LiDAR pages each have a view-only live preview of the ROS topic s
 The dashboard subscribes only while a page is requesting frames, and unsubscribes
 10 s after the last request. Messages are received without deserialization; only the
 latest one is converted, at the rate the browser asks for it. This keeps the dashboard
-from being a permanent consumer of heavy sensor streams (spec §15). The preview needs numpy, which ships with ROS 2.
+from being a permanent consumer of heavy sensor streams. The preview needs numpy, which ships with ROS 2.
 
 ## Development (x86, no ROS, no sensors)
 
@@ -127,6 +134,7 @@ Installing a release over a source install removes the old `.py` files from
 | `aio-dashboard config` | edit settings, check them, offer a restart |
 | `aio-dashboard check` | check the settings file for mistakes |
 | `aio-dashboard version` | installed version |
+| `aio-dashboard password` | set the maintenance view password (no default; it stays locked until set) |
 
 ### From a source checkout
 
@@ -142,6 +150,8 @@ sudo deploy/install.sh --user nvidia \
 - installs the bundled aarch64/cp310 wheels from `wheels/` (pip if present, otherwise it unpacks them)
 - installs and starts `aio-dashboard.service`, which runs as the ROS user with ROS 2 Humble sourced so `rclpy` works
 - writes `/etc/sudoers.d/aio-dashboard`, which allows only `systemctl restart <unit>` for units with `restartable: true`
+- with `--with-replay` / `--with-sysmon`, the optional modules (kept and updated on later runs)
+- reminds you to run `aio-dashboard password` if no maintenance password is set
 
 No configuration is required. For every setting and how to change it, see the configuration
 manual: [English](docs/CONFIG.md) · [繁體中文](docs/CONFIG.zh-TW.md). At start-up the dashboard detects:
@@ -163,19 +173,24 @@ To pin anything down, edit `/opt/aio-dashboard/config/dashboard.yaml`, then run
 `--reset-config` to replace it with the shipped default; the old one is saved as `.bak`.
 Re-run `install.sh` after changing which units are restartable.
 
-## Security notes (closed sensor LAN, spec §4)
+## Security notes (closed sensor LAN)
 
-- There is no shell access, and no command strings are accepted. Actions are fixed IDs, and each target must be in a whitelist built from config.
-- Restarts need confirmation in the UI, have a timeout, and are logged (Diagnostics page and `logs/events.jsonl`).
-- Action POSTs require JSON and the header `X-Requested-With: aio-dashboard`, which blocks plain cross-site form posts.
+- The maintenance view needs a password (`aio-dashboard password`; salted PBKDF2 hash, no default).
+  Sessions are HttpOnly / SameSite=Strict cookies bound to the client IP and end after 15 minutes
+  without use; repeated wrong passwords lock out briefly. `maintenance.lock: tools` limits the
+  password to the config editor and the terminal.
+- The **Terminal** page is a real shell of the service user. Choose a strong password, and keep
+  `access.allowed_clients` to the computers that need it.
+- Elsewhere no command strings are accepted: actions are fixed IDs, each target in a whitelist built from config.
+- Restarts need confirmation in the UI, have a timeout, and are logged (Diagnostics page and `logs/events.jsonl`), as are sign-ins, config saves and terminals.
+- POSTs require JSON and the header `X-Requested-With: aio-dashboard`, which blocks plain cross-site form posts.
 - Downloads are limited to the configured roots: realpath containment rejects `..`, absolute paths and escaping symlinks. There is no upload, delete or rename.
-- Each port serves only its own routes. Maintenance APIs are not reachable on :8080.
-- There is no authentication in v1. Add it before exposing the dashboard beyond the closed LAN.
+- Each port serves only its own routes. Maintenance APIs are not reachable on :8080. The product view has no login.
 
-## Not in v1 (spec §39)
+## Not included
 
-AIO NAV stop/restart buttons, editable NAV destination, recording, offline map tiles,
-trend charts, deep IMU/camera/LiDAR diagnostics, and ROS message browsing.
+Offline map tiles, trend charts, deep IMU/camera/LiDAR diagnostics, and ROS message browsing.
+Ideas kept for later are in [docs/IDEAS.md](docs/IDEAS.md).
 
 ## Optional modules
 

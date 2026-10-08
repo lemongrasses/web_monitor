@@ -95,7 +95,7 @@ aio-sysmon snapshots stall       # 開啟名稱含 "stall" 的最新一份
 | `aio-sysmon status` | 是否在執行、使用的空間、最新數值 |
 | `aio-sysmon last-crash` | 上一次不正常結束的判斷,以及結束前的最後紀錄 |
 | `aio-sysmon report [--hours N] [--since "YYYY-MM-DD HH:MM"]` | 逐小時摘要與重要事件 |
-| `aio-sysmon ring [--rows N]` | 最新的逐秒紀錄 |
+| `aio-sysmon ring [--rows N]` | 最新的逐秒紀錄(只有 root 能讀:請加 `sudo`;`last-crash` 用 `sudo` 執行時也會顯示) |
 | `aio-sysmon events [--hours N] [--kind KIND]` | 事件(`anomaly`、`kernel`、`unclean_stop`、`tick_gap`、`clock_step`、`start`、`stop`) |
 | `aio-sysmon snapshots [NAME]` | 列出快照,或印出其中一份 |
 
@@ -132,7 +132,7 @@ aio-sysmon snapshots stall       # 開啟名稱含 "stall" 的最新一份
 - **每個程序的磁碟使用量。** 這個核心沒有提供。磁碟問題改由整顆磁碟的忙碌率、請求時間、紀錄器自己寫入磁碟所花的時間,以及卡在磁碟等待的工作來呈現。
 - **斷電前最後幾秒。** 環狀檔每 5 秒才寫入磁碟,所以最多可能少 5 秒;樣本則是每次寫入都會同步。
 - **數值正常的卡死。** 如果直到最後一筆紀錄數值都正常,核心也沒有記錄任何東西,判斷會老實地這樣說:這指向電源、硬體或核心的問題,紀錄器無法再細分。
-- **時鐘問題。** 機器如果沒有電池供電的時鐘,時間在校準前可能是錯的。每筆紀錄也都帶有開機後經過的時間,時鐘跳變會記成 `clock_step`。
+- **時鐘問題。** 機器如果沒有電池供電的時鐘,或硬體時鐘存的是當地時間(`timedatectl` 顯示「RTC in local TZ: yes」),剛開機時時間可能是錯的,直到校準為止;這台 Orin NX 曾快了 8 小時。每筆紀錄也都帶有開機後經過的時間,時鐘跳變會記成 `clock_step`,而 `last-crash` 與 `events` 仍找得到時鐘超前時寫下的紀錄。`sudo timedatectl set-local-rtc 0` 會讓硬體時鐘改存 UTC。
 - **發行包。** `tools/build_release.sh` 產生的編譯版發行包目前不含紀錄器,要從原始碼目錄安裝。
 
 ## 6. 安裝、權限與移除

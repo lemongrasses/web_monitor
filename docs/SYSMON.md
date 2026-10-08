@@ -114,7 +114,7 @@ All commands:
 | `aio-sysmon status` | whether it is running, space used, the latest reading |
 | `aio-sysmon last-crash` | the verdict for the last unclean stop and the last records before it |
 | `aio-sysmon report [--hours N] [--since "YYYY-MM-DD HH:MM"]` | per-hour summary and notable events |
-| `aio-sysmon ring [--rows N]` | the newest second-by-second records |
+| `aio-sysmon ring [--rows N]` | the newest second-by-second records (root only: use `sudo`; `last-crash` shows them too when run with `sudo`) |
 | `aio-sysmon events [--hours N] [--kind KIND]` | events (`anomaly`, `kernel`, `unclean_stop`, `tick_gap`, `clock_step`, `start`, `stop`) |
 | `aio-sysmon snapshots [NAME]` | list snapshots, or print one |
 
@@ -162,8 +162,11 @@ Everything is optional. The most useful keys:
 - **A freeze with healthy numbers.** If the readings were normal until the last record and the
   kernel logged nothing, the verdict says so honestly: it points to power or a hardware or kernel
   fault, which the recorder cannot tell apart.
-- **Clock problems.** If the machine has no battery-backed clock, its time can be wrong until it
-  is set. Every record also carries the uptime, and a jump of the clock is logged as `clock_step`.
+- **Clock problems.** If the machine has no battery-backed clock, or keeps its hardware clock in
+  local time (`timedatectl` shows "RTC in local TZ: yes"), its time can be wrong right after a boot
+  until it is set; on this Orin NX it ran 8 hours ahead. Every record also carries the uptime, a
+  jump of the clock is logged as `clock_step`, and `last-crash` / `events` still find records
+  written while the clock was ahead. `sudo timedatectl set-local-rtc 0` keeps the hardware clock in UTC.
 - **Release packages.** The compiled release made by `tools/build_release.sh` does not include the
   recorder yet; it is installed from a source checkout.
 
