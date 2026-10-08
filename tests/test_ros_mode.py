@@ -101,7 +101,9 @@ class RosModeTest(unittest.TestCase):
         self.assertEqual(cfg.ros_env()["ROS_DOMAIN_ID"], "10")
         self.edit_live(ros_domain_id=12)
         cfg.data["fake"]["enabled"] = True                       # no real process in a test
-        with mock.patch.object(process_control.time, "sleep", lambda s: None):
+        state_dir = Path(self.tmp.name) / "state"                  # not the project's state/ folder
+        with mock.patch.object(process_control.time, "sleep", lambda s: None), \
+                mock.patch.object(Config, "state_file", lambda _s, n: state_dir / n):
             process_control.control(cfg, "aio_nav", "start", 0.1)
         self.assertEqual(cfg.ros_env()["ROS_DOMAIN_ID"], "12")   # AIO NAV starts with the new domain
 
