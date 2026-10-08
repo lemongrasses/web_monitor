@@ -70,8 +70,9 @@ ros:
   enabled: true
   # Mode = which aio-nav-ros config file AIO NAV and DSO are started with. That file also sets
   # the ROS domain (live: aio_nav.yaml, 10 / localhost only; bag: aio_nav_bag.yaml, 13 / network),
-  # which the dashboard uses for its own ROS connection too. Switch on Maintenance > ROS 2; the
-  # choice is kept in state/ros_mode.json and `mode` below is used until then.
+  # which the dashboard uses for its own ROS connection too. Switch on Maintenance > Replay (only
+  # with the optional replay module; without it `mode` below is always used); the choice is kept
+  # in state/ros_mode.json and `mode` below is used until then.
   mode: live
   # If the dashboard's own ROS connection gets stuck (the sensor drivers run in this domain but no
   # node is visible for isolation_grace_s), restart the dashboard; at most once per cooldown.
@@ -114,6 +115,13 @@ gnss:
 # Or list folders: roots: [{ id: logs, name: AIO NAV logs, path: /home/jetson/aio-nav-ros/output }]
 data:
   roots: auto
+
+# Optional modules, installed with deploy/install.sh --with-<name> (docs/CONFIG.md 4.12).
+# replay: Live / Bag replay switch and bag player (Maintenance > Replay).
+modules:
+  replay:
+    bag_roots: ["~"]       # folders searched for bags (a folder with metadata.yaml)
+    scan_depth: 2
 
 events:
   log_file: logs/events.jsonl

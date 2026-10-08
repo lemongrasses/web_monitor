@@ -170,24 +170,41 @@ AIO NAV that was started in another way is detected too.
 
 ### 4.6 Replaying a recorded bag (engineers)
 
-Live and recorded data must not mix, so switch the whole system to **Bag replay**:
+Bag replay is part of the optional **replay module** (installed with
+`sudo deploy/install.sh --user <you> --with-replay`). Without it the machine always runs **Live**
+and the steps below are not available.
 
-1. Maintenance → **ROS 2** → **Sensor drivers** → **Stop**. Otherwise the live camera and IMU
-   keep publishing while the bag plays.
-2. On the same page, under **ROS environment**, choose **Bag replay**, click **Apply**, then
-   **Switch now**. AIO NAV is stopped and the dashboard restarts (a few seconds). Bag replay
-   uses the settings file `aio_nav_bag.yaml` (ROS domain 13, simulated time) instead of
-   `aio_nav.yaml` (domain 10, this computer only).
-3. On the Overview page the tag next to AIO NAV now reads *Bag replay · domain 13*.
-   Click **Start**.
-4. Play the bag in the same domain, with the clock:
-   ```bash
-   ROS_DOMAIN_ID=13 ROS_LOCALHOST_ONLY=0 ros2 bag play <bag folder> --clock
-   ```
-   A terminal may default to another domain (check `echo $ROS_DOMAIN_ID`), so set it on the
-   command line as shown.
-5. Back to live use: stop the replay, switch to **Live** (as in step 2), start the sensor
-   drivers (**Start**; they publish after about 15 s), then click **Start** on the Overview page.
+Everything is on Maintenance → **Replay**:
+
+1. **Before playing** lists what has to be true, each with a button that fixes it:
+   - the ROS environment is **Bag replay** (button *Switch to Bag replay*: AIO NAV and DSO are
+     stopped and the dashboard restarts, a few seconds). Bag replay uses `aio_nav_bag.yaml`
+     (ROS domain 13, simulated time) instead of `aio_nav.yaml` (domain 10, this computer only);
+   - the sensor drivers are stopped (button *Stop Sensor drivers*), so live and recorded data do
+     not mix;
+   - no other bag is playing.
+2. On the Overview page click **Start** so AIO NAV processes the bag (the player works without it,
+   but nothing is computed).
+3. Under **Bags**, click a bag. The list shows every bag found in the configured folders
+   (default: the home folder, two levels deep), with recording time, length, size and topics.
+4. Tick the **topics** to play (none ticked: all), then set **Rate**, **Start at**, **Loop** and
+   **Start paused**. **Advanced** has every other `ros2 bag play` option (`/clock` rate, delay,
+   read-ahead queue, topic remapping, storage plugin, QoS overrides file, storage config file, wait
+   for all acked, loaned messages, log level). The exact command is shown underneath; it can also
+   be pasted into a terminal.
+5. Click **Play**. **Playback** shows the estimated position, and has **Pause** / **Resume**, a
+   **Rate** change while playing, and **Stop**. The player's output is under *Player output*.
+6. **Save preset** keeps a bag with its topics and options under a name; pick it from **Presets…**
+   next time. The last settings used with each bag are also remembered.
+7. Back to live use: **Stop** the playback, switch the ROS environment to **Live** on the same
+   page, start the sensor drivers (Maintenance → ROS 2; they publish after about 15 s), then click
+   **Start** on the Overview page.
+
+Playing from a terminal instead: use the bag domain and the clock, because a terminal may default
+to another domain (`echo $ROS_DOMAIN_ID`):
+```bash
+ROS_DOMAIN_ID=13 ROS_LOCALHOST_ONLY=0 ros2 bag play <bag folder> --clock 100
+```
 
 ## 5. Alignment SOP
 
@@ -407,7 +424,8 @@ Download them from the **Data** page of the product view.
 |------|-----------|
 | **Overview** | See the four layers (System, Services, Data flow, Network) and the list of active issues. Each issue links to the page that explains it. |
 | **System** | CPU, GPU, memory, disk, temperatures, systemd services, network interfaces. |
-| **ROS 2** | Required nodes, monitored topics (rate, freshness, publishers, subscribers), all topics. Also here: **Sensor drivers** (Start / Stop / Restart the camera and IMU/GNSS drivers) and **ROS environment** (switch between Live and Bag replay, section 4.6). |
+| **ROS 2** | Required nodes, monitored topics (rate, freshness, publishers, subscribers), all topics. Also here: **Sensor drivers** (Start / Stop / Restart the camera and IMU/GNSS drivers) and the ROS environment in use. |
+| **Replay** (replay module only) | Switch between Live and Bag replay, and play bags with any `ros2 bag play` option (section 4.6). |
 | **Camera / LiDAR** (if fitted) | Reachability, driver state, topic health, **Live view** (camera image; LiDAR point cloud with top/3D view), **Run diagnostic**, **Restart driver** (asks for confirmation). |
 | **Network** | Interfaces and addresses, sensor reachability, the NAV output destinations and their route. |
 | **Diagnostics** | Active faults and warnings, results of diagnostics and restarts, and the event history. |
@@ -435,7 +453,7 @@ aio-dashboard config     # edit settings, check, restart
 | AIO NAV line: *AIO NAV did not start: …* (or lamp **Failed**) | AIO NAV exited or could not start; the message gives the reason | Click **Start** again. If it repeats, collect `/opt/aio-dashboard/logs/aio_nav.log` for the navigation team. |
 | AIO NAV line: *AIO NAV launcher not found…* | The aio-nav-ros `install/` folder is missing or incomplete on this device | Ask the administrator to check that aio-nav-ros is installed. |
 | Live: no camera or IMU data | The sensor drivers are stopped | Maintenance → ROS 2 → Sensor drivers → **Start**; wait about 15 s. |
-| Bag replay: AIO NAV receives no data | The bag is played in another ROS domain, or the live drivers are still running | Section 4.6: stop the sensor drivers and play with `ROS_DOMAIN_ID=13 ROS_LOCALHOST_ONLY=0 ros2 bag play … --clock`. |
+| Bag replay: AIO NAV receives no data | The bag is played in another ROS domain, the live drivers are still running, or AIO NAV was not started | Section 4.6: play from Maintenance → Replay (it uses the right domain and checks the drivers), and click Start on the Overview page. From a terminal: `ROS_DOMAIN_ID=13 ROS_LOCALHOST_ONLY=0 ros2 bag play … --clock 100`. |
 | Stuck at **Initializing** | Alignment not finished | Follow the [Alignment SOP](#5-alignment-sop) and 5.3. |
 | **GNSS** lamp amber or red (*RTK float*, *SPP*, *No signal*) | Sky view blocked, no RTK correction data, antenna or GNSS receiver issue | Navigation continues; move to open sky; check the antenna and the correction link. |
 | **Low rate** / **Stale** | Device overloaded or filter input interrupted | Check the System page (CPU, temperature) and the ROS 2 page. |

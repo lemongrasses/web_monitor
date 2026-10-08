@@ -13,9 +13,7 @@
   <div class="mlayout">
     <aside class="sidebar">
       <div class="brand">{{ brand_mark() }}<span class="brand-text">AIO Maintenance</span></div>
-      {% set items = [('overview', 'Overview', '/'), ('system', 'System', '/system'), ('ros', 'ROS 2', '/ros'),
-                      ('camera', 'Camera', '/camera'), ('lidar', 'LiDAR', '/lidar'),
-                      ('network', 'Network', '/network'), ('diagnostics', 'Diagnostics', '/diagnostics')] %}
+      {% set items = nav_items %}
       <nav aria-label="Maintenance pages">
       {% for key, label, href in items %}
       <a href="{{ href }}" class="{{ 'active' if page == key }}" {{ 'aria-current=page' if page == key }}>

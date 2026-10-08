@@ -1,7 +1,10 @@
 #!/usr/bin/env bash
 # Build a release package that contains no Python source.
 #
-#   tools/build_release.sh
+#   tools/build_release.sh [--with-replay]
+#
+# Optional modules are left out unless asked for: --with-replay adds the replay module (Live / Bag
+# replay switch and bag player); install it on the device with ./install.sh --with-replay.
 #
 # Run it on the TARGET architecture (an Orin for Jetson deployments): the backend is
 # compiled with Nuitka into one native module (.so) for this CPU and Python version.
@@ -16,6 +19,13 @@
 #   python3 -m pip install --user nuitka
 set -euo pipefail
 cd "$(dirname "$0")/.."
+WITH_REPLAY=0
+for arg in "$@"; do
+  case "$arg" in
+    --with-replay) WITH_REPLAY=1 ;;
+    *) echo "unknown option: $arg" >&2; exit 1 ;;
+  esac
+done
 
 ARCH="$(uname -m)"
 PYV="$(python3 -c 'import sys; print(f"{sys.version_info[0]}.{sys.version_info[1]}")')"
@@ -44,9 +54,24 @@ python3 -m nuitka "${MODE[@]}" aio_system_dashboard \
   --no-pyi-file --remove-output --quiet --assume-yes-for-downloads \
   --output-dir="$BUILD/compile"
 
+if [[ $WITH_REPLAY -eq 1 ]]; then
+  echo "==> compiling the replay module"
+  python3 -m nuitka "${MODE[@]}" aio_dashboard_replay \
+    --include-package=aio_dashboard_replay \
+    --nofollow-import-to=aio_system_dashboard \
+    --python-flag=no_docstrings \
+    --no-pyi-file --remove-output --quiet --assume-yes-for-downloads \
+    --output-dir="$BUILD/compile"
+fi
+
 echo "==> staging $NAME"
 cp "$BUILD"/compile/aio_system_dashboard*.so "$STAGE/"
 cp -r aio_system_dashboard/templates aio_system_dashboard/static "$STAGE/aio_system_dashboard/"
+if [[ $WITH_REPLAY -eq 1 ]]; then
+  cp "$BUILD"/compile/aio_dashboard_replay*.so "$STAGE/"
+  mkdir -p "$STAGE/aio_dashboard_replay"
+  cp -r aio_dashboard_replay/templates aio_dashboard_replay/static "$STAGE/aio_dashboard_replay/"
+fi
 mkdir -p "$STAGE/config" "$STAGE/deploy" "$STAGE/docs"
 cp config/dashboard.yaml "$STAGE/config/"
 cp -r wheels "$STAGE/"
@@ -59,6 +84,7 @@ cat > "$STAGE/README.txt" <<EOF
 AIO System Dashboard $VERSION ($ARCH, Python $PYV) — compiled release, no source code.
 
 Install:   sudo ./install.sh --user <ros-user>      (add --reset-config to replace settings)
+$( [[ $WITH_REPLAY -eq 1 ]] && echo "           add --with-replay for the replay module (Live / Bag replay, bag player)" || echo "Modules:   none (Live only)")
 Then:      aio-dashboard status | config | logs | restart
 Operation: docs/OPERATION.md  /  docs/OPERATION.zh-TW.md
 Settings:  docs/CONFIG.md  /  docs/CONFIG.zh-TW.md
@@ -78,6 +104,10 @@ if python3 -m pip install --quiet --no-warn-conflicts --no-index --find-links wh
      --target "$SMOKE_LIB" flask pyyaml psutil >/dev/null 2>&1; then
   (cd / && PYTHONPATH="$STAGE:$SMOKE_LIB" python3 -c \
     'import aio_system_dashboard.__main__ as m, aio_system_dashboard.web.common as c; assert (c.PKG_DIR / "templates").is_dir(); print("    ok")')
+  if [[ $WITH_REPLAY -eq 1 ]]; then
+    (cd / && PYTHONPATH="$STAGE:$SMOKE_LIB" python3 -c \
+      'import os, aio_dashboard_replay.web as w; assert os.path.isdir(os.path.join(os.path.dirname(os.path.abspath(w.__file__)), "templates")); print("    replay module ok")')
+  fi
 else
   echo "    skipped: bundled wheels do not match this machine ($ARCH)"
 fi

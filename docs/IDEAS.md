@@ -2,7 +2,7 @@
 
 討論過、覺得可行,但先不做的想法。每項記下**為什麼想做、建議做法、要注意的取捨**,之後要做時可以直接從這裡接手。完成後請從這裡移除,或標成已完成並附上 commit。
 
-最後整理:2026-10-08
+最後整理:2026-10-08(replay 模組完成後更新)
 
 | # | 想法 | 類別 | 規模 |
 |---|------|------|------|
@@ -53,7 +53,7 @@
 - 網頁:Maintenance 的 ROS 頁、Overview 的 GNSS 燈與感測器燈要能隱藏。
 - GNSS 燈:目前依賴 `NavSatFix`。沒有 ROS 時可考慮改用導航 UDP 封包的旗標,但語意不完全相同,要另外定義。
 
-**做法:** 照 README「Optional modules」的模式,做成獨立資料夾、`--with-ros` 安裝旗標、`enabled` 設定,在 `feature/optional-ros` 短期分支上開發。
+**做法:** 照 README「Optional modules」的模式,做成獨立資料夾、`--with-ros` 安裝旗標、`enabled` 設定,在 `feature/optional-ros` 短期分支上開發。模組的骨架已經有了(`aio_system_dashboard/modules.py`,第一個模組是 2026-10-08 的 replay),ROS 模組可以照同樣方式接上。
 
 ---
 
@@ -105,11 +105,7 @@
 
 ## 6. 操作便利
 
-- **`aio-dashboard bag-play <路徑>`:** 播 bag 時自動套用目前模式的 ROS 網域(Bag 模式為 13/0)。目前終端機會被 `~/.bashrc` 設成 10/1,手動播放很容易忘記指定網域,導致 AIO NAV 收不到資料。正確的手動指令是:
-  ```bash
-  ROS_DOMAIN_ID=13 ROS_LOCALHOST_ONLY=0 ros2 bag play <bag> --clock
-  ```
-  同樣的陷阱:在終端機手動執行 `aio-nav` 也會被 `.bashrc` 蓋成 10/1;從儀表板 Start 啟動就沒有這個問題。
+- ~~**`aio-dashboard bag-play <路徑>`**~~ **已完成(2026-10-08),做成更完整的版本:** 選配的 replay 模組,在維護頁面 **Replay** 選 bag、勾 topic、調整 `ros2 bag play` 的所有參數、存常用設定、播放中暫停/調速,並自動使用 Bag 模式的網域。見操作手冊第 4.6 節。
 - **DSO 與 AIO NAV 分開控制的後續。** 目前首頁只有 AIO NAV(跟原本的 App 邏輯一樣),DSO 由後台監控自動處理。當時說「之後再討論後續」,例如維護頁要不要能單獨啟停 DSO。
 
 ---

@@ -184,5 +184,8 @@ Features that not every machine needs are separate modules that are **not instal
 | Module | Install flag | What it is |
 |--------|--------------|------------|
 | System recorder (`aio_sysmon`) | `--with-sysmon` | a power-loss-safe black box, see above |
+| Replay (`aio_dashboard_replay`) | `--with-replay` | Live / Bag replay switch and a bag player on Maintenance > Replay ([operation 4.6](docs/OPERATION.md)); without it the machine runs Live only |
 
 New optional features follow the same pattern (own folder, own flag, own `enabled` setting) and are developed on a short-lived `feature/<name>` branch that is merged into `main`.
+
+A dashboard module is a package next to `aio_system_dashboard` (for example `aio_dashboard_replay/`) with `NAME`, `TITLE`, `DEFAULTS` and `register(ctx, app)`, listed in `aio_system_dashboard/modules.py`. The core never imports it directly: it only asks `modules.py` whether the module is installed and on, and the module adds its own Maintenance page, routes, templates and static files. `deploy/install.sh --with-<name>` copies it, and `tools/build_release.sh --with-<name>` compiles it into a release.

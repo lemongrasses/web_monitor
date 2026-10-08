@@ -264,7 +264,7 @@ ros:
 | Key | Default | Meaning |
 |-----|---------|---------|
 | `enabled` | `true` | `false` turns ROS 2 monitoring off. Topic lamps then show Unknown. |
-| `mode` | `null` (shipped config: `live`) | The mode in use until someone picks another on **Maintenance > ROS 2** (that choice is stored in `state/ros_mode.json` and wins over this setting). `null` keeps the environment of the service. |
+| `mode` | `null` (shipped config: `live`) | The mode in use until someone picks another on **Maintenance > Replay** (that choice is stored in `state/ros_mode.json` and wins over this setting). Choosing a mode needs the optional replay module (4.12); without it this setting is the only one used, so a product machine stays on `live`. `null` keeps the environment of the service. |
 | `modes` | `live`: `aio_nav.yaml`; `bag`: `aio_nav_bag.yaml` | Each mode names an aio-nav-ros config file (in the folder of the normal `aio_nav.yaml`). AIO NAV and DSO are started with that file as their argument, and its `ros_domain_id` / `ros_localhost_only` become the dashboard's own ROS environment, so all three always agree. The file also decides `use_sim_time`. A mode may add `domain_id` / `localhost_only` to override the file. A mode whose file is missing cannot be selected. Switching stops AIO NAV and DSO and restarts the dashboard (a few seconds); start AIO NAV again afterwards. The camera and IMU drivers are not touched. |
 | `isolation_restart` | `false` (shipped config: `true`) | Restart the dashboard when its own ROS connection is stuck. This happened once after a boot: the dashboard started before the sensor drivers and never discovered them, so the IMU, camera and GNSS looked missing. It acts only when the sensor driver process is running **in the same ROS domain and localhost setting** as the dashboard, yet no other node is visible for `isolation_grace_s` (30 s). It never acts while the drivers are stopped or in another domain, and at most once per `isolation_cooldown_s` (600 s), so it cannot loop. The restart is recorded in the event log. |
 | `sampling` | `enabled: false` (shipped config: `true`), `period_s: 5`, `window_s: 1.5`, `above_hz: 30` | Saves CPU on high-rate topics. A watched topic whose `expected_hz` is at least `above_hz` (the 100 Hz IMU) is listened to only `window_s` out of every `period_s`; the rate and freshness on the ROS 2 page are those of the last window and are marked *sampled*. Without it, a 100 Hz topic costs a Python callback per message (about 12% of one core). **Trade-off:** a topic that keeps its publisher but goes silent shows *Stale* up to `period_s` later (about 1 s without sampling), and a drop shorter than `period_s` can be missed. A topic that disappears is still *Missing* at once. It only changes this dashboard's own subscriptions: GNSS, the visual-odometry watch, the camera/LiDAR previews, the drivers and ROS itself are not affected. |
@@ -391,6 +391,33 @@ data:
 | `state_file` | `dev/fake_state.json` | The simulated state, editable while running. |
 
 ---
+
+### 4.12 `modules`: optional modules
+
+Features that not every machine needs are separate modules. A module is **not installed by
+default**; it is added with an installer flag and is then on, unless switched off here.
+
+```yaml
+modules:
+  replay:
+    bag_roots: ["~", /media/jetson/data]
+```
+
+**`replay`**: the Live / Bag replay switch and the bag player on **Maintenance > Replay**
+(OPERATION section 4.6). Install with `sudo deploy/install.sh --user <you> --with-replay`.
+Without it the machine always runs Live.
+
+| Key | Default | Meaning |
+|-----|---------|---------|
+| `enabled` | `true` | `false` hides the module although it is installed (the machine then runs Live). |
+| `bag_roots` | `["~"]` | Folders searched for bags. A folder holding a `metadata.yaml` is a bag. `~` is the service user's home folder. Only bags found here can be played. |
+| `scan_depth` | `2` | How many folder levels below each root are searched. The search does not go into a bag or into hidden folders. |
+| `ros_setup` | `auto` | The `setup.bash` sourced before `ros2 bag play`. `auto`: the aio-nav-ros `install/setup.bash` (it also knows AIO NAV's own message types), else `/opt/ros/<distro>/setup.bash`. |
+| `log_file` | `logs/bag_play.log` | Output of the player (shown under *Player output*). |
+| `stop_grace_s` | `5` | Stop sends SIGINT, then SIGTERM, then SIGKILL; this is the wait after SIGINT. |
+
+The player state, presets and the last settings per bag are kept in `state/bag_play.json` and
+`state/bag_presets.json`.
 
 ## 5. Common tasks
 

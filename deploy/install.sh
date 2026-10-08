@@ -4,7 +4,7 @@
 # made by tools/build_release.sh (./install.sh), which contains no Python source.
 #
 #   sudo deploy/install.sh [--user nvidia] [--prefix /opt/aio-dashboard] [--with-aio-nav PATH_TO_aio-nav]
-#                          [--reset-config] [--with-sysmon]
+#                          [--reset-config] [--with-sysmon] [--with-replay]
 #
 # - copies the app to PREFIX (default /opt/aio-dashboard), keeping an existing config
 #   (--reset-config replaces it with the default; the old one is saved as .bak)
@@ -18,6 +18,9 @@
 # - optional, off by default: --with-sysmon installs aio-sysmon.service, the computer's black box
 #   (docs/SYSMON.md), and keeps the system journal across reboots. If it is already installed,
 #   re-running the installer updates it even without the flag.
+# - optional, off by default: --with-replay installs the replay module (Live / Bag replay switch and
+#   the bag player on the Maintenance page). Without it the machine always runs Live. Kept and
+#   updated on later runs once installed.
 set -euo pipefail
 
 HERE="$(cd "$(dirname "$0")" && pwd)"
@@ -28,6 +31,7 @@ RUN_USER="${SUDO_USER:-nvidia}"
 AIO_NAV_BIN=""
 RESET_CONFIG=0
 WITH_SYSMON=0
+WITH_REPLAY=0
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -36,8 +40,9 @@ while [[ $# -gt 0 ]]; do
     --with-aio-nav) AIO_NAV_BIN="$2"; shift 2 ;;
     --reset-config) RESET_CONFIG=1; shift ;;
     --with-sysmon) WITH_SYSMON=1; shift ;;
+    --with-replay) WITH_REPLAY=1; shift ;;
     --no-sysmon) shift ;;                        # old flag: the recorder is off by default now
-    -h|--help) sed -n '2,21p' "$0"; exit 0 ;;
+    -h|--help) sed -n '2,23p' "$0"; exit 0 ;;
     *) echo "unknown option: $1" >&2; exit 1 ;;
   esac
 done
@@ -66,6 +71,31 @@ else
   echo "    from source checkout"
   cp -r "$SRC/aio_system_dashboard" "$PREFIX/"
   find "$PREFIX/aio_system_dashboard" -name __pycache__ -type d -prune -exec rm -rf {} +
+fi
+
+# Optional module "replay" (a package next to the app; see aio_system_dashboard/modules.py).
+if [[ $WITH_REPLAY -eq 0 && ( -d "$PREFIX/aio_dashboard_replay" || -n "$(ls "$PREFIX"/aio_dashboard_replay*.so 2>/dev/null)" ) ]]; then
+  echo "==> the replay module is already installed: updating it (remove $PREFIX/aio_dashboard_replay to drop it)"
+  WITH_REPLAY=1
+fi
+rm -rf "$PREFIX/aio_dashboard_replay" "$PREFIX"/aio_dashboard_replay*.so
+if [[ $WITH_REPLAY -eq 1 ]]; then
+  shopt -s nullglob
+  RCOMPILED=("$SRC"/aio_dashboard_replay*.so)
+  shopt -u nullglob
+  if (( ${#RCOMPILED[@]} )); then
+    echo "==> optional module: replay (compiled)"
+    cp "${RCOMPILED[@]}" "$PREFIX/"
+    mkdir -p "$PREFIX/aio_dashboard_replay"
+    cp -r "$SRC/aio_dashboard_replay/templates" "$SRC/aio_dashboard_replay/static" "$PREFIX/aio_dashboard_replay/"
+  elif [[ -d "$SRC/aio_dashboard_replay" ]]; then
+    echo "==> optional module: replay (Live / Bag replay switch, bag player)"
+    cp -r "$SRC/aio_dashboard_replay" "$PREFIX/"
+    find "$PREFIX/aio_dashboard_replay" -name __pycache__ -type d -prune -exec rm -rf {} +
+  else
+    echo "    warning: --with-replay, but this package has no replay module" >&2
+    WITH_REPLAY=0
+  fi
 fi
 if [[ -f "$SRC/dev/fake_state.json" ]]; then cp "$SRC/dev/fake_state.json" "$PREFIX/dev/"; fi
 if [[ -f "$SRC/VERSION" ]]; then
@@ -185,6 +215,11 @@ echo "  aio-dashboard config    edit settings ($PREFIX/config/dashboard.yaml) an
 echo "  aio-dashboard logs      follow the log"
 if [[ $WITH_SYSMON -eq 1 && -d "$SRC/aio_sysmon" ]]; then
   echo "  aio-sysmon status       the computer's black box (after a freeze: aio-sysmon last-crash)"
+fi
+if [[ $WITH_REPLAY -eq 1 ]]; then
+  echo "  Maintenance > Replay    Live / Bag replay switch and the bag player (replay module)"
+else
+  echo "  (runs Live only; add --with-replay for bag replay)"
 fi
 "$PREFIX/bin/aio-dashboard" urls
 echo "Re-run install.sh after changing restartable units so the sudoers rule is regenerated."

@@ -15,35 +15,11 @@
       <span><strong x-text="rosMode.label"></strong>
         <span class="muted small" x-show="rosMode.domain_id !== null" x-text="rosMode.config + ': domain ' + rosMode.domain_id + ', ' + (rosMode.localhost_only ? 'this computer only' : 'network')"></span>
         <span class="muted small" x-show="rosMode.domain_id === null">taken from the service environment</span></span></div>
-    <fieldset class="ros-modes mt-2" :disabled="rosBusy">
-      <legend class="visually-hidden">ROS environment</legend>
-      <template x-for="m in rosMode.modes" :key="m.name">
-        <label class="ros-mode" :class="(rosPick === m.name ? 'on ' : '') + (m.found ? '' : 'off')">
-          <input type="radio" name="rosmode" :value="m.name" x-model="rosPick" :disabled="!m.found">
-          <span>
-            <span class="ros-mode-name" x-text="m.label"></span><br>
-            <span class="muted small" x-show="m.found" x-text="m.config + ': domain ' + m.domain_id + ', ' + (m.localhost_only ? 'this computer only' : 'network') + (m.use_sim_time ? ', sim time' : '')"></span>
-            <span class="small text-danger" x-show="!m.found" x-text="m.config + ' not found'"></span>
-          </span>
-        </label>
-      </template>
-    </fieldset>
-    <div class="mt-3 d-flex flex-wrap align-items-center gap-2">
-      <template x-if="!rosConfirm">
-        <button type="button" class="btn btn-sm btn-primary" :disabled="rosBusy || !rosChanged" @click="rosConfirm = true">Apply</button>
-      </template>
-      <template x-if="rosConfirm">
-        <div class="ctl-confirm" role="alertdialog" aria-labelledby="ros-ask">
-          <span class="ctl-ask" id="ros-ask">This stops AIO NAV and DSO and restarts the dashboard (a few seconds). The camera and IMU drivers are not touched.</span>
-          <div class="ctl-btns">
-            <button type="button" class="btn btn-sm btn-danger" @click="applyRosMode()">Switch now</button>
-            <button type="button" class="btn btn-sm btn-outline-secondary" @click="rosConfirm = false">Cancel</button>
-          </div>
-        </div>
-      </template>
-    </div>
-    <div class="ctl-msg mt-2" :class="rosMsgClass" role="status" aria-live="polite" x-text="rosMsg"></div>
-    <p class="muted small mt-2 mb-0">Each mode starts AIO NAV and DSO with its own aio-nav-ros config file, and that file sets the ROS domain. Live matches the camera and IMU drivers. Use Bag replay only while playing a bag. After a switch, start AIO NAV again from the Overview page.</p>
+    {% if 'replay' in modules %}
+    <p class="muted small mt-2 mb-0">Switch between Live and Bag replay, and play bags, on the <a href="/replay">Replay</a> page.</p>
+    {% else %}
+    <p class="muted small mt-2 mb-0">This machine runs Live. Bag replay is part of the optional replay module (installed with <span class="mono">--with-replay</span>).</p>
+    {% endif %}
   </div>
 </section>
 
@@ -71,7 +47,7 @@
     </template>
     {% endfor %}
     <p class="small mt-2 mb-0 text-danger" x-show="driverNote('{{ key }}')" x-text="driverNote('{{ key }}')" role="status"></p>
-    <p class="muted small mt-2 mb-0">Stop the drivers before playing a bag, so the live camera and IMU do not publish the same topics. Starting takes about 15 s before the drivers publish.</p>
+    <p class="muted small mt-2 mb-0">{% if 'replay' in modules %}Stop the drivers before playing a bag, so the live camera and IMU do not publish the same topics. {% endif %}Starting takes about 15 s before the drivers publish.</p>
   </div>
 </section>
 {% endfor %}

@@ -5,7 +5,7 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
-from aio_system_dashboard.actions import ros_mode
+from aio_dashboard_replay import mode as ros_mode
 from aio_system_dashboard.config import DEFAULTS, Config
 
 LIVE = "aio_nav_node:\n  ros__parameters:\n    ros_domain_id: 10\n    ros_localhost_only: 1\n    use_sim_time: false\n    output_rate: 100.0\n"

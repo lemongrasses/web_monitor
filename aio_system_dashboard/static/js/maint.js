@@ -21,13 +21,9 @@
       running: {},          // "action:target" -> true
       results: {},          // "action:target" -> result
       eventFilter: "",
-      rosPick: null, rosConfirm: false, rosBusy: false, rosMsg: "", rosMsgClass: "",
 
       init() {
-        AIO.poll("/api/maint/snapshot", 1000, (d) => {
-                   this.d = d; this.connected = true; lastOk = Date.now();
-                   if (this.rosPick === null && d.config && d.config.ros_mode) this.rosPick = d.config.ros_mode.mode;
-                 },
+        AIO.poll("/api/maint/snapshot", 1000, (d) => { this.d = d; this.connected = true; lastOk = Date.now(); },
                  () => { if (Date.now() - lastOk > 4000) this.connected = false; });
         AIO.poll("/api/maint/events?limit=200", 3000, (e) => { this.events = e; });
       },
@@ -94,28 +90,6 @@
       get ros() { return (this.d && this.d.ros) || {}; },
       get rosMode() {
         return ((this.d && this.d.config) || {}).ros_mode || { mode: null, label: "", domain_id: null, localhost_only: null, modes: [] };
-      },
-      get rosChanged() { return !!this.rosPick && this.rosPick !== this.rosMode.mode; },
-      async applyRosMode() {
-        this.rosConfirm = false;
-        this.rosBusy = true;
-        this.rosMsg = "Switching…";
-        this.rosMsgClass = "";
-        try {
-          const r = await fetch("/api/maint/ros-mode", {
-            method: "POST",
-            headers: { "Content-Type": "application/json", "X-Requested-With": "aio-dashboard" },
-            body: JSON.stringify({ mode: this.rosPick }),
-          });
-          const j = await r.json();
-          this.rosMsg = j.summary || "";
-          this.rosMsgClass = j.success ? "ok" : "bad";
-          if (j.success && j.restarting) { this.waitForRestart(); return; }
-        } catch (e) {
-          this.rosMsg = "request failed: " + e.message;
-          this.rosMsgClass = "bad";
-        }
-        this.rosBusy = false;
       },
       waitForRestart() {
         // The dashboard stops itself and systemd starts it again; reload once it answers.

@@ -24,6 +24,7 @@ from .collectors.network import NetworkCollector
 from .collectors.ros2 import Ros2Collector
 from .collectors.services import ServicesCollector
 from .collectors.system import SystemCollector
+from . import modules
 from .config import load_config, resolve_path
 from .data_access.files import DataRoots
 from .media.tap import PreviewTap
@@ -74,6 +75,8 @@ class DashboardContext:
         self.actions = ActionRegistry(cfg, self.store, self.events, self.network.check_device,
                                       self.fake)
         self.data = DataRoots(cfg["data"]["roots"])
+        self.modules = modules.load(cfg)      # optional modules (installed with --with-<name>)
+        self.maint_pages = []                 # sidebar of the Maintenance app, filled when it is built
         self._workers = [self.nav, self.system, self.services, self.network, self.ros, self.health]
 
     def request_restart(self):

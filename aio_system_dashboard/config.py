@@ -58,6 +58,9 @@ DEFAULTS: Dict[str, Any] = {
             "modes": {"live": {"label": "Live", "config": "aio_nav.yaml"},
                       "bag": {"label": "Bag replay", "config": "aio_nav_bag.yaml"}}},
     "data": {"roots": "auto"},  # "auto": the aio-nav-ros output folder
+    # Optional modules (see modules.py), e.g. {replay: {enabled: false}}. A module is on when it is
+    # installed, unless switched off here.
+    "modules": {},
     # Receiver quality lamp (RTK fix / RTK float / SPP / no signal) from this NavSatFix topic.
     "gnss": {"topic": "/openrtk330/gnss/fix", "timeout_s": 3.0},
     # Watches DSO's odometry and restarts DSO (only DSO) when it turns NaN.
@@ -257,13 +260,22 @@ class Config:
     def ros_mode_file(self) -> Path:
         return self.state_file("ros_mode.json")
 
+    def module_on(self, name: str) -> bool:
+        from . import modules
+        return modules.enabled(self.data, name)
+
     def ros_mode(self) -> Optional[str]:
-        """Active preset: the one chosen on the maintenance page, else ros.mode, else None."""
+        """Active preset: the one chosen on the maintenance page, else ros.mode, else None.
+
+        Choosing a mode belongs to the optional replay module; without it a choice left on disk is
+        ignored, so a product machine always runs the configured mode (live)."""
         modes = self.data["ros"]["modes"]
-        try:
-            chosen = json.loads(self.ros_mode_file().read_text(encoding="utf-8")).get("mode")
-        except (OSError, ValueError, AttributeError):
-            chosen = None
+        chosen = None
+        if self.module_on("replay"):
+            try:
+                chosen = json.loads(self.ros_mode_file().read_text(encoding="utf-8")).get("mode")
+            except (OSError, ValueError, AttributeError):
+                chosen = None
         if chosen in modes:
             return chosen
         configured = self.data["ros"].get("mode")

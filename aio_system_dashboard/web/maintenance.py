@@ -1,13 +1,20 @@
 """Maintenance UI (:8081): engineering pages and whitelisted actions."""
 
+import logging
+
 from flask import Response, abort, jsonify, render_template, request
 
-from ..actions import process_control, ros_mode
+from ..actions import process_control
 from ..actions.registry import ActionError
 from ..media.tap import PreviewError, meta_header
 from .common import create_base_app
 
+logger = logging.getLogger(__name__)
+
 PAGES = ("overview", "system", "ros", "camera", "lidar", "network", "diagnostics")
+NAV = [("overview", "Overview", "/"), ("system", "System", "/system"), ("ros", "ROS 2", "/ros"),
+       ("camera", "Camera", "/camera"), ("lidar", "LiDAR", "/lidar"),
+       ("network", "Network", "/network"), ("diagnostics", "Diagnostics", "/diagnostics")]
 
 
 def create_maintenance_app(ctx):
@@ -19,7 +26,16 @@ def create_maintenance_app(ctx):
             "services_cfg": ctx.cfg["services"],
             "actions": ctx.actions.describe(),
             "previews": ctx.preview.describe(),
+            "modules": [m.NAME for m in ctx.modules],
         }
+
+    # Sidebar: the core pages, then one per optional module (each module adds its own).
+    ctx.maint_pages = list(NAV)
+    ctx.maint_page_context = page_context
+
+    @app.context_processor
+    def _nav_items():
+        return {"nav_items": ctx.maint_pages}
 
     @app.route("/")
     def index():
@@ -52,6 +68,7 @@ def create_maintenance_app(ctx):
                 "fake": ctx.cfg.fake,
                 "ros_mode": ctx.cfg.ros_mode_info(),
             },
+            "modules": [m.NAME for m in ctx.modules],
         })
 
     @app.route("/api/maint/preview/<device>")
@@ -95,24 +112,10 @@ def create_maintenance_app(ctx):
         except ActionError as e:
             return jsonify({"success": False, "summary": str(e)}), e.status
 
-    @app.route("/api/maint/ros-mode", methods=["POST"])
-    def api_ros_mode():
-        if request.headers.get("X-Requested-With") != "aio-dashboard" or not request.is_json:
-            return jsonify({"success": False, "summary": "bad request"}), 400
-        mode = (request.get_json(silent=True) or {}).get("mode")
-        if not isinstance(mode, str):
-            return jsonify({"success": False, "summary": "mode required"}), 400
-
-        def stop_nav():
-            if not process_control.members(ctx.cfg):
-                return {"success": True}
-            return ctx.actions.run("stop_process", process_control.GROUP)
-
+    for m in ctx.modules:
         try:
-            result = ros_mode.apply_mode(ctx.cfg, mode, stop_nav, ctx.request_restart, ctx.events)
-        except ActionError as e:
-            return jsonify({"success": False, "summary": str(e)}), e.status
-        status = result.pop("status", 200)
-        return jsonify(result), status
+            m.register(ctx, app)
+        except Exception:                 # a broken module must not take the Maintenance page down
+            logger.exception("module %s could not register its pages", getattr(m, "NAME", m))
 
     return app

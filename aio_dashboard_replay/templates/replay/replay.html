@@ -1,0 +1,234 @@
+{% extends "maintenance/base.html" %}
+{% from "macros.html" import chip %}
+{% block title %}Replay{% endblock %}
+{% block heading %}Replay{% endblock %}
+{% block content %}
+<link rel="stylesheet" href="{{ url_for('replay.static', filename='replay.css') }}">
+<div x-data="replayPage()" x-init="rpInit()">
+
+<div class="row g-3 mb-3">
+  <!-- ROS environment: Live / Bag replay (moved here from the ROS 2 page) -->
+  <div class="col-xl-6">
+    <section class="panel h-100" aria-labelledby="rosenv-title">
+      <div class="panel-h"><strong id="rosenv-title">ROS environment</strong>
+        <span class="muted small">config file, domain and sim time follow the mode</span></div>
+      <div class="panel-b">
+        <fieldset class="ros-modes" :disabled="modeBusy">
+          <legend class="visually-hidden">ROS environment</legend>
+          <template x-for="m in (rp.mode.modes || [])" :key="m.name">
+            <label class="ros-mode" :class="(modePick === m.name ? 'on ' : '') + (m.found ? '' : 'off')">
+              <input type="radio" name="rosmode" :value="m.name" x-model="modePick" :disabled="!m.found">
+              <span>
+                <span class="ros-mode-name" x-text="m.label"></span>
+                <span class="small rp-current" x-show="rp.mode.mode === m.name">active</span><br>
+                <span class="muted small" x-show="m.found" x-text="m.config + ': domain ' + m.domain_id + ', ' + (m.localhost_only ? 'this computer only' : 'network') + (m.use_sim_time ? ', sim time' : '')"></span>
+                <span class="small text-danger" x-show="!m.found" x-text="m.config + ' not found'"></span>
+              </span>
+            </label>
+          </template>
+        </fieldset>
+        <div class="mt-3 d-flex flex-wrap align-items-center gap-2">
+          <template x-if="!modeConfirm">
+            <button type="button" class="btn btn-sm btn-primary" :disabled="modeBusy || !modePick || modePick === rp.mode.mode" @click="modeConfirm = true">Apply</button>
+          </template>
+          <template x-if="modeConfirm">
+            <div class="ctl-confirm" role="alertdialog" aria-labelledby="mode-ask">
+              <span class="ctl-ask" id="mode-ask">This stops AIO NAV and DSO and restarts the dashboard (a few seconds). The sensor drivers are not touched.</span>
+              <div class="ctl-btns">
+                <button type="button" class="btn btn-sm btn-danger" @click="applyMode(modePick)">Switch now</button>
+                <button type="button" class="btn btn-sm btn-outline-secondary" @click="modeConfirm = false">Cancel</button>
+              </div>
+            </div>
+          </template>
+        </div>
+        <div class="ctl-msg mt-2" :class="modeMsgClass" role="status" aria-live="polite" x-text="modeMsg"></div>
+        <p class="muted small mt-2 mb-0">Live matches the camera and IMU drivers. Bag replay is for playing a bag: AIO NAV, DSO, the dashboard and the player then share the bag domain and its sim time. After a switch, start AIO NAV again from the Overview page.</p>
+      </div>
+    </section>
+  </div>
+
+  <!-- What has to be true before playing -->
+  <div class="col-xl-6">
+    <section class="panel h-100" aria-labelledby="ready-title">
+      <div class="panel-h"><strong id="ready-title">Before playing</strong>
+        <span class="small" :class="rp.ready ? 'check-ok' : 'check-fail'" x-text="rp.ready ? 'Ready' : 'Not ready'"></span></div>
+      <div class="panel-b">
+        <template x-for="c in (rp.checks || [])" :key="c.key">
+          <div class="vrow">
+            <span><span :class="c.ok ? 'check-ok' : 'check-fail'" x-text="c.ok ? '✓' : '✕'" aria-hidden="true"></span>
+              <span class="ms-2" x-text="c.text"></span></span>
+            <template x-if="c.fix && c.fix.kind === 'mode'">
+              <button type="button" class="btn btn-sm btn-outline-primary text-nowrap" :disabled="modeBusy"
+                      @click="modePick = c.fix.mode; modeConfirm = true; document.getElementById('rosenv-title').scrollIntoView({behavior: 'smooth'})" x-text="c.fix.label"></button>
+            </template>
+            <template x-if="c.fix && c.fix.kind === 'action'">
+              <button type="button" class="btn btn-sm btn-outline-danger text-nowrap" :disabled="isRunning(c.fix.action, c.fix.target)"
+                      @click="ask(c.fix.action, c.fix.target, c.fix.label, true)">
+                <span x-show="isRunning(c.fix.action, c.fix.target)" class="spinner-border spinner-border-sm me-1"></span><span x-text="c.fix.label"></span></button>
+            </template>
+          </div>
+        </template>
+        <div class="vrow"><span><span class="muted" aria-hidden="true">ⓘ</span>
+          <span class="ms-2" x-text="rp.aio_nav_running ? 'AIO NAV is running and will process the bag' : 'AIO NAV is not running: start it on the Overview page to process the bag (playing works either way)'"></span></span></div>
+        <p class="small text-danger mt-2 mb-0" x-show="rp.checks && !rp.ros_setup">ROS setup.bash not found: set modules.replay.ros_setup in the config.</p>
+      </div>
+    </section>
+  </div>
+</div>
+
+<!-- Now playing -->
+<section class="panel mb-3" aria-labelledby="now-title">
+  <div class="panel-h"><strong id="now-title">Playback</strong>
+    {{ chip("playChip()") }}</div>
+  <div class="panel-b">
+    <div class="muted" x-show="!pl.bag_name">Nothing played yet. Pick a bag below.</div>
+    <template x-if="pl.bag_name">
+      <div>
+        <div class="d-flex flex-wrap justify-content-between align-items-baseline gap-2">
+          <strong class="rp-bagname" x-text="pl.bag_name"></strong>
+          <span class="mono small"><span x-text="fmtClock(pl.position_s)"></span> / <span x-text="fmtClock(pl.duration_s)"></span>
+            <span class="muted" x-show="isPlaying()" x-text="' · ' + (pl.paused ? 'paused' : (pl.rate_now + 'x')) + ' · estimated'"></span></span>
+        </div>
+        <div class="progress rp-progress mt-2" role="progressbar" :aria-valuenow="Math.round(pctDone())" aria-valuemin="0" aria-valuemax="100">
+          <div class="progress-bar" :class="pl.paused ? 'rp-paused' : ''" :style="'width:' + pctDone() + '%'"></div>
+        </div>
+        <div class="d-flex flex-wrap align-items-center gap-2 mt-3" x-show="isPlaying()">
+          <button type="button" class="btn btn-sm btn-outline-primary" x-show="!pl.paused" :disabled="ctlBusy" @click="control('pause')">Pause</button>
+          <button type="button" class="btn btn-sm btn-primary" x-show="pl.paused" :disabled="ctlBusy" @click="control('resume')">Resume</button>
+          <span class="d-inline-flex align-items-center gap-1 ms-2">
+            <label class="small muted" for="rp-rate-now">Rate</label>
+            <input id="rp-rate-now" type="number" class="form-control form-control-sm rp-num" min="0.01" max="100" step="0.1" x-model.number="rateNow">
+            <button type="button" class="btn btn-sm btn-outline-primary" :disabled="ctlBusy || !rateNow" @click="control('set_rate', rateNow)">Set</button>
+          </span>
+          <button type="button" class="btn btn-sm btn-danger ms-auto" :disabled="ctlBusy" @click="stopPlay()">
+            <span x-show="ctlBusy === 'stop'" class="spinner-border spinner-border-sm me-1"></span>Stop</button>
+        </div>
+        <div class="ctl-msg mt-2" :class="ctlMsgClass" role="status" aria-live="polite" x-text="ctlMsg"></div>
+        <div class="small mt-2"><span class="muted">Command</span> <code class="rp-cmd" x-text="pl.command"></code></div>
+        <p class="small text-danger mt-2 mb-0" x-show="pl.status === 'failed'" x-text="pl.error"></p>
+        <details class="mt-2"><summary class="small muted">Player output (logs/bag_play.log)</summary>
+          <pre class="rp-log" x-text="rp.log || '(empty)'"></pre></details>
+      </div>
+    </template>
+  </div>
+</section>
+
+<!-- Bags -->
+<section class="panel mb-3" aria-labelledby="bags-title">
+  <div class="panel-h"><strong id="bags-title">Bags</strong>
+    <span class="d-flex align-items-center gap-2">
+      <span class="muted small" x-text="'searched in ' + (roots.join(', ') || '—')"></span>
+      <button type="button" class="btn btn-sm btn-outline-secondary" :disabled="bagsBusy" @click="loadBags(true)">Rescan</button></span></div>
+  <div class="table-responsive rp-bags">
+    <table class="table table-sm table-hover mb-0">
+      <thead><tr><th>Bag</th><th>Recorded</th><th class="text-end">Length</th><th class="text-end">Size</th><th class="text-end">Topics</th><th class="text-end">Messages</th></tr></thead>
+      <tbody>
+        <tr x-show="!bags.length"><td colspan="6" class="muted" x-text="bagsBusy ? 'Searching…' : 'No bags found. Add folders under modules.replay.bag_roots in the config.'"></td></tr>
+        <template x-for="b in bags" :key="b.id">
+          <tr class="rp-row" :class="sel && sel.id === b.id ? 'on' : ''" @click="selectBag(b.id)" tabindex="0" @keydown.enter="selectBag(b.id)">
+            <td><span class="fw-semibold" x-text="b.name"></span><br><span class="mono small muted" x-text="b.path"></span></td>
+            <td class="small text-nowrap" x-text="b.start_ns ? new Date(b.start_ns / 1e6).toLocaleString() : '—'"></td>
+            <td class="text-end mono small" x-text="fmtClock(b.duration_s)"></td>
+            <td class="text-end mono small" x-text="fmt.bytes(b.size)"></td>
+            <td class="text-end mono small" x-text="b.topic_count"></td>
+            <td class="text-end mono small" x-text="b.messages.toLocaleString()"></td>
+          </tr>
+        </template>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<!-- Settings for the selected bag -->
+<section class="panel mb-3" aria-labelledby="set-title" x-show="sel" x-cloak>
+  <div class="panel-h"><strong id="set-title" x-text="'Play ' + (sel ? sel.name : '')"></strong>
+    <span class="d-flex flex-wrap align-items-center gap-2">
+      <select class="form-select form-select-sm rp-preset" x-model="presetPick" @change="loadPreset()" aria-label="Presets">
+        <option value="">Presets…</option>
+        <template x-for="(p, name) in presets" :key="name"><option :value="name" x-text="name + ' (' + p.bag_name + ')'"></option></template>
+      </select>
+      <button type="button" class="btn btn-sm btn-outline-secondary" x-show="presetPick" @click="deletePreset()">Delete</button>
+    </span></div>
+  <div class="panel-b" @input.debounce.400ms="preview()" @change="preview()">
+    <div class="row g-3">
+      <div class="col-xl-7">
+        <div class="d-flex justify-content-between align-items-baseline">
+          <span class="rp-h">Topics <span class="muted small" x-text="opts.topics.length ? opts.topics.length + ' of ' + sel.topics.length + ' ticked' : 'none ticked: all ' + (sel ? sel.topics.length : 0) + ' play'"></span></span>
+          <span class="small"><a href="#" @click.prevent="opts.topics = sel.topics.map(t => t.name); preview()">all</a> ·
+            <a href="#" @click.prevent="opts.topics = []; preview()">none</a></span>
+        </div>
+        <div class="table-responsive rp-topics mt-1">
+          <table class="table table-sm mb-0">
+            <thead><tr><th></th><th>Topic</th><th>Type</th><th class="text-end">Messages</th><th class="text-end">Hz</th></tr></thead>
+            <tbody>
+              <template x-for="t in (sel ? sel.topics : [])" :key="t.name">
+                <tr><td><input type="checkbox" class="form-check-input" :id="'tp-' + t.name" :value="t.name" x-model="opts.topics"></td>
+                  <td><label class="mono small" :for="'tp-' + t.name" x-text="t.name"></label></td>
+                  <td class="mono small muted" x-text="t.type"></td>
+                  <td class="text-end mono small" x-text="t.count.toLocaleString()"></td>
+                  <td class="text-end mono small" x-text="t.hz === null ? '—' : t.hz"></td></tr>
+              </template>
+            </tbody>
+          </table>
+        </div>
+      </div>
+      <div class="col-xl-5">
+        <div class="rp-h">Playback</div>
+        <div class="rp-opts">
+          <template x-for="o in basicOpts()" :key="o.key">
+            <div class="rp-opt">
+              <label class="small" :for="'op-' + o.key" x-text="o.label"></label>
+              <div>
+                <template x-if="o.kind === 'bool'"><input type="checkbox" class="form-check-input" :id="'op-' + o.key" x-model="opts[o.key]"></template>
+                <template x-if="o.kind === 'float' || o.kind === 'int'"><input type="number" class="form-control form-control-sm rp-num" :id="'op-' + o.key" :min="o.min" :max="o.max" :step="o.kind === 'int' ? 1 : 'any'" x-model.number="opts[o.key]"></template>
+                <div class="muted rp-help" x-text="o.help"></div>
+              </div>
+            </div>
+          </template>
+        </div>
+        <details class="mt-2" :open="advancedChanged()">
+          <summary class="rp-h">Advanced <span class="muted small">every other ros2 bag play option</span></summary>
+          <div class="rp-opts mt-2">
+            <template x-for="o in advancedOpts()" :key="o.key">
+              <div class="rp-opt">
+                <label class="small" :for="'op-' + o.key" x-text="o.label"></label>
+                <div>
+                  <template x-if="o.kind === 'bool'"><input type="checkbox" class="form-check-input" :id="'op-' + o.key" x-model="opts[o.key]"></template>
+                  <template x-if="o.kind === 'float' || o.kind === 'int'"><input type="number" class="form-control form-control-sm rp-num" :id="'op-' + o.key" :min="o.min" :max="o.max" :step="o.kind === 'int' ? 1 : 'any'" :placeholder="o.optional ? 'off' : ''" x-model="opts[o.key]"></template>
+                  <template x-if="o.kind === 'choice'"><select class="form-select form-select-sm rp-sel" :id="'op-' + o.key" x-model="opts[o.key]">
+                    <template x-for="c in o.choices" :key="c"><option :value="c" x-text="c || '(auto)'"></option></template></select></template>
+                  <template x-if="o.kind === 'file'"><input type="text" class="form-control form-control-sm mono" :id="'op-' + o.key" placeholder="/path/to/file.yaml" x-model="opts[o.key]"></template>
+                  <template x-if="o.kind === 'remap'"><textarea class="form-control form-control-sm mono" rows="2" :id="'op-' + o.key" placeholder="/old_topic:=/new_topic" x-model="remapText"></textarea></template>
+                  <div class="muted rp-help" x-text="o.help"></div>
+                </div>
+              </div>
+            </template>
+          </div>
+        </details>
+      </div>
+    </div>
+
+    <div class="small mt-3"><span class="muted">Command</span>
+      <code class="rp-cmd" x-text="cmdPreview || '—'"></code>
+      <span class="text-danger ms-1" x-show="cmdError" x-text="cmdError"></span></div>
+
+    <div class="d-flex flex-wrap align-items-center gap-2 mt-3">
+      <button type="button" class="btn btn-primary" :disabled="!rp.ready || isPlaying() || playBusy || !!cmdError" @click="play()">
+        <span x-show="playBusy" class="spinner-border spinner-border-sm me-1"></span>Play</button>
+      <span class="small muted" x-show="isPlaying()">Stop the current playback first.</span>
+      <span class="small muted" x-show="!rp.ready && !isPlaying()">Fix the items under “Before playing” first.</span>
+      <button type="button" class="btn btn-sm btn-outline-secondary" @click="resetOpts()">Defaults</button>
+      <span class="d-inline-flex align-items-center gap-1 ms-auto">
+        <input type="text" class="form-control form-control-sm" placeholder="Preset name" maxlength="60" x-model="presetName" aria-label="Preset name">
+        <button type="button" class="btn btn-sm btn-outline-primary text-nowrap" :disabled="!presetName.trim()" @click="savePreset()">Save preset</button>
+      </span>
+    </div>
+    <div class="ctl-msg mt-2" :class="playMsgClass" role="status" aria-live="polite" x-text="playMsg"></div>
+  </div>
+</section>
+
+</div>
+{% endblock %}
+{% block scripts %}
+<script src="{{ url_for('replay.static', filename='replay.js') }}"></script>
+{% endblock %}

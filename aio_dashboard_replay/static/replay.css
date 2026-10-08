@@ -1,0 +1,28 @@
+/* Replay page (optional module). Uses the dashboard's own tokens from dashboard.css. */
+.rp-current { margin-left: .4rem; color: var(--go); font-weight: 600; }
+.rp-bagname { font-family: var(--cond); font-size: var(--t-l); }
+.rp-progress { height: .55rem; border-radius: 2px; background: var(--rule-soft); }
+.rp-progress .progress-bar { background: var(--track); transition: width .9s linear; }
+.rp-progress .progress-bar.rp-paused { background: var(--warning); }
+.rp-cmd { display: inline; white-space: pre-wrap; overflow-wrap: anywhere; color: var(--ink); background: none; }
+.rp-log { max-height: 16rem; overflow: auto; font-size: var(--t-xs); background: #0f1b2a; color: #d9e2ec;
+          padding: .6rem .8rem; border-radius: 2px; margin: .4rem 0 0; white-space: pre-wrap; }
+.rp-bags { max-height: 22rem; }
+.rp-row { cursor: pointer; }
+.rp-row.on > * { box-shadow: inset 0 0 0 9999px #e3ecf4; }
+.rp-row.on > td:first-child { border-left: 3px solid var(--ink); }
+.rp-topics { max-height: 22rem; border: 1px solid var(--rule-soft); border-radius: 2px; }
+.rp-topics label { cursor: pointer; margin: 0; }
+.rp-h { font-family: var(--cond); font-weight: 600; font-size: var(--t-m, 1rem); }
+details > summary.rp-h { cursor: pointer; }
+.rp-opts { display: grid; grid-template-columns: 10.5rem 1fr; gap: .45rem .8rem; align-items: start; margin-top: .4rem; }
+.rp-opt { display: contents; }
+.rp-opt > label { padding-top: .3rem; color: var(--ink); }
+.rp-help { font-size: var(--t-xs); margin-top: .1rem; }
+.rp-num { width: 7.5rem; display: inline-block; }
+.rp-sel { width: auto; display: inline-block; }
+.rp-preset { width: auto; max-width: 18rem; }
+@media (max-width: 575px) {
+  .rp-opts { grid-template-columns: 1fr; }
+  .rp-opt > label { padding-top: 0; font-weight: 600; }
+}
