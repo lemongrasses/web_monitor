@@ -1,55 +1,9 @@
 {% extends "product/base.html" %}
-{% from "macros.html" import chip, annun, heading_arrow %}
+{% from "macros.html" import chip, annun, heading_arrow, output_line %}
 {% block title %}Overview · AIO Navigation{% endblock %}
 {% block content %}
 
-<!-- AIO NAV control: only shown when nav.allow_control is on -->
-<section class="strip ctl mb-3" x-show="ctl.enabled" x-cloak aria-labelledby="ctl-title"
-         @keydown.escape.window="ctlConfirm = null">
-  <div class="ctl-id">
-    <span class="strip-title" id="ctl-title">AIO NAV</span>{{ chip('ctlChip()') }}
-  </div>
-  <div class="ctl-hint muted"><span x-text="ctlHint"></span>
-    <span class="ctl-mode" :class="ctl.ros && ctl.ros.mode === 'bag' ? 'bag' : ''" x-show="ctl.ros && ctl.ros.domain_id !== null"
-          x-text="ctl.ros ? ctl.ros.label + ' · domain ' + ctl.ros.domain_id : ''"></span></div>
-  <div class="ctl-actions" role="group" aria-label="AIO NAV actions">
-    <template x-if="!ctlConfirm">
-      <div class="ctl-btns">
-        <button type="button" class="btn btn-sm btn-primary" x-show="ctl.state !== 'running'"
-                :disabled="ctlBusy || !ctl.installed" @click="runCtl('start')">
-          <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M4 2.5v11l9-5.5z" fill="currentColor"/></svg>Start
-        </button>
-        <button type="button" class="btn btn-sm btn-outline-primary" x-show="ctl.state === 'running'"
-                :disabled="ctlBusy" @click="askCtl('restart')">
-          <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M13 8a5 5 0 1 1-1.5-3.55M13 2.5v3h-3" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg>Restart
-        </button>
-        <button type="button" class="btn btn-sm btn-outline-danger" x-show="ctl.state === 'running'"
-                :disabled="ctlBusy" @click="askCtl('stop')">
-          <svg viewBox="0 0 16 16" aria-hidden="true"><rect x="3.5" y="3.5" width="9" height="9" rx="1" fill="currentColor"/></svg>Stop
-        </button>
-      </div>
-    </template>
-    <template x-if="ctlConfirm">
-      <div class="ctl-confirm" role="alertdialog" aria-labelledby="ctl-ask">
-        <span class="ctl-ask" id="ctl-ask" x-text="ctlConfirm === 'stop' ? 'Stop AIO NAV? Navigation output ends.' : 'Restart AIO NAV? Alignment starts over.'"></span>
-        <div class="ctl-btns">
-          <button type="button" class="btn btn-sm btn-danger" @click="runCtl(ctlConfirm)" x-text="ctlConfirm === 'stop' ? 'Stop now' : 'Restart now'"></button>
-          <button type="button" class="btn btn-sm btn-outline-secondary" id="ctl-cancel" @click="ctlConfirm = null">Cancel</button>
-        </div>
-      </div>
-    </template>
-  </div>
-  <div class="ctl-msg" :class="ctlMsgClass" role="status" aria-live="polite" x-text="ctlMsg"></div>
-</section>
-
-<!-- NAV output -->
-<div class="strip mb-3">
-  <div><span class="strip-title">UDP output</span>{{ chip('udp') }}</div>
-  <div><span class="k">Rate</span><span x-text="rateText()">—</span></div>
-  <div><span class="k">Last packet</span><span x-text="fmt.age(udp.age_s)">—</span></div>
-  <div><span class="k">Sending to</span><span class="mono" x-text="externalDest() || 'this device only'"></span></div>
-  <div class="strip-note ms-auto">Streaming means the device is sending. UDP has no acknowledgement, so reception by your application is not confirmed here.</div>
-</div>
+{{ output_line() }}
 
 <div class="row g-3">
   <div class="col-lg-8">
@@ -73,7 +27,7 @@
         <div class="vgroup">
           <div class="small-caps mb-1">Motion</div>
           <div class="vrow"><span class="k">Heading</span>
-            <span class="v"><span x-text="heading360()">—</span><span class="u">°</span>{{ heading_arrow('hdgRot') }}</span></div>
+            <span class="v"><span x-text="heading360()">—</span><span class="u">°</span><span x-show="hasHeading()">{{ heading_arrow('hdgRot') }}</span></span></div>
           <div class="vrow"><span class="k">Speed</span><span class="v"><span x-text="v('speed', 2)">—</span><span class="u">m/s</span></span></div>
         </div>
         <div class="vgroup">

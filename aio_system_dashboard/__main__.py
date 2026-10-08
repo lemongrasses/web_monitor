@@ -61,7 +61,7 @@ class DashboardContext:
             start=lambda: self.actions.run("start_process", dso),
             process_running=lambda: bool(process_control.running_pids(cfg, dso)),
             wanted=lambda: process_control.wanted(cfg, dso),
-            adopt=lambda: process_control.set_wanted(cfg, dso, True))
+            adopt=lambda: process_control.set_wanted(cfg, dso, True, restamp=False))
         self.gnss = GnssMonitor(cfg, self.store)
         drivers = next((k for k, s in cfg["services"].items() if s.get("user_unit")), None)
         self.guard = RosIsolationGuard(

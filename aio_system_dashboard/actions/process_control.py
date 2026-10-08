@@ -107,16 +107,30 @@ def wanted(cfg, key: str) -> bool:
         return False
 
 
-def set_wanted(cfg, key: str, value: bool) -> None:
+def wanted_since(cfg, key: str) -> Optional[float]:
+    """When the program was last asked to start (wall clock), if it should be running."""
+    try:
+        data = json.loads(_wanted_file(cfg).read_text(encoding="utf-8"))
+        return float(data[f"{key}@"]) if data.get(key) and data.get(f"{key}@") else None
+    except (OSError, ValueError, AttributeError, TypeError, KeyError):
+        return None
+
+
+def set_wanted(cfg, key: str, value: bool, restamp: bool = True) -> None:
+    """restamp=False: only change the flag (no new start time if it is already set)."""
     f = _wanted_file(cfg)
     try:
         try:
             data = json.loads(f.read_text(encoding="utf-8"))
         except (OSError, ValueError):
             data = {}
-        if bool(data.get(key)) == value:
+        if bool(data.get(key)) == value and not (value and restamp):
             return
         data[key] = value
+        if value:
+            data[f"{key}@"] = time.time()           # every start request: tells a crash from "still starting"
+        else:
+            data.pop(f"{key}@", None)
         f.parent.mkdir(parents=True, exist_ok=True)
         f.write_text(json.dumps(data) + "\n", encoding="utf-8")
     except OSError as e:

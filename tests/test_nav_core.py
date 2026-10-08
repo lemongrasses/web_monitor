@@ -9,12 +9,18 @@ from aio_system_dashboard.nav.decoder import (
     NAV_PACKET_SIZE, encode_nav_packet, flags_to_int, parse_nav_packet, reverse_bits8)
 from aio_system_dashboard.nav.trajectory import TrajectoryBuffer
 from aio_system_dashboard.state.health import (
-    INITIALIZING, PRODUCT_FAULT, PRODUCT_UNKNOWN, READY, raw_product_state, raw_udp_level)
+    IDLE, INITIALIZING, PRODUCT_FAULT, PRODUCT_UNKNOWN, READY, STARTING, STOPPED, alignment_step,
+    raw_product_state, raw_udp_level)
 from aio_system_dashboard.state.indicator import (
     FAULT, HEALTHY, UNKNOWN, WARNING, DebouncedStatus)
 
-NCFG = {"stale_warn_s": 0.5, "stale_fault_s": 2.0, "low_rate_ratio": 0.8,
+NCFG = {"stale_warn_s": 0.5, "stale_fault_s": 2.0, "low_rate_ratio": 0.8, "startup_timeout_s": 60.0,
         "ready_requires": ["alignment", "heading_valid"]}
+
+
+def run(running=True, state="running", wanted=True, wanted_age=100.0, run_age=100.0, grace=False):
+    return {"running": running, "service_state": state, "wanted": wanted, "wanted_age_s": wanted_age,
+            "run_age_s": run_age, "in_grace": grace}
 
 
 class DecoderTest(unittest.TestCase):
@@ -128,27 +134,57 @@ def nav(age=0.01, rate=100.0, **flags):
 
 
 class HealthTest(unittest.TestCase):
+    """Fault only when AIO NAV has a real problem; stopped on purpose or starting is not one."""
+    NOPKT = {"listening": True, "age_s": None, "latest": None}
+
+    def state(self, n, r):
+        return raw_product_state(n, r, NCFG)[0]
+
     def test_ready(self):
-        self.assertEqual(raw_product_state(nav(), "running", NCFG, False)[0], READY)
+        self.assertEqual(self.state(nav(), run()), READY)
 
     def test_gnss_loss_stays_ready(self):
-        self.assertEqual(raw_product_state(nav(gnss=False), "running", NCFG, False)[0], READY)
+        self.assertEqual(self.state(nav(gnss=False), run()), READY)
 
-    def test_not_aligned_is_initializing(self):
-        state, reasons = raw_product_state(nav(alignment=False), "running", NCFG, False)
+    def test_not_aligned_reports_the_current_step(self):
+        state, lines, step = raw_product_state(nav(alignment=False, heading_valid=False), run(), NCFG)
         self.assertEqual(state, INITIALIZING)
-        self.assertIn("Waiting for alignment", reasons)
+        self.assertEqual(lines[0], "Step 1 of 2: Alignment")
+        self.assertIn("still", lines[1])
+        self.assertEqual((step["index"], step["key"]), (1, "alignment"))
+        state, lines, step = raw_product_state(nav(heading_valid=False), run(), NCFG)
+        self.assertEqual(lines[0], "Step 2 of 2: Initial heading")
+        self.assertIn("Drive straight", lines[1])
 
-    def test_stale_is_fault(self):
-        self.assertEqual(raw_product_state(nav(age=2.5), "running", NCFG, False)[0], PRODUCT_FAULT)
+    def test_stopped_on_purpose_is_not_a_fault(self):
+        self.assertEqual(self.state(self.NOPKT, run(running=False, state="stopped", wanted=False)), STOPPED)
+        self.assertEqual(self.state(self.NOPKT, run(running=False, state=None, wanted=False)), STOPPED)
 
-    def test_process_down_is_fault(self):
-        self.assertEqual(raw_product_state(nav(), "stopped", NCFG, False)[0], PRODUCT_FAULT)
+    def test_dashboard_just_started_checks_first(self):
+        self.assertEqual(self.state(self.NOPKT, run(running=False, state=None, wanted=False, grace=True)),
+                         PRODUCT_UNKNOWN)
 
-    def test_no_packets(self):
-        n = {"listening": True, "age_s": None, "latest": None}
-        self.assertEqual(raw_product_state(n, None, NCFG, True)[0], PRODUCT_UNKNOWN)
-        self.assertEqual(raw_product_state(n, None, NCFG, False)[0], PRODUCT_FAULT)
+    def test_start_request_then_starting(self):
+        # asked to start, process not there yet
+        self.assertEqual(self.state(self.NOPKT, run(running=False, state="stopped", wanted_age=2)), STARTING)
+        # process up, no output yet
+        self.assertEqual(self.state(self.NOPKT, run(run_age=10)), STARTING)
+
+    def test_faults(self):
+        # it should run but is gone: crashed
+        state, lines, _ = raw_product_state(self.NOPKT, run(running=False, state="stopped", wanted_age=30), NCFG)
+        self.assertEqual((state, lines[0]), (PRODUCT_FAULT, "AIO NAV stopped unexpectedly"))
+        self.assertEqual(self.state(self.NOPKT, run(running=False, state="failed", wanted=False)), PRODUCT_FAULT)
+        # runs but nothing comes out after the start-up time
+        self.assertEqual(self.state(self.NOPKT, run(run_age=61)), PRODUCT_FAULT)
+        # output stopped while running
+        self.assertEqual(self.state(nav(age=2.5), run()), PRODUCT_FAULT)
+        self.assertEqual(self.state({"listening": False, "bind_error": "busy", "age_s": None}, run()), PRODUCT_FAULT)
+        self.assertEqual(self.state(self.NOPKT, run(running=False, state="not_installed", wanted=False)),
+                         PRODUCT_FAULT)
+
+    def test_output_from_an_undetected_aio_nav_still_counts(self):
+        self.assertEqual(self.state(nav(), run(running=False, state="stopped", wanted=False)), READY)
 
     def test_udp_levels(self):
         self.assertEqual(raw_udp_level(nav(), NCFG, 100.0, False)[1], "Streaming")
@@ -156,6 +192,15 @@ class HealthTest(unittest.TestCase):
         self.assertEqual(raw_udp_level(nav(age=3.0), NCFG, 100.0, False)[1], "Lost")
         self.assertEqual(raw_udp_level(nav(rate=50.0), NCFG, 100.0, False)[1], "Low rate")
         self.assertEqual(raw_udp_level({"age_s": None}, NCFG, 100.0, True)[0], UNKNOWN)
+        self.assertEqual(raw_udp_level({"age_s": None}, NCFG, 100.0, False, STOPPED)[:2], (IDLE, "Off"))
+        self.assertEqual(raw_udp_level({"age_s": None}, NCFG, 100.0, False, STARTING)[1], "Waiting")
+        self.assertEqual(raw_udp_level({"age_s": None}, NCFG, 100.0, False, PRODUCT_FAULT)[1], "Lost")
+
+    def test_alignment_step_order(self):
+        req = ["alignment", "heading_valid", "fine_alignment"]
+        self.assertEqual(alignment_step({"heading_valid": True}, req)["key"], "alignment")
+        self.assertEqual(alignment_step({"alignment": True}, req)["key"], "heading_valid")
+        self.assertIsNone(alignment_step({k: True for k in req}, req))
 
 
 class DataAccessTest(unittest.TestCase):
@@ -229,7 +274,8 @@ class NavStopClearsStateTest(unittest.TestCase):
             calls.append(("clear", r)); st["clear"] = True
         nav = SimpleNamespace(clear=clear, new_session=lambda r: calls.append(("new", r)),
                               is_clear=lambda: st["clear"], status=lambda: {"age_s": st["age"]})
-        h = SimpleNamespace(cfg={"nav": {"service": "aio_nav", "stale_fault_s": 2.0}}, nav=nav, _last_nav_pids=None)
+        h = SimpleNamespace(cfg={"nav": {"service": "aio_nav", "stale_fault_s": 2.0}}, nav=nav, _last_nav_pids=None,
+                            _run_since=None, _clock=lambda: 1.0)
         step = lambda pids: HealthEngine._check_nav_restart(h, {"aio_nav": {"pids": pids}})
         step([]); self.assertEqual(calls, [])                 # never ran, already default: nothing to do
         step([11]); st.update(clear=False, age=0.1); step([11]); self.assertEqual(calls, [])  # running
@@ -244,7 +290,8 @@ class NavStopClearsStateTest(unittest.TestCase):
         calls, st = [], {"clear": False, "age": 0.1}
         nav = SimpleNamespace(clear=lambda r: calls.append(r), new_session=lambda r: None,
                               is_clear=lambda: st["clear"], status=lambda: {"age_s": st["age"]})
-        h = SimpleNamespace(cfg={"nav": {"service": "aio_nav", "stale_fault_s": 2.0}}, nav=nav, _last_nav_pids=None)
+        h = SimpleNamespace(cfg={"nav": {"service": "aio_nav", "stale_fault_s": 2.0}}, nav=nav, _last_nav_pids=None,
+                            _run_since=None, _clock=lambda: 1.0)
         step = lambda: HealthEngine._check_nav_restart(h, {"aio_nav": {"pids": []}})
         step(); self.assertEqual(calls, [])       # packets still live: AIO NAV runs undetected, keep them
         st["age"] = 5.0; step()

@@ -49,18 +49,20 @@
 <a id="sec3"></a>
 ## 3. 看懂儀表板
 
-### 3.1 狀態列
+### 3.1 狀態區
 
-每個頁面最上方的彩色橫條只回答一個問題：*現在能不能使用導航輸出？*
+每個頁面最上方的彩色區塊只回答一個問題：*現在能不能使用導航輸出？* 它顯示狀態、一行說明發生什麼事、一行說明下一步該做什麼，以及（在 Overview 與 Navigation 頁面）**Start**、**Restart**、**Stop** 按鈕。紅色只保留給 AIO NAV 真的出問題的情況。
 
 | 狀態 | 顏色 | 意義 | 該怎麼做 |
 |------|------|------|----------|
+| **Stopped** | 淺灰 | AIO NAV 沒有執行，也沒有人要求它執行。這是正常狀態，不是問題。 | 需要導航時按 **Start**。 |
+| **Starting** | 藍綠 | AIO NAV 已啟動、正在準備，還沒有導航輸出。 | 等待。60 秒內都沒有輸出就會變成 **Fault**。 |
+| **Initializing** | 琥珀 | AIO NAV 正在執行並有輸出，但對準尚未完成。會顯示目前是第幾步與該做什麼，例如「Step 1 of 3: Alignment — Keep the vehicle completely still」。 | 照著指示操作（[對準 SOP](#sec5)），此時先不要使用輸出。 |
 | **Ready** | 綠 | AIO NAV 正在執行、資料即時，且對準已完成，輸出可以使用。 | 正常作業。 |
-| **Initializing** | 琥珀 | AIO NAV 正在執行，但對準尚未完成。旁邊會顯示原因（例如「Waiting for fine alignment」）。 | 依照[對準 SOP](#sec5) 操作，此時先不要使用輸出。 |
-| **Fault** | 紅 | AIO NAV 沒有執行，或超過 2 秒沒有收到導航資料。旁邊會顯示原因。 | 見[問題排除](#sec9)。 |
-| **Unknown** | 灰 | 儀表板剛啟動，或您的瀏覽器與裝置失去連線。 | 等幾秒；持續出現請檢查網路。 |
+| **Fault** | 紅 | AIO NAV 出了問題：沒有人按 Stop 它卻停了、啟動後 60 秒都沒有輸出，或輸出中斷超過 2 秒。會顯示原因。 | 見[問題排除](#sec9)。 |
+| **Unknown**／**Offline** | 深灰 | 儀表板剛啟動，或您的瀏覽器與裝置失去連線。 | 等幾秒；持續出現請檢查網路。 |
 
-狀態需要持續約 1 秒才會改變，回到 Ready 則需要穩定約 2 秒，因此偶爾掉一個封包不會讓畫面閃爍。
+狀態需要持續約 1 秒才會改變，回到 Ready 則需要穩定約 2 秒，因此偶爾掉一個封包不會讓畫面閃爍。AIO NAV 執行時，狀態區也會顯示已執行多久；處理錄好的 bag 而不是即時感測器時，會顯示 **Bag replay**。
 
 ### 3.2 狀態燈
 
@@ -76,9 +78,12 @@
 
 | 燈號 | 代表 |
 |------|------|
-| **Alignment** | 粗對準（調平）已完成。 |
-| **Initial heading** | 濾波器已取得有效航向。 |
-| **Fine alignment** | 精對準已完成：航向精度已達目標。 |
+| **Alignment** | 第 1 步，粗對準（調平）。 |
+| **Initial heading** | 第 2 步，濾波器取得有效航向。 |
+| **Fine alignment** | 第 3 步，航向精度達到目標。 |
+
+三顆對準燈依序代表三個步驟：**Done**（淡綠，已完成）、**In progress**（琥珀，目前這一步）、**Waiting**（灰，之後的步驟），AIO NAV 沒有輸出時顯示 **—**。
+
 | **GNSS** | GNSS 接收機的定位品質：**綠色** = *RTK fix*（公分級）、**琥珀色** = *RTK float*（約 10 公分，精度較差）、**紅色** = *SPP*（單點定位，公尺級）或 *No signal*。琥珀與紅色只是警告：慣性導航會繼續，但精度會慢慢下降。 |
 | **Camera / LiDAR**（有安裝時） | 感測器在網路上有回應。「Not set up」代表沒有設定 IP；不需要時屬正常。 |
 | **Network** | 感測器網路連線正常。 |
@@ -86,21 +91,25 @@
 
 GNSS、相機、光達與網路的問題會以**提示**（燈號下方的琥珀色橫條）呈現，永遠不會讓狀態從 Ready 變成 Fault，因為導航解仍然可用。GNSS 燈為紅色時，會多一則提示「GNSS: SPP」或「GNSS: No signal」。
 
-### 3.3 UDP 輸出列
+### 3.3 輸出列
+
+狀態區下方的一行說明導航輸出（UDP，第 6 節）有沒有在送、頻率多少、送到哪裡，例如「Streaming · 100 Hz to 192.168.116.154:9000」。
 
 | 標示 | 意義 |
 |------|------|
+| **Off** | AIO NAV 已停止，所以不會送出任何資料。正常。 |
+| **Waiting** | AIO NAV 正在啟動，還沒有送出資料。 |
 | **Streaming** | 裝置正以預期頻率送出導航封包。 |
-| **Low rate** | 有封包，但頻率低於預期的 80%。 |
+| **Low rate** | 有送出封包，但頻率低於預期的 80%。 |
 | **Stale** | 超過 0.5 秒沒有封包。 |
-| **Lost** | 超過 2 秒沒有封包，狀態變成 Fault。 |
+| **Lost** | AIO NAV 應該在送卻超過 2 秒沒有封包，狀態變成 Fault。 |
 
-**Sending to** 顯示輸出送往的位址（第 6 節）。UDP 沒有回應確認：「Streaming」代表裝置有在送，不代表您的應用程式一定有收到。
+UDP 沒有回應確認：「Streaming」代表裝置有在送，不代表您的應用程式一定有收到。
 
 ### 3.4 各頁面
 
-- **Overview**：狀態、AIO NAV 控制（旁邊顯示使用中的模式：*Live* 或 *Bag replay*）、UDP 輸出、顯示最近 60 秒軌跡的地圖、位置、航向（附箭頭，上方為北）、速度、橫滾角與俯仰角、燈號、提示、儲存空間。
-- **Navigation**：顯示本次執行完整軌跡的大地圖，以及每個數值與其精度（±）：位置、北／東／天速度、速率、姿態、NAV 時間。下方是輔助燈號與輸出細節（目的地、封包數）。**Show whole trajectory** 會縮放到整條軌跡；**Follow vehicle** 會重新跟隨車輛。
+- **Overview**：狀態區與 AIO NAV 按鈕、輸出列、顯示最近 60 秒軌跡的地圖、位置、航向（附箭頭，上方為北）、速度、橫滾角與俯仰角、燈號、提示、儲存空間。
+- **Navigation**：顯示本次執行完整軌跡的大地圖，以及每個數值與其精度（±）：位置、北／東／天速度、速率、姿態、NAV 時間。下方是輔助燈號與輸出列（含封包數）。**Show whole trajectory** 會縮放到整條軌跡；**Follow vehicle** 會重新跟隨車輛。
 - **Data**：AIO NAV 的紀錄資料夾。點資料夾開啟，按 **Download** 存檔。此頁面無法更動裝置上的任何檔案。
 
 <a id="sec4"></a>
@@ -112,23 +121,22 @@ GNSS、相機、光達與網路的問題會以**提示**（燈號下方的琥珀
 - [ ] 車輛停在起始位置，對準的第一階段會**完全靜止**。
 - [ ] 即時作業：模式是 **Live**，且感測器驅動正在執行（第 4.6 節；維護頁面 → ROS 2）。
 - [ ] 您的電腦可以開啟產品頁面（第 2 節）。
-- [ ] 狀態列不是 Unknown（儀表板已連線）。
+- [ ] 狀態區顯示 **Stopped**（或執行中的狀態），而不是 Unknown／Offline：儀表板已連線。
 
 ### 4.2 啟動 AIO NAV
 
-在 **Overview** 頁面，**AIO NAV** 控制列會顯示濾波器是否在執行，旁邊顯示使用中的模式（例如 *Live · domain 10*）。
+**Start** 按鈕在 Overview 與 Navigation 頁面最上方的狀態區。
 
-1. 按 **Start**。控制列先顯示「Working…」，接著燈號變成 **Running**，並短暫顯示「AIO NAV started」。
-2. 狀態列變成 **Initializing**，UDP 輸出變成 **Streaming**。
-3. 接著依照[對準 SOP](#sec5) 操作。
+1. 按 **Start**。狀態先變成 **Starting**（藍綠），AIO NAV 一開始輸出就變成 **Initializing**（琥珀）；輸出列從 **Off** 變成 **Streaming**。
+2. 照著狀態區顯示的步驟操作（[對準 SOP](#sec5)）。
 
-如果燈號顯示 **Failed**，或訊息是「AIO NAV did not start: …」，請見[問題排除](#sec9)。如果沒有出現控制列，代表此裝置關閉了網頁控制功能（`nav.allow_control`），請管理員開啟。用其他方式啟動的 AIO NAV 也偵測得到。
+如果狀態變成 **Fault**「AIO NAV stopped unexpectedly」，或按鈕下方的訊息是「AIO NAV did not start: …」，請見[問題排除](#sec9)。如果沒有按鈕，代表此裝置關閉了網頁控制功能（`nav.allow_control`），請管理員開啟。用其他方式啟動的 AIO NAV 也偵測得到。
 
 ### 4.3 作業中
 
-- 留意狀態列，**Ready** 代表輸出可以使用。
+- 留意狀態區，**Ready** 代表輸出可以使用。
 - 琥珀色提示（例如「GNSS: SPP」或「GNSS: No signal」）不會中斷導航，但精度會下降。請到 Navigation 頁面查看 ± 值。
-- 狀態變成 **Fault** 時，依狀態列顯示的原因處理（見[問題排除](#sec9)）。
+- 狀態變成 **Fault** 時，依狀態區顯示的原因處理（見[問題排除](#sec9)）。
 
 ### 4.4 重新啟動或停止
 
@@ -175,16 +183,16 @@ ROS_DOMAIN_ID=13 ROS_LOCALHOST_ONLY=0 ros2 bag play <bag 資料夾> --clock 100
 | 2. 初始航向 | **Initial heading** | 求出航向。預設設定下，航向是在車輛移動時由 GNSS 求得。 | **Alignment** 轉綠後，在開闊天空下以穩定速度**直線**行駛，直到此燈轉綠。 |
 | 3. 精對準 | **Fine alignment** | 持續修正航向與感測器誤差，直到航向精度在 1° 以內，或超過精對準的時間上限（預設 300 秒）。 | 在有 GNSS 的環境正常行駛，包含幾次轉彎與加減速。 |
 
-此裝置要求的燈號全部轉綠後（預設是三顆都要），狀態列就會變成 **Ready**。
+此裝置要求的燈號全部轉綠後（預設是三顆都要），狀態區就會變成 **Ready**。
 
 ### 5.2 操作步驟
 
 1. 把車停在開闊天空下的起點。等 GNSS 燈顯示 **RTK fix**（綠色）再開始，因為初始位置取自 GNSS。**RTK float**（琥珀色）也可以，但起始精度較差。
-2. 在 Overview 頁面按 **Start**，狀態變成 **Initializing**：「Waiting for alignment」。
+2. 在 Overview 頁面按 **Start**，經過 **Starting** 後，狀態變成 **Initializing**：「Step 1 of 3: Alignment — Keep the vehicle completely still」。
 3. **至少 10 秒不要移動**，直到 **Alignment** 燈轉為淡綠。靜止期間 Navigation 頁面的 **ZUPT** 會顯示作用中，這是正常的。
 4. 直線前進，保持穩定速度，等 **Initial heading** 轉綠。
 5. 繼續行駛並轉幾個彎，直到 **Fine alignment** 轉綠。到 Navigation 頁面確認航向 ± 約在 1° 以內。
-6. 狀態列顯示 **Ready**，導航輸出可以使用。
+6. 狀態區顯示 **Ready**，導航輸出可以使用。
 
 ### 5.3 對準不順利時
 
@@ -222,7 +230,7 @@ ROS_DOMAIN_ID=13 ROS_LOCALHOST_ONLY=0 ros2 bag play <bag 資料夾> --clock 100
    ```yaml
    output_udp: "192.0.2.50:9000"     # 您電腦的 IP 與 port
    ```
-2. 重新啟動 AIO NAV（Overview 頁面的 **Restart**），再重新啟動儀表板（`aio-dashboard restart`），讓 **Sending to** 顯示新的目的地。
+2. 重新啟動 AIO NAV（Overview 頁面的 **Restart**），再重新啟動儀表板（`aio-dashboard restart`），讓 **Output** 列顯示新的目的地。
 3. 在接收端電腦的防火牆開放該 UDP port。
 
 外部目的地**只能設定一個**，且必須是單一 IPv4 位址（unicast）。若有多個應用程式要使用，請由一台電腦接收後再轉送。
@@ -314,7 +322,7 @@ C/C++ 請使用緊密排列的 struct（`#pragma pack(push, 1)`），欄位順�
 
 ### 6.7 確認串接是否正確
 
-1. 儀表板的 **UDP output** 顯示 **Streaming**，**Sending to** 顯示您電腦的位址與 port。
+1. 儀表板的 **Output** 列顯示 **Streaming**，以及您電腦的位址與 port。
 2. 您的接收程式以預期頻率印出封包（預設每秒 100 個）。
 3. 經緯度與航向和 Navigation 頁面一致。
 4. 儀表板顯示 **Ready** 時，旗標中有 ALIGN、HEADING、FINE。
@@ -378,18 +386,20 @@ aio-dashboard config     # 編輯設定、檢查、重新啟動
 |------------|----------|----------|
 | 頁面打不開 | 網址錯誤、網路問題，或儀表板沒有執行 | 確認 IP（在裝置上執行 `aio-dashboard urls`）與網路線；執行 `aio-dashboard status`。 |
 | **403 Forbidden** | 您的電腦不在允許清單中 | 請管理員加入您的 IP（`access.allowed_clients`）。 |
-| 灰色狀態列，「Lost connection to the dashboard」 | 瀏覽器連不到裝置 | 檢查網路，恢復後頁面會自動更新。 |
-| **Fault**：AIO NAV process is not running | 濾波器已停止 | 按 **Start**（第 4.2 節）。 |
-| **Fault**：NAV output stopped | 濾波器停住，或其感測器停止輸出 | 到維護頁面檢查 IMU／GNSS 驅動；**Restart** AIO NAV。 |
-| AIO NAV 控制列：「AIO NAV did not start: …」（或燈號 **Failed**） | AIO NAV 結束了或無法啟動，訊息會說明原因 | 再按一次 **Start**。若重複發生，請收集 `/opt/aio-dashboard/logs/aio_nav.log` 交給導航團隊。 |
-| AIO NAV 控制列：「AIO NAV launcher not found…」 | 此裝置上 aio-nav-ros 的 `install/` 資料夾不見或不完整 | 請管理員確認 aio-nav-ros 已安裝。 |
+| **Offline**，「Lost connection to the dashboard」 | 瀏覽器連不到裝置 | 檢查網路，恢復後頁面會自動更新。 |
+| **Stopped** | AIO NAV 沒有執行（正常） | 按 **Start**（第 4.2 節）。 |
+| **Fault**：AIO NAV stopped unexpectedly | AIO NAV 自己結束了 | 按 **Start**。若一直發生，請收集 `/opt/aio-dashboard/logs/aio_nav.log` 交給導航團隊（維護頁面有細節）。 |
+| **Fault**：AIO NAV is running but sends no navigation output | 啟動後 60 秒內都沒有輸出（`nav.startup_timeout_s`） | **Restart** AIO NAV；到維護頁面檢查它的感測器（IMU／GNSS 驅動）。 |
+| **Fault**：Navigation output stopped | 濾波器停住，或其感測器停止輸出 | 到維護頁面檢查 IMU／GNSS 驅動；**Restart** AIO NAV。 |
+| 按鈕下方訊息「AIO NAV did not start: …」 | AIO NAV 結束了或無法啟動，訊息會說明原因 | 再按一次 **Start**。若重複發生，請收集 `/opt/aio-dashboard/logs/aio_nav.log` 交給導航團隊。 |
+| **Fault**：AIO NAV is not installed on this device | 此裝置上 aio-nav-ros 的 `install/` 資料夾不見或不完整 | 請管理員確認 aio-nav-ros 已安裝。 |
 | 即時作業：沒有相機或 IMU 資料 | 感測器驅動已停止 | 維護頁面 → ROS 2 → Sensor drivers → **Start**，等約 15 秒。 |
 | Bag 回放：AIO NAV 收不到資料 | Bag 在別的 ROS domain 播放，或沒有啟動 AIO NAV | 見 4.6 節：從維護頁面 → Replay 播放（會使用正確的 domain），並在 Overview 頁面按 Start。用終端機時：`ROS_DOMAIN_ID=13 ROS_LOCALHOST_ONLY=0 ros2 bag play … --clock 100`。 |
 | 一直停在 **Initializing** | 對準尚未完成 | 依照[對準 SOP](#sec5) 與 5.3 處理。 |
 | **GNSS** 燈為琥珀或紅色（*RTK float*、*SPP*、*No signal*） | 天空被遮蔽、沒有 RTK 校正資料、天線或 GNSS 接收器問題 | 導航會繼續；移到開闊處；檢查天線與校正資料連線。 |
 | **Low rate**／**Stale** | 裝置負載過高，或濾波器輸入中斷 | 檢查 System 頁面（CPU、溫度）與 ROS 2 頁面。 |
 | 相機／光達 **Not connected** | 感測器未開機、線路問題或 IP 錯誤 | 檢查電源與線路；維護頁面 → Camera／LiDAR → **Run diagnostic**。 |
-| 儀表板顯示 Streaming，但您的應用程式收不到 | 目的地或防火牆 | 確認 **Sending to** 是您的電腦；在該電腦的防火牆開放 UDP port（第 6.7 節）。 |
+| 儀表板顯示 Streaming，但您的應用程式收不到 | 目的地或防火牆 | 確認 **Output** 列上的位址是您的電腦；在該電腦的防火牆開放 UDP port（第 6.7 節）。 |
 | Data 頁面沒有檔案 | 紀錄功能未開啟，或尚未完成過對準 | 在 `aio_nav.yaml` 啟用 `save_fusion_txt`；紀錄在對準完成後才開始。 |
 
 <a id="sec10"></a>

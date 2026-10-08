@@ -28,6 +28,7 @@ DEFAULTS: Dict[str, Any] = {
         "allow_control": False,    # True: the Overview page can start/stop AIO NAV (+ DSO)
         "control_group": ["aio_nav", "dso"],   # what Start/Stop acts on, in start order
         "startup_grace_s": 3.0,
+        "startup_timeout_s": 60.0,   # after AIO NAV starts: no output for this long is a fault
         "stale_warn_s": 0.5,
         "stale_fault_s": 2.0,
         "low_rate_ratio": 0.8,

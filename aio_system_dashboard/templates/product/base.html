@@ -1,4 +1,56 @@
-{% from "macros.html" import brand_mark, master_strip %}
+{% from "macros.html" import brand_mark, chip %}
+{#- The one status area of the product pages: state, what is happening, what to do next, and (where
+    AIO NAV may be controlled) Start / Restart / Stop. Getters live in product.js. -#}
+{% macro status_area(controls=True, compact=False) -%}
+<section class="hero{{ ' compact' if compact }}" :class="'hero-' + state" @keydown.escape.window="ctlConfirm = null">
+  <div class="hero-main" role="status" aria-live="polite">
+    <div class="hero-state" x-text="stateLabel">Unknown</div>
+    <div class="hero-text">
+      <div class="hero-title" x-text="stateTitle"></div>
+      <div class="hero-detail" x-show="stateDetail" x-text="stateDetail"></div>
+    </div>
+  </div>
+  <div class="hero-side">
+    <div class="hero-meta">
+      <span class="hero-badge" x-show="ctl.ros && ctl.ros.mode === 'bag'" x-cloak title="AIO NAV processes a recorded bag, not the live sensors">Bag replay</span>
+      <span x-show="s && s.session_uptime_s != null" x-cloak>Running <span x-text="fmt.duration(s && s.session_uptime_s)"></span></span>
+    </div>
+    {% if controls %}
+    <div class="hero-ctl" x-show="ctl.enabled" x-cloak role="group" aria-label="AIO NAV">
+      <template x-if="!ctlConfirm">
+        <div class="ctl-btns">
+          <button type="button" class="btn btn-start" x-show="ctl.state !== 'running'"
+                  :disabled="ctlBusy || !ctl.installed" @click="runCtl('start')">
+            <span x-show="ctlBusy" class="spinner-border spinner-border-sm" aria-hidden="true"></span>
+            <svg x-show="!ctlBusy" viewBox="0 0 16 16" aria-hidden="true"><path d="M4 2.5v11l9-5.5z" fill="currentColor"/></svg>Start
+          </button>
+          <button type="button" class="btn btn-ctl" x-show="ctl.state === 'running'"
+                  :disabled="ctlBusy" @click="askCtl('restart')">
+            <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M13 8a5 5 0 1 1-1.5-3.55M13 2.5v3h-3" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg>Restart
+          </button>
+          <button type="button" class="btn btn-ctl btn-ctl-stop" x-show="ctl.state === 'running'"
+                  :disabled="ctlBusy" @click="askCtl('stop')">
+            <span x-show="ctlBusy" class="spinner-border spinner-border-sm" aria-hidden="true"></span>
+            <svg x-show="!ctlBusy" viewBox="0 0 16 16" aria-hidden="true"><rect x="3.5" y="3.5" width="9" height="9" rx="1" fill="currentColor"/></svg>Stop
+          </button>
+        </div>
+      </template>
+      <template x-if="ctlConfirm">
+        <div class="hero-confirm" role="alertdialog" aria-labelledby="ctl-ask">
+          <span class="ctl-ask" id="ctl-ask" x-text="ctlConfirm === 'stop' ? 'Stop AIO NAV? Navigation output ends.' : 'Restart AIO NAV? Alignment starts over.'"></span>
+          <div class="ctl-btns">
+            <button type="button" class="btn btn-sm btn-danger" @click="runCtl(ctlConfirm)" x-text="ctlConfirm === 'stop' ? 'Stop now' : 'Restart now'"></button>
+            <button type="button" class="btn btn-sm btn-outline-secondary" id="ctl-cancel" @click="ctlConfirm = null">Cancel</button>
+          </div>
+        </div>
+      </template>
+    </div>
+    {% endif %}
+  </div>
+  <div class="hero-msg" :class="ctlMsgClass" role="status" aria-live="polite" x-text="ctlMsg"></div>
+</section>
+{%- endmacro %}
+
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -22,9 +74,9 @@
       {% if fake_mode %}<span class="fake-tag" title="Subsystem state comes from dev/fake_state.json">Fake data</span>{% endif %}
     </div>
   </header>
-  {{ master_strip(compact=(page == 'data'), meta='<span x-show="s &amp;&amp; s.session_uptime_s != null" x-cloak>Nav session <span x-text="fmt.duration(s &amp;&amp; s.session_uptime_s)"></span></span>') }}
+  {{ status_area(controls=(page != 'data'), compact=(page == 'data')) }}
 
-  <main class="container-fluid px-4 py-3">
+  <main class="container-fluid px-3 px-md-4 py-3">
     {% block content %}{% endblock %}
   </main>
 

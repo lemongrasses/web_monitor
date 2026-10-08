@@ -32,7 +32,7 @@
       lvl(level, label) { return { level: level || "unknown", label: label || AIO.LEVEL_TEXT[level] || "Unknown" }; },
       get productState() { return this.connected && this.d && this.d.maint ? this.d.maint.product_state : "UNKNOWN"; },
       get state() { return this.productState; },
-      get stateLabel() { return { READY: "Ready", INITIALIZING: "Initializing", FAULT: "Fault" }[this.productState] || "Unknown"; },
+      get stateLabel() { return { READY: "Ready", INITIALIZING: "Initializing", FAULT: "Fault", STARTING: "Starting", STOPPED: "Stopped" }[this.productState] || "Unknown"; },
       get stateReasons() {
         if (!this.connected) return ["Lost connection to the dashboard. Values on this page are not live."];
         const h = this.d && this.d.product && this.d.product.health;
@@ -46,7 +46,7 @@
       },
       pageLevel(page) {
         if (!this.d) return "unknown";
-        if (page === "overview") return this.productState === "READY" ? "healthy" : this.productState === "FAULT" ? "fault" : this.productState === "INITIALIZING" ? "warning" : "unknown";
+        if (page === "overview") return { READY: "healthy", FAULT: "fault", INITIALIZING: "warning" }[this.productState] || "unknown";
         const rel = this.issues.filter((i) => page === "diagnostics" || i.link === page ||
           (page === "ros" && i.layer === "dataflow" && i.link) || (page === "network" && i.layer === "network"));
         return rel.reduce((acc, i) => (SEV[i.level] > SEV[acc] ? i.level : acc), "healthy");
@@ -75,6 +75,10 @@
       },
       serviceChip(key) {
         const s = this.services[key];
+        // AIO NAV (and what starts and stops with it, DSO) stopped on purpose is normal: grey, not red.
+        const c = (this.d && this.d.config) || {};
+        const group = (c.nav_group || []).concat(c.nav_service ? [c.nav_service] : []);
+        if (group.includes(key) && this.productState === "STOPPED" && s && s.state === "stopped") return this.lvl("idle", "Stopped");
         const m = SERVICE[(s && s.state) || "unknown"] || SERVICE.unknown;
         return this.lvl(m[0], m[1]);
       },

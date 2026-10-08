@@ -2,7 +2,8 @@
 (function () {
   "use strict";
   const fmt = AIO.fmt;
-  const STATE_LABEL = { READY: "Ready", INITIALIZING: "Initializing", FAULT: "Fault", UNKNOWN: "Unknown" };
+  const STATE_LABEL = { READY: "Ready", INITIALIZING: "Initializing", STARTING: "Starting",
+                        STOPPED: "Stopped", FAULT: "Fault", UNKNOWN: "Unknown" };
 
   window.productPage = function () {
     let navMap = null;            // Leaflet objects stay outside Alpine's reactive proxy
@@ -45,12 +46,20 @@
 
       // ----- derived values
       get state() { return this.connected && this.s && this.s.health ? this.s.health.state : "UNKNOWN"; },
-      get reasons() { return (this.connected && this.s && this.s.health) ? this.s.health.reasons : ["Dashboard connection lost"]; },
-      get stateLabel() { return STATE_LABEL[this.state] || "Unknown"; },
-      get stateReasons() {
-        if (!this.connected) return ["Lost connection to the dashboard. Values on this page are not live."];
-        if (this.state === "READY") return ["Navigation solution available"];
-        return this.reasons.length ? this.reasons : ["Waiting for NAV data"];
+      get stateLabel() {
+        if (!this.connected) return "Offline";
+        return STATE_LABEL[this.state] || "Unknown";
+      },
+      // Two lines: what is happening, and what to do about it.
+      get stateTitle() {
+        if (!this.connected) return "Lost connection to the dashboard";
+        const h = this.s && this.s.health;
+        return (h && h.title) || (this.s ? "" : "Connecting…");
+      },
+      get stateDetail() {
+        if (!this.connected) return "Values on this page are not live. Check the network connection to the device.";
+        const h = this.s && this.s.health;
+        return (h && h.detail) || "";
       },
       get fresh() { return !!(this.s && this.s.nav && this.s.nav.fresh); },
       v(key, digits) {
@@ -61,6 +70,7 @@
         const sol = this.s && this.s.solution;
         return sol ? fmt.deg(sol[key], 8) : "—";
       },
+      hasHeading() { const sol = this.s && this.s.solution; return !!sol && AIO.isNum(sol.heading); },
       heading360() {
         const sol = this.s && this.s.solution;
         if (!sol || !AIO.isNum(sol.heading)) return "—";
@@ -73,22 +83,6 @@
       get ctl() {
         const c = this.connected && this.s && this.s.control;
         return c || { enabled: false, state: "unknown", installed: true, label: "AIO NAV" };
-      },
-      ctlChip() {
-        if (this.ctlBusy) return { level: "warning", label: "Working" };
-        const m = { running: ["healthy", "Running"], stopped: ["idle", "Stopped"],
-                    failed: ["fault", "Failed"], not_installed: ["unknown", "Not installed"] };
-        const e = m[this.ctl.state] || ["unknown", "Unknown"];
-        return { level: e[0], label: e[1] };
-      },
-      get ctlHint() {
-        if (this.ctlBusy) return "Waiting for the service to change state…";
-        const st = this.ctl.state;
-        if (!this.ctl.installed) return "AIO NAV launcher not found in the aio-nav-ros install folder.";
-        if (st === "running") return "Navigation filter is running.";
-        if (st === "failed") return "The service stopped with an error. Start it again, or check the logs.";
-        if (st === "stopped") return "Not running. No navigation output until it is started.";
-        return "";
       },
       get ctlMsg() {
         if (this.ctlBusy) return "";
@@ -140,6 +134,16 @@
       localDest() {
         const d = (this.udp.destinations || []).find((x) => x.kind === "local");
         return d ? d.host + ":" + d.port : "127.0.0.1:9000";
+      },
+      outputText() {
+        const u = this.udp, dest = this.externalDest();
+        if (!this.connected) return "—";
+        if (u.level === "idle") return "Nothing is sent while AIO NAV is stopped.";
+        if (u.label === "Waiting") return "Nothing sent yet while AIO NAV starts.";
+        const rate = AIO.isNum(u.rate_hz) ? fmt.hz(u.rate_hz) : "—";
+        const to = dest ? " to " + dest : " (this device only)";
+        if (u.label === "Lost") return AIO.isNum(u.age_s) ? "No output for " + Math.round(u.age_s) + " s." : "No output received.";
+        return rate + to + (u.label === "Low rate" && AIO.isNum(u.expected_rate_hz) ? " (expected " + fmt.hz(u.expected_rate_hz) + ")" : "");
       },
       rateText() {
         const u = this.udp;

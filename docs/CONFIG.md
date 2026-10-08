@@ -126,7 +126,7 @@ The shipped value is the external computer on the sensor LAN (`192.168.116.154`)
 Jetson is `192.168.116.1` on `eno1`. It is an access filter, not authentication: it
 does not protect against a computer that spoofs that address on the same LAN.
 
-### 4.2 `nav`: AIO NAV data and the Ready / Initializing / Fault state
+### 4.2 `nav`: AIO NAV data and the Stopped / Starting / Initializing / Ready / Fault state
 
 | Key | Default | Meaning |
 |-----|---------|---------|
@@ -136,7 +136,8 @@ does not protect against a computer that spoofs that address on the same LAN.
 | `service` | `aio_nav` | Which entry in `services` is AIO NAV. |
 | `allow_control` | `false` (shipped config: `true`) | `true` shows **Start / Restart / Stop** for AIO NAV on the Overview page. **Start** launches the filter and then DSO, **Stop** stops both, exactly like the AIO Nav desktop app (it does nothing for a process that is already running, so it never doubles one started from the app). The programs are the `aio-nav` and `aio-nav-dso` wrappers in the aio-nav-ros `install/` folder; no source code is needed. Stop and Restart ask for a second click. Only computers in `access.allowed_clients` can reach the page. |
 | `control_group` | `[aio_nav, dso]` | Which `services` entries Start/Stop acts on, in start order. Each needs a `launch` setting. |
-| `startup_grace_s` | `3.0` | For this long after the dashboard starts, having no packets shows "Unknown" instead of "Fault". |
+| `startup_grace_s` | `3.0` | For this long after the dashboard starts, it shows "Unknown" while it is still checking whether AIO NAV runs. |
+| `startup_timeout_s` | `60` | After AIO NAV starts, it shows **Starting** until the first output arrives. With no output for this long the state becomes **Fault** ("running but sends no navigation output"). AIO NAV not running and not asked to run is **Stopped**, never a fault. |
 | `stale_warn_s` | `0.5` | Packet age (seconds) at which UDP output shows **Stale**. |
 | `stale_fault_s` | `2.0` | Packet age at which UDP output shows **Lost** and the state becomes **Fault**. |
 | `low_rate_ratio` | `0.8` | UDP output shows **Low rate** when the measured rate is below this fraction of the expected rate. |

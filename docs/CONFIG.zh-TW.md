@@ -101,7 +101,7 @@ access:
 
 預設值是感測器網段上的外部電腦(`192.168.116.154`);本 Jetson 在 `eno1` 上是 `192.168.116.1`。這只是來源 IP 過濾,不是身分驗證,無法防止同一網段內有人偽造該 IP。
 
-### 4.2 `nav`：AIO NAV 資料與 Ready／Initializing／Fault 狀態
+### 4.2 `nav`：AIO NAV 資料與 Stopped／Starting／Initializing／Ready／Fault 狀態
 
 | 項目 | 預設值 | 說明 |
 |------|--------|------|
@@ -111,7 +111,8 @@ access:
 | `service` | `aio_nav` | `services` 中哪一個項目代表 AIO NAV。 |
 | `allow_control` | `false`(預設設定檔:`true`) | `true` 時,首頁會顯示 AIO NAV 的 **Start / Restart / Stop**。**Start** 會先啟動濾波器再啟動 DSO,**Stop** 兩者一起停止,做法與 AIO Nav 桌面程式相同(程序已在執行就不會重複啟動,所以不會跟桌面程式啟動的那份重複)。啟動的是 aio-nav-ros `install/` 資料夾內的 `aio-nav` 與 `aio-nav-dso`,不需要原始碼。Stop 與 Restart 需要再按一次確認。只有 `access.allowed_clients` 內的電腦連得到頁面。 |
 | `control_group` | `[aio_nav, dso]` | Start/Stop 作用在 `services` 的哪些項目,依序啟動。每個項目都需要設定 `launch`。 |
-| `startup_grace_s` | `3.0` | 儀表板啟動後的這段時間內，沒有封包會顯示「Unknown」而不是「Fault」。 |
+| `startup_grace_s` | `3.0` | 儀表板啟動後的這段時間內，還在確認 AIO NAV 是否執行時顯示「Unknown」。 |
+| `startup_timeout_s` | `60` | AIO NAV 啟動後，在第一筆輸出到達前顯示 **Starting**。超過這段時間仍沒有輸出，狀態就變成 **Fault**（「running but sends no navigation output」）。AIO NAV 沒有執行、也沒有人要求它執行時是 **Stopped**，永遠不算故障。 |
 | `stale_warn_s` | `0.5` | 封包超過這個秒數未更新時，UDP 輸出顯示 **Stale**。 |
 | `stale_fault_s` | `2.0` | 封包超過這個秒數未更新時，UDP 輸出顯示 **Lost**，狀態變成 **Fault**。 |
 | `low_rate_ratio` | `0.8` | 實測頻率低於預期頻率的這個比例時，UDP 輸出顯示 **Low rate**。 |

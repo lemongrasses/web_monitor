@@ -1,5 +1,5 @@
 {% extends "product/base.html" %}
-{% from "macros.html" import chip, annun, heading_arrow %}
+{% from "macros.html" import chip, annun, heading_arrow, output_line %}
 {% block title %}Navigation · AIO Navigation{% endblock %}
 
 {% macro row(label, key, digits, unit, sd_key=None, sd_unit=None) -%}
@@ -18,7 +18,7 @@
         <button class="btn btn-sm" x-show="!follow" x-cloak @click="setFollow(true)">Follow vehicle</button>
       </div>
     </div>
-    <div class="muted small mt-1">Trajectory covers the current aio_nav_node session: last 60 s at 10 Hz, older points at 1 Hz.</div>
+    <div class="muted small mt-1">Track of the current run: the last 60 s in detail, older points once per second.</div>
   </div>
 
   <div class="col-lg-4">
@@ -42,7 +42,7 @@
           {{ row('Roll', 'roll', 2, '°', 'roll_std') }}
           {{ row('Pitch', 'pitch', 2, '°', 'pitch_std') }}
           <div class="vrow"><span class="k">Heading</span>
-            <span class="v"><span x-text="heading360()">—</span><span class="u">°</span>{{ heading_arrow('hdgRot') }}<span class="sd">± <span x-text="v('heading_std', 2)"></span> °</span></span></div>
+            <span class="v"><span x-text="heading360()">—</span><span class="u">°</span><span x-show="hasHeading()">{{ heading_arrow('hdgRot') }}</span><span class="sd">± <span x-text="v('heading_std', 2)"></span> °</span></span></div>
         </div>
         <div class="vgroup">
           <div class="small-caps mb-1">Time</div>
@@ -64,13 +64,5 @@
   {{ annun('VUPT', "aid('vupt')") }}
 </div>
 
-<div class="strip mt-2">
-  <div><span class="strip-title">UDP output</span>{{ chip('udp') }}</div>
-  <div><span class="k">Rate</span><span x-text="rateText()">—</span></div>
-  <div><span class="k">Last packet</span><span x-text="fmt.age(udp.age_s)">—</span></div>
-  <div><span class="k">Sending to</span><span class="mono" x-text="externalDest() || 'this device only'"></span></div>
-  <div><span class="k">Local monitor</span><span class="mono" x-text="localDest()"></span></div>
-  <div><span class="k">Packets</span><span x-text="s && s.nav ? s.nav.packets.toLocaleString() : '—'"></span>
-    <span class="muted small" x-show="s && s.nav && s.nav.bad_packets" x-text="'(' + (s && s.nav ? s.nav.bad_packets : 0) + ' invalid)'"></span></div>
-</div>
+<div class="mt-2">{{ output_line(details=True) }}</div>
 {% endblock %}

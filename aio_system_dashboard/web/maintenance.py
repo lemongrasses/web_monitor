@@ -65,6 +65,8 @@ def create_maintenance_app(ctx):
             "config": {
                 "aio_nav": ctx.cfg.aio_nav,
                 "nav_bind": ctx.cfg["nav"]["udp_bind"],
+                "nav_service": ctx.cfg["nav"]["service"],
+                "nav_group": process_control.members(ctx.cfg),
                 "fake": ctx.cfg.fake,
                 "ros_mode": ctx.cfg.ros_mode_info(),
             },

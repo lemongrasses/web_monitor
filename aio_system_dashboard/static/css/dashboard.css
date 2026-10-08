@@ -75,6 +75,9 @@ h1, h2, h3 { font-family: var(--cond); font-weight: 600; letter-spacing: .005em;
 .master-INITIALIZING { background: var(--caution); }
 .master-FAULT { background: var(--warning); }
 .master-UNKNOWN { background: #52606d; }
+.master-STARTING { background: var(--advisory); }
+.master-STOPPED { background: #dfe5eb; color: var(--ink); }
+.master-STOPPED .text-white { color: var(--track) !important; }
 .master.compact { padding: .45rem 1.4rem; }
 .master.compact .master-state { font-size: var(--t-xl); }
 .master.compact .master-text { font-size: var(--t-m); }
@@ -232,3 +235,66 @@ h1, h2, h3 { font-family: var(--cond); font-weight: 600; letter-spacing: .005em;
 .ctl-mode { margin-left: .6rem; padding: .05rem .5rem; border: 1px solid var(--rule); border-radius: 2px; font-size: var(--t-xs); font-weight: 600; color: var(--ink-2); white-space: nowrap; }
 .ctl-mode.bag { color: var(--caution); border-color: var(--caution); }
 .ros-mode.off { opacity: .55; cursor: not-allowed; }
+
+/* ---------- product status area: the one loud element, with the AIO NAV controls ---------- */
+/* Severity sets the color: stopped is calm (not a problem), starting is informational,
+   aligning is caution, ready is green, and red is kept for real AIO NAV problems. */
+.hero { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: .6rem 1.5rem;
+        padding: .8rem 1.5rem; color: #fff; background: #52606d; transition: background-color .4s ease; }
+.hero-main { display: flex; align-items: center; gap: 1.5rem; min-width: 0; }
+.hero-state { font-family: var(--cond); font-weight: 700; font-size: var(--t-xxl); line-height: 1; letter-spacing: .01em; white-space: nowrap; }
+.hero-text { min-width: 0; }
+.hero-title { font-size: var(--t-l); font-weight: 600; line-height: 1.25; }
+.hero-detail { font-size: var(--t-m); opacity: .92; line-height: 1.35; margin-top: .1rem; }
+.hero-side { display: flex; align-items: center; gap: 1.25rem; justify-content: flex-end; flex-wrap: wrap; }
+.hero-meta { display: flex; align-items: center; gap: .8rem; font-size: var(--t-s); opacity: .92; white-space: nowrap; }
+.hero-badge { font-weight: 700; font-size: var(--t-xs); letter-spacing: .04em; text-transform: uppercase; padding: .12rem .5rem;
+              border-radius: 2px; background: #fff; color: var(--caution); }
+.hero-msg { grid-column: 1 / -1; font-size: var(--t-s); font-weight: 600; }
+.hero-msg:empty { display: none; }
+.hero .btn { display: inline-flex; align-items: center; justify-content: center; gap: .45rem; min-width: 6.5rem; min-height: 2.5rem;
+             font-weight: 600; background: #fff; color: var(--ink); border: 1px solid rgba(255,255,255,.9); }
+.hero .btn svg { width: .95rem; height: .95rem; flex: none; }
+.hero .btn:hover:not(:disabled) { background: #f0f4f8; }
+.hero .btn:disabled { opacity: .6; cursor: not-allowed; }
+.hero .btn-ctl-stop { color: var(--warning); }
+.hero-confirm { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: .4rem 1rem;
+                padding: .4rem .7rem; background: #fff; color: var(--ink); border-radius: 2px; }
+.hero-confirm .btn { min-height: 2rem; min-width: 0; }
+.hero-confirm .btn-danger { background: var(--warning); color: #fff; border-color: var(--warning); }
+.hero-READY { background: var(--go); }
+.hero-INITIALIZING { background: var(--caution); }
+.hero-STARTING { background: var(--advisory); }
+.hero-FAULT { background: var(--warning); }
+.hero-UNKNOWN { background: #52606d; }
+.hero-STOPPED { background: #dfe5eb; color: var(--ink); border-bottom: 1px solid var(--rule); }
+.hero-STOPPED .hero-detail, .hero-STOPPED .hero-meta { opacity: 1; color: var(--ink-2); }
+.hero-STOPPED .btn-start { background: var(--ink); color: #fff; border-color: var(--ink); }
+.hero-STOPPED .btn-start:hover:not(:disabled) { background: var(--ink-2); }
+.hero.compact { padding: .5rem 1.4rem; }
+.hero.compact .hero-state { font-size: var(--t-xl); }
+.hero.compact .hero-title { font-size: var(--t-m); }
+.hero.compact .hero-detail { font-size: var(--t-s); }
+
+/* one line about the navigation output */
+.outline { display: flex; flex-wrap: wrap; align-items: center; gap: .3rem 1rem; margin-bottom: .9rem; padding: .45rem .9rem;
+           background: var(--panel); border: 1px solid var(--rule); border-radius: 3px; }
+.outline-k { font-family: var(--cond); font-weight: 700; font-size: var(--t-l); margin-right: -.2rem; }
+.outline-v { color: var(--ink-2); }
+.outline-x { margin-left: auto; font-size: var(--t-s); }
+.outline-v, .outline-x { overflow-wrap: anywhere; }
+
+@media (max-width: 991px) {
+  .hero { grid-template-columns: 1fr; padding: .7rem 1rem; }
+  .hero-main { flex-direction: column; align-items: flex-start; gap: .35rem; }
+  .hero-side { justify-content: space-between; }
+}
+@media (max-width: 575px) {
+  .hero-state { font-size: var(--t-xl); }
+  .hero-side { flex-direction: column; align-items: stretch; gap: .6rem; }
+  .hero-ctl .ctl-btns { flex-wrap: nowrap; }
+  .hero-ctl .ctl-btns .btn { flex: 1; min-width: 0; }
+  .hero-confirm { justify-content: flex-start; }
+  .outline-x { margin-left: 0; }
+}
+@media (prefers-reduced-motion: reduce) { .hero { transition: none; } }

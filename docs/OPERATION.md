@@ -56,20 +56,26 @@ position and track are still shown on a blank background.
 
 ## 3. Reading the dashboard
 
-### 3.1 The state strip
+### 3.1 The status area
 
-A colored strip across the top of every page answers one question: *can I use the
-navigation output right now?*
+A colored area across the top of every page answers one question: *can I use the
+navigation output right now?* It shows the state, a line saying what is happening, a line
+saying what to do next, and (on Overview and Navigation) the **Start**, **Restart** and
+**Stop** buttons. Red is kept for real problems with AIO NAV.
 
 | State | Color | Meaning | What to do |
 |-------|-------|---------|------------|
+| **Stopped** | Light grey | AIO NAV is not running and nobody asked it to run. This is normal, not a problem. | Click **Start** when you want navigation. |
+| **Starting** | Teal | AIO NAV was started and is getting ready; no navigation output yet. | Wait. If nothing comes out within 60 s it becomes **Fault**. |
+| **Initializing** | Amber | AIO NAV is running and sends output, but alignment is not finished. It shows the current step and what to do, for example *Step 1 of 3: Alignment — Keep the vehicle completely still*. | Follow the instruction ([Alignment SOP](#5-alignment-sop)). Do not use the output yet. |
 | **Ready** | Green | AIO NAV is running, data is fresh, and alignment is complete. The output can be used. | Operate normally. |
-| **Initializing** | Amber | AIO NAV is running, but alignment is not finished. The reason is shown next to it (for example "Waiting for fine alignment"). | Follow the [Alignment SOP](#5-alignment-sop). Do not use the output yet. |
-| **Fault** | Red | AIO NAV is not running, or no navigation data has arrived for 2 seconds. The reason is shown next to it. | See [Troubleshooting](#9-troubleshooting). |
-| **Unknown** | Grey | The dashboard just started, or your browser lost its connection to the device. | Wait a few seconds; check the network if it persists. |
+| **Fault** | Red | AIO NAV has a problem: it stopped although nobody pressed Stop, it runs but has sent nothing for 60 s after starting, or its output stopped for more than 2 s. The reason is shown. | See [Troubleshooting](#9-troubleshooting). |
+| **Unknown** / **Offline** | Dark grey | The dashboard just started, or your browser lost its connection to the device. | Wait a few seconds; check the network if it persists. |
 
 A state only changes after the condition has lasted about a second, and only returns to
-Ready after about 2 stable seconds. A single lost packet never makes it flicker.
+Ready after about 2 stable seconds. A single lost packet never makes it flicker. While AIO
+NAV runs, the area also shows how long it has been running, and **Bag replay** when it
+processes a recorded bag instead of the live sensors.
 
 ### 3.2 Status lamps
 
@@ -86,9 +92,13 @@ something needs attention.**
 
 | Lamp | Shows |
 |------|-------|
-| **Alignment** | Coarse alignment (leveling) is done. |
-| **Initial heading** | The filter has a valid heading. |
-| **Fine alignment** | Fine alignment is done: heading accuracy reached its target. |
+| **Alignment** | Step 1, coarse alignment (leveling). |
+| **Initial heading** | Step 2, the filter has a valid heading. |
+| **Fine alignment** | Step 3, heading accuracy reached its target. |
+
+The three alignment lamps are steps in order: **Done** (pale green), **In progress** (amber,
+the current step), **Waiting** (grey, a later step), or **—** while AIO NAV sends no output.
+
 | **GNSS** | Position quality of the GNSS receiver: **green** = *RTK fix* (centimeter level), **amber** = *RTK float* (about 10 cm, less accurate), **red** = *SPP* (single-point positioning, meters) or *No signal*. Amber and red are warnings only: inertial navigation continues, but accuracy slowly degrades. |
 | **Camera / LiDAR** (if fitted) | The sensor answers on the network. "Not set up" means no IP is configured; this is normal if not needed. |
 | **Network** | The sensor network link is up. |
@@ -98,26 +108,31 @@ GNSS, camera, LiDAR and network problems are shown as **advisories** (amber bars
 the lamps). They never change the state from Ready to Fault, because the navigation
 solution is still usable. A red GNSS lamp adds the advisory *GNSS: SPP* or *GNSS: No signal*.
 
-### 3.3 UDP output line
+### 3.3 Output line
+
+One line under the status area tells whether the navigation output (UDP, section 6) is being
+sent, at what rate and to where, for example *Streaming · 100 Hz to 192.168.116.154:9000*.
 
 | Label | Meaning |
 |-------|---------|
+| **Off** | AIO NAV is stopped, so nothing is sent. Normal. |
+| **Waiting** | AIO NAV is starting; nothing sent yet. |
 | **Streaming** | The device is sending navigation packets at the expected rate. |
-| **Low rate** | Packets arrive, but at under 80% of the expected rate. |
+| **Low rate** | Packets are sent, but at under 80% of the expected rate. |
 | **Stale** | No packet for more than 0.5 s. |
-| **Lost** | No packet for more than 2 s. The state becomes Fault. |
+| **Lost** | No packet for more than 2 s while AIO NAV should be sending. The state becomes Fault. |
 
-**Sending to** shows where the output goes (section 6). UDP has no acknowledgement:
-"Streaming" confirms that the device is sending, not that your application received it.
+UDP has no acknowledgement: "Streaming" confirms that the device is sending, not that your
+application received it.
 
 ### 3.4 Pages
 
-- **Overview**: state, AIO NAV control (with the mode in use, *Live* or *Bag replay*), UDP output, map with the last 60 s of track,
+- **Overview**: status area with the AIO NAV buttons, output line, map with the last 60 s of track,
   position, heading (with an arrow; up = north), speed, roll and pitch, lamps,
   advisories, storage.
 - **Navigation**: large map with the whole track of this run, and every value with its
   accuracy (±): position, velocity north/east/up, speed, attitude, NAV time. Aiding lamps
-  and output details (destination, packet count) are at the bottom.
+  and the output line (with the packet count) are at the bottom.
   **Show whole trajectory** zooms to the full track; **Follow vehicle** re-centers.
 - **Data**: AIO NAV log folders. Click a folder to open it and **Download** to save a
   file. Nothing on the device can be changed from this page.
@@ -131,29 +146,27 @@ solution is still usable. A red GNSS lamp adds the advisory *GNSS: SPP* or *GNSS
       for the first part of alignment.
 - [ ] Live use: the mode is **Live** and the sensor drivers are running (section 4.6; Maintenance → ROS 2).
 - [ ] Your computer opens the product view (section 2).
-- [ ] The state strip is not Unknown (the dashboard is connected).
+- [ ] The status area shows **Stopped** (or a running state), not Unknown/Offline: the dashboard is connected.
 
 ### 4.2 Starting AIO NAV
 
-On the **Overview** page, the **AIO NAV** control line shows whether the filter is running,
-and the mode in use next to it (for example *Live · domain 10*).
+The **Start** button is in the status area at the top of the Overview and Navigation pages.
 
-1. Click **Start**. The line shows *Working…*, then the lamp turns **Running** and the
-   message *AIO NAV started* appears for a few seconds.
-2. The state strip changes to **Initializing**, and the UDP output to **Streaming**.
-3. Continue with the [Alignment SOP](#5-alignment-sop).
+1. Click **Start**. The state becomes **Starting** (teal), then **Initializing** (amber) as
+   soon as AIO NAV sends output; the output line changes from **Off** to **Streaming**.
+2. Follow the step shown in the status area ([Alignment SOP](#5-alignment-sop)).
 
-If the lamp shows **Failed**, or the message reads *AIO NAV did not start: …*, see
-[Troubleshooting](#9-troubleshooting). If there is no control line, control from the web page
-is turned off on this device (`nav.allow_control`); ask the administrator to enable it.
-AIO NAV that was started in another way is detected too.
+If the state becomes **Fault** with *AIO NAV stopped unexpectedly*, or the message under the
+buttons reads *AIO NAV did not start: …*, see [Troubleshooting](#9-troubleshooting). If there
+are no buttons, control from the web page is turned off on this device (`nav.allow_control`);
+ask the administrator to enable it. AIO NAV that was started in another way is detected too.
 
 ### 4.3 During operation
 
-- Keep an eye on the state strip. **Ready** means the output can be used.
+- Keep an eye on the status area. **Ready** means the output can be used.
 - Amber advisories (such as *GNSS: SPP* or *GNSS: No signal*) do not stop navigation, but plan
   for reduced accuracy. Check the ± values on the Navigation page.
-- If the state becomes **Fault**, follow the reason shown in the strip
+- If the state becomes **Fault**, follow the reason shown in the status area
   ([Troubleshooting](#9-troubleshooting)).
 
 ### 4.4 Restarting or stopping
@@ -221,7 +234,7 @@ before the output can be trusted. It has three stages, shown by three lamps.
 | 2. Initial heading | **Initial heading** | Finds the heading. With the default setting, heading comes from GNSS while the vehicle moves. | When **Alignment** is green, drive off **straight** at a steady speed under open sky until the lamp turns green. |
 | 3. Fine alignment | **Fine alignment** | Refines heading and sensor errors until heading accuracy is within 1°, or until the fine-alignment time limit passes (default 300 s). | Keep driving normally with GNSS available. Include a few turns and speed changes. |
 
-When all lamps required on this device are green (by default all three), the state strip
+When all lamps required on this device are green (by default all three), the status area
 turns **Ready**.
 
 ### 5.2 Step by step
@@ -229,14 +242,14 @@ turns **Ready**.
 1. Park the vehicle at the start point under open sky. Wait until the GNSS lamp shows
    **RTK fix** (green): the initial position comes from GNSS. **RTK float** (amber) works but
    starts less accurately.
-2. On the Overview page, click **Start**. The state becomes **Initializing**: *Waiting for
-   alignment*.
+2. On the Overview page, click **Start**. After **Starting**, the state becomes
+   **Initializing**: *Step 1 of 3: Alignment — Keep the vehicle completely still*.
 3. **Do not move** for at least 10 s, until the **Alignment** lamp turns pale green.
    While stationary, the Navigation page shows **ZUPT** active; this is expected.
 4. Drive straight ahead at a steady speed. Watch **Initial heading** turn green.
 5. Keep driving with some turns until **Fine alignment** turns green. Check on the
    Navigation page that heading ± is about 1° or better.
-6. The strip shows **Ready**. Navigation output can be used.
+6. The status area shows **Ready**. Navigation output can be used.
 
 ### 5.3 If alignment goes wrong
 
@@ -284,7 +297,7 @@ old AIO Nav desktop app), or the dashboard would show no data.
    output_udp: "192.0.2.50:9000"     # your computer's IP and port
    ```
 2. Restart AIO NAV (**Restart** on the Overview page), then restart the dashboard
-   (`aio-dashboard restart`) so it shows the new destination under **Sending to**.
+   (`aio-dashboard restart`) so its **Output** line shows the new destination.
 3. On the receiving computer, allow incoming UDP on that port in the firewall.
 
 Only **one** external destination is supported, and it must be a unicast IPv4 address.
@@ -384,8 +397,8 @@ For C/C++, use a packed struct (`#pragma pack(push, 1)`) with the field order of
 
 ### 6.7 Checking the integration
 
-1. On the dashboard, **UDP output** shows **Streaming** and **Sending to** shows your
-   computer's address and port.
+1. On the dashboard, the **Output** line shows **Streaming** and your computer's address and
+   port.
 2. Your receiver prints packets at the expected rate (100 per second by default).
 3. Latitude, longitude and heading match the Navigation page.
 4. The flags show ALIGN, HEADING and FINE when the dashboard shows **Ready**.
@@ -449,18 +462,20 @@ aio-dashboard config     # edit settings, check, restart
 |--------------|--------------|------------|
 | Page does not open | Wrong address, network, or dashboard not running | Check the IP (`aio-dashboard urls` on the device) and the cable; run `aio-dashboard status`. |
 | **403 Forbidden** | Your computer is not in the allowed list | Ask the administrator to add your IP (`access.allowed_clients`). |
-| Grey strip, "Lost connection to the dashboard" | Your browser cannot reach the device | Check the network; the page recovers by itself. |
-| **Fault**: AIO NAV process is not running | The filter is stopped | Click **Start** (section 4.2). |
-| **Fault**: NAV output stopped | The filter froze or its sensors stopped | Check the IMU/GNSS driver on the Maintenance view; **Restart** AIO NAV. |
-| AIO NAV line: *AIO NAV did not start: …* (or lamp **Failed**) | AIO NAV exited or could not start; the message gives the reason | Click **Start** again. If it repeats, collect `/opt/aio-dashboard/logs/aio_nav.log` for the navigation team. |
-| AIO NAV line: *AIO NAV launcher not found…* | The aio-nav-ros `install/` folder is missing or incomplete on this device | Ask the administrator to check that aio-nav-ros is installed. |
+| **Offline**, "Lost connection to the dashboard" | Your browser cannot reach the device | Check the network; the page recovers by itself. |
+| **Stopped** | AIO NAV is not running (normal) | Click **Start** (section 4.2). |
+| **Fault**: AIO NAV stopped unexpectedly | AIO NAV exited by itself | Click **Start**. If it keeps stopping, collect `/opt/aio-dashboard/logs/aio_nav.log` for the navigation team (Maintenance view shows details). |
+| **Fault**: AIO NAV is running but sends no navigation output | Nothing came out within 60 s of starting (`nav.startup_timeout_s`) | **Restart** AIO NAV; check its sensors (IMU/GNSS driver) on the Maintenance view. |
+| **Fault**: Navigation output stopped | The filter froze or its sensors stopped | Check the IMU/GNSS driver on the Maintenance view; **Restart** AIO NAV. |
+| Message *AIO NAV did not start: …* under the buttons | AIO NAV exited or could not start; the message gives the reason | Click **Start** again. If it repeats, collect `/opt/aio-dashboard/logs/aio_nav.log` for the navigation team. |
+| **Fault**: AIO NAV is not installed on this device | The aio-nav-ros `install/` folder is missing or incomplete on this device | Ask the administrator to check that aio-nav-ros is installed. |
 | Live: no camera or IMU data | The sensor drivers are stopped | Maintenance → ROS 2 → Sensor drivers → **Start**; wait about 15 s. |
 | Bag replay: AIO NAV receives no data | The bag is played in another ROS domain, or AIO NAV was not started | Section 4.6: play from Maintenance → Replay (it uses the right domain), and click Start on the Overview page. From a terminal: `ROS_DOMAIN_ID=13 ROS_LOCALHOST_ONLY=0 ros2 bag play … --clock 100`. |
 | Stuck at **Initializing** | Alignment not finished | Follow the [Alignment SOP](#5-alignment-sop) and 5.3. |
 | **GNSS** lamp amber or red (*RTK float*, *SPP*, *No signal*) | Sky view blocked, no RTK correction data, antenna or GNSS receiver issue | Navigation continues; move to open sky; check the antenna and the correction link. |
 | **Low rate** / **Stale** | Device overloaded or filter input interrupted | Check the System page (CPU, temperature) and the ROS 2 page. |
 | Camera/LiDAR **Not connected** | Sensor powered off, cable, or wrong IP | Check power and cable; Maintenance → Camera/LiDAR → **Run diagnostic**. |
-| Your application receives nothing, dashboard says Streaming | Destination or firewall | Check **Sending to** matches your computer; open the UDP port in its firewall (section 6.7). |
+| Your application receives nothing, dashboard says Streaming | Destination or firewall | Check that the address on the **Output** line matches your computer; open the UDP port in its firewall (section 6.7). |
 | No files on the Data page | Logging is off or no run has been aligned yet | Enable `save_fusion_txt` in `aio_nav.yaml`; logs start after alignment. |
 
 ## 10. Glossary

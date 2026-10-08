@@ -1,8 +1,14 @@
 """Health evaluation (runs at ~5 Hz, independent of NAV packet rate).
 
-Product state is READY / INITIALIZING / FAULT and depends only on the AIO NAV
-pipeline (process + fresh packets + required alignment flags). GNSS, camera,
-LiDAR and network only produce advisories (spec §11–14).
+Product state depends only on the AIO NAV pipeline (process + fresh packets + required alignment
+flags). GNSS, camera, LiDAR and network only produce advisories (spec §11–14).
+
+  STOPPED       not running, and nobody asked it to run: normal, not a problem
+  STARTING      asked to start / just started, no output yet (up to nav.startup_timeout_s)
+  INITIALIZING  output flowing, alignment steps not all done (the current step is reported)
+  READY         navigation solution available
+  FAULT         only when AIO NAV has a real problem: it stopped although it should run, it runs
+                but sends nothing after the start-up time, or its output stopped
 """
 
 import logging
@@ -10,15 +16,20 @@ import threading
 import time
 from typing import Dict, List, Optional, Tuple
 
+from ..actions import process_control
 from .indicator import DebouncedStatus, FAULT, HEALTHY, UNKNOWN, WARNING
 
 logger = logging.getLogger(__name__)
 
 READY = "READY"
 INITIALIZING = "INITIALIZING"
+STARTING = "STARTING"
+STOPPED = "STOPPED"
 PRODUCT_FAULT = "FAULT"
 PRODUCT_UNKNOWN = "UNKNOWN"
-_PRODUCT_SEVERITY = {PRODUCT_UNKNOWN: 0, READY: 1, INITIALIZING: 2, PRODUCT_FAULT: 3}
+_PRODUCT_SEVERITY = {PRODUCT_UNKNOWN: 0, STOPPED: 0, READY: 1, STARTING: 1, INITIALIZING: 2, PRODUCT_FAULT: 3}
+IDLE = "idle"                      # lamp level: off on purpose (not unknown, not a problem)
+START_REQUEST_GRACE_S = 10.0       # a start request with no process yet is "starting" this long
 
 SERVICE_DOWN_STATES = ("stopped", "failed", "not_installed")
 
@@ -33,36 +44,74 @@ FLAG_WAIT_TEXT = {
     "heading_valid": "Waiting for valid heading",
     "fine_alignment": "Waiting for fine alignment",
 }
+# Alignment steps in order: (title, what the operator does). See OPERATION section 5.
+STEPS = {
+    "alignment": ("Alignment", "Keep the vehicle completely still (about 10 s)."),
+    "heading_valid": ("Initial heading", "Drive straight at a steady speed under open sky."),
+    "fine_alignment": ("Fine alignment", "Keep driving normally with GNSS available, with a few turns."),
+}
 
 
-def raw_product_state(nav: Dict, service_state: Optional[str], ncfg: Dict,
-                      in_grace: bool) -> Tuple[str, List[str]]:
-    """Undebounced product state and human-readable reasons."""
+def alignment_step(latest: Dict, required: List[str]) -> Optional[Dict]:
+    """The first required alignment flag that is not set yet, with its position and instruction."""
+    order = [f for f in ALIGN_LAMPS if f in required] + [f for f in required if f not in ALIGN_LAMPS]
+    for i, flag in enumerate(order):
+        if not latest.get(flag):
+            title, action = STEPS.get(flag, (flag.replace("_", " ").capitalize(), FLAG_WAIT_TEXT.get(flag, "")))
+            return {"index": i + 1, "total": len(order), "key": flag, "title": title, "action": action}
+    return None
+
+
+def raw_product_state(nav: Dict, run: Dict, ncfg: Dict) -> Tuple[str, List[str], Optional[Dict]]:
+    """Undebounced product state, its two lines of text (what / what to do), and the alignment step.
+
+    run: running (process seen), service_state, wanted (asked to run), wanted_age_s (since the
+    last start request), run_age_s (since the process was first seen), in_grace (dashboard start).
+    """
     age = nav.get("age_s")
-    if service_state in SERVICE_DOWN_STATES:
-        return PRODUCT_FAULT, ["AIO NAV process is not running"]
+    fresh = age is not None and age <= ncfg["stale_fault_s"]
     if not nav.get("listening") and nav.get("bind_error"):
-        return PRODUCT_FAULT, [f"NAV listener error: {nav['bind_error']}"]
+        return PRODUCT_FAULT, ["Cannot receive navigation output", nav["bind_error"]], None
+    state = run.get("service_state")
+    if not run.get("running") and not fresh:
+        if state == "not_installed":
+            return PRODUCT_FAULT, ["AIO NAV is not installed on this device",
+                                   "Its launcher was not found in the aio-nav-ros install folder."], None
+        wanted_age = run.get("wanted_age_s")
+        if run.get("wanted") and wanted_age is not None and wanted_age < START_REQUEST_GRACE_S:
+            return STARTING, ["Starting AIO NAV", "This takes a few seconds."], None
+        if state == "failed" or run.get("wanted"):
+            return PRODUCT_FAULT, ["AIO NAV stopped unexpectedly",
+                                   "Press Start to run it again. If it keeps stopping, check the Maintenance page."], None
+        if state is None and run.get("in_grace"):
+            return PRODUCT_UNKNOWN, ["Checking AIO NAV", ""], None
+        return STOPPED, ["Not running", "Press Start to begin navigation."], None
     if age is None:
-        if in_grace:
-            return PRODUCT_UNKNOWN, ["Waiting for NAV packets"]
-        return PRODUCT_FAULT, ["No NAV packets received"]
-    if age > ncfg["stale_fault_s"]:
-        return PRODUCT_FAULT, [f"NAV output stopped (last packet {age:.1f} s ago)"]
-    latest = nav.get("latest") or {}
-    missing = [f for f in ncfg["ready_requires"] if not latest.get(f)]
-    if missing:
-        return INITIALIZING, [FLAG_WAIT_TEXT.get(f, f"Waiting for {f}") for f in missing]
-    return READY, []
+        run_age = run.get("run_age_s") or 0.0
+        if run_age < ncfg["startup_timeout_s"]:
+            return STARTING, ["Waiting for the first navigation output", "AIO NAV is starting up."], None
+        return PRODUCT_FAULT, ["AIO NAV is running but sends no navigation output",
+                               f"Nothing received in {run_age:.0f} s. Restart it, or check the Maintenance page."], None
+    if not fresh:
+        return PRODUCT_FAULT, ["Navigation output stopped",
+                               f"Last output {age:.0f} s ago. Restart AIO NAV if it does not come back."], None
+    step = alignment_step(nav.get("latest") or {}, ncfg["ready_requires"])
+    if step:
+        return INITIALIZING, [f"Step {step['index']} of {step['total']}: {step['title']}", step["action"]], step
+    return READY, ["Navigation solution available", ""], None
 
 
 def raw_udp_level(nav: Dict, ncfg: Dict, expected: Optional[float],
-                  in_grace: bool) -> Tuple[str, str, str]:
-    """(level, label, detail) for the UDP NAV output stream."""
+                  in_grace: bool, product_state: Optional[str] = None) -> Tuple[str, str, str]:
+    """(level, label, detail) for the UDP NAV output stream. Off (idle) while AIO NAV is stopped
+    or still starting: no output then is expected, not lost."""
     age = nav.get("age_s")
     if age is None:
-        return (UNKNOWN, "Waiting", "No packets yet") if in_grace else \
-               (FAULT, "Lost", "No NAV packets received")
+        if product_state == STOPPED:
+            return IDLE, "Off", "AIO NAV is not running"
+        if product_state in (STARTING, PRODUCT_UNKNOWN) or in_grace:
+            return UNKNOWN, "Waiting", "No output yet"
+        return FAULT, "Lost", "No NAV packets received"
     if age > ncfg["stale_fault_s"]:
         return FAULT, "Lost", f"Last packet {age:.1f} s ago"
     if age > ncfg["stale_warn_s"]:
@@ -99,6 +148,8 @@ class HealthEngine:
         self._udp_label = ("Waiting", "")
         self._prev: Dict[str, str] = {}
         self._last_nav_pids: Optional[Tuple[int, ...]] = None
+        self._run_since: Optional[float] = None       # when the current AIO NAV process was first seen
+        self._step: Optional[Dict] = None
         self._fresh_since: Optional[float] = None
         self._stop = threading.Event()
         self._thread: Optional[threading.Thread] = None
@@ -137,6 +188,10 @@ class HealthEngine:
     def _check_nav_restart(self, services: Dict) -> None:
         svc = services.get(self.cfg["nav"]["service"]) or {}
         pids = tuple(sorted(svc.get("pids") or []))
+        if pids and pids != self._last_nav_pids:
+            self._run_since = self._clock()          # a new process: its start-up time begins now
+        elif not pids:
+            self._run_since = None
         if pids and self._last_nav_pids and pids != self._last_nav_pids:
             self.nav.new_session("aio_nav_node restarted")
         elif not pids and not self.nav.is_clear():
@@ -167,33 +222,44 @@ class HealthEngine:
             self._fresh_since = now
 
         # Product state (debounced); reasons follow the displayed state.
-        raw_state, reasons = raw_product_state(nav, service_state, ncfg, in_grace)
+        since = process_control.wanted_since(self.cfg, ncfg["service"])
+        run = {"running": bool(nav_svc.get("pids")), "service_state": service_state,
+               "wanted": process_control.wanted(self.cfg, ncfg["service"]),
+               "wanted_age_s": (time.time() - since) if since else None,
+               "run_age_s": (now - self._run_since) if self._run_since is not None else None,
+               "in_grace": in_grace}
+        raw_state, reasons, step = raw_product_state(nav, run, ncfg)
         shown = self.product.update(raw_state, now)
         if shown == raw_state:
-            self._product_reasons = reasons
+            self._product_reasons, self._step = reasons, step
         elif not self._product_reasons and reasons:
-            self._product_reasons = reasons
-        self._track("product", shown, {READY: "success", INITIALIZING: "info"}.get(shown, "fault"),
-                    "health", f"AIO NAV state {shown}", "; ".join(self._product_reasons))
+            self._product_reasons, self._step = reasons, step
+        self._track("product", shown, {READY: "success", PRODUCT_FAULT: "fault"}.get(shown, "info"),
+                    "health", f"AIO NAV state {shown}", "; ".join(r for r in self._product_reasons if r))
 
         # UDP output stream.
-        u_level, u_label, u_detail = raw_udp_level(nav, ncfg, expected, in_grace)
+        u_level, u_label, u_detail = raw_udp_level(nav, ncfg, expected, in_grace, raw_state)
         u_shown = self.udp.update(u_level, now)
         if u_shown == u_level:
             self._udp_label = (u_label, u_detail)
-        self._track("udp", u_shown, "warning" if u_shown != HEALTHY else "success", "dataflow",
-                    f"UDP NAV output {self._udp_label[0]}", self._udp_label[1])
+        self._track("udp", u_shown, {HEALTHY: "success", IDLE: "info", UNKNOWN: "info"}.get(u_shown, "warning"),
+                    "dataflow", f"UDP NAV output {self._udp_label[0]}", self._udp_label[1])
 
-        # Alignment indicator.
+        # Alignment lamps, one per step: done, the step in progress, later steps waiting.
+        current = alignment_step(latest, ncfg["ready_requires"]) if fresh else None
         align_lamps = {}
         for flag in ALIGN_LAMPS:
             if not fresh:
-                raw, label = UNKNOWN, "No data"
+                raw = UNKNOWN
             elif latest.get(flag):
-                raw, label = HEALTHY, "Done"
+                raw = HEALTHY
+            elif current and current["key"] == flag:
+                raw = WARNING
             else:
-                raw, label = WARNING, "In progress"
-            align_lamps[flag] = {"level": self.align_lamps[flag].update(raw, now), "label": label}
+                raw = IDLE
+            level = self.align_lamps[flag].update(raw, now)
+            align_lamps[flag] = {"level": level, "label": {HEALTHY: "Done", WARNING: "In progress",
+                                                           IDLE: "Waiting"}.get(level, "—")}
 
         # GNSS receiver quality (advisory only): green RTK fix, yellow RTK float, red SPP / no signal.
         gq = self.store.get("gnss", {}) or {}
@@ -260,7 +326,10 @@ class HealthEngine:
         self.store.set("product", {
             "ts": time.time(),
             "health": {"state": shown, "since_s": now - self.product.since,
-                       "reasons": self._product_reasons},
+                       "title": self._product_reasons[0] if self._product_reasons else "",
+                       "detail": self._product_reasons[1] if len(self._product_reasons) > 1 else "",
+                       "reasons": [r for r in self._product_reasons if r],
+                       "step": self._step},
             "nav": nav_out,
             "solution": latest if latest else None,
             "udp": {"level": u_shown, "label": self._udp_label[0], "detail": self._udp_label[1],
@@ -342,6 +411,9 @@ class HealthEngine:
                         f"{svc.get('label', key)} {state}")
             # A sensor driver unit that does not exist is "not set up", not a problem.
             optional = (self.cfg["services"].get(key) or {}).get("optional")
+            # AIO NAV stopped on purpose (nobody asked it to run) is a normal state, not an issue.
+            if key == nav_key and state == "stopped" and product_state == STOPPED:
+                continue
             if state in SERVICE_DOWN_STATES and not optional and (key == nav_key or state != "not_installed"):
                 level = FAULT if key == nav_key else WARNING
                 issue("services", level, f"{svc.get('label', key)} {state.replace('_', ' ')}",

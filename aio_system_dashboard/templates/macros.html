@@ -29,3 +29,17 @@
   <div class="master-meta">{{ meta|safe }}</div>
 </section>
 {%- endmacro %}
+
+{#- One line about the navigation output (the UDP stream to the external computer). -#}
+{% macro output_line(details=False) -%}
+<div class="outline" title="The device sends the navigation output over UDP. UDP has no acknowledgement, so reception by your application is not confirmed here.">
+  <span class="outline-k">Output</span>{{ chip('udp') }}
+  <span class="outline-v" x-text="outputText()"></span>
+  {% if details %}
+  <span class="outline-x" x-show="s && s.nav && s.nav.packets" x-cloak>
+    <span class="muted">Packets</span> <span x-text="s && s.nav ? s.nav.packets.toLocaleString() : ''"></span>
+    <span class="muted" x-show="s && s.nav && s.nav.bad_packets" x-text="'(' + (s && s.nav ? s.nav.bad_packets : 0) + ' invalid)'"></span>
+  </span>
+  {% endif %}
+</div>
+{%- endmacro %}
