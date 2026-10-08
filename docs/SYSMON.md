@@ -169,7 +169,7 @@ Everything is optional. The most useful keys:
 
 ## 6. Install, permissions and removal
 
-`sudo deploy/install.sh` installs it with the dashboard (`--no-sysmon` skips it). It also keeps the
+It is optional and **not installed by default**: add `--with-sysmon` to `sudo deploy/install.sh --user <you>` to install it (once installed, later runs of the installer keep it updated). It also keeps the
 system journal on disk (`/etc/systemd/journald.conf.d/aio-persistent.conf`, 300 MB), so the
 kernel's own log survives a reboot too.
 

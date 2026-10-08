@@ -4,7 +4,7 @@
 # made by tools/build_release.sh (./install.sh), which contains no Python source.
 #
 #   sudo deploy/install.sh [--user nvidia] [--prefix /opt/aio-dashboard] [--with-aio-nav PATH_TO_aio-nav]
-#                          [--reset-config] [--no-sysmon]
+#                          [--reset-config] [--with-sysmon]
 #
 # - copies the app to PREFIX (default /opt/aio-dashboard), keeping an existing config
 #   (--reset-config replaces it with the default; the old one is saved as .bak)
@@ -15,8 +15,9 @@
 # - installs the `aio-dashboard` command (start/stop/status/logs/config)
 # - optionally installs aio-nav.service (--with-aio-nav); not needed for the Overview page,
 #   which starts AIO NAV and DSO itself, like the AIO Nav desktop app
-# - installs aio-sysmon.service, the computer's black box (docs/SYSMON.md), and keeps the system
-#   journal across reboots; --no-sysmon skips both
+# - optional, off by default: --with-sysmon installs aio-sysmon.service, the computer's black box
+#   (docs/SYSMON.md), and keeps the system journal across reboots. If it is already installed,
+#   re-running the installer updates it even without the flag.
 set -euo pipefail
 
 HERE="$(cd "$(dirname "$0")" && pwd)"
@@ -26,7 +27,7 @@ PREFIX=/opt/aio-dashboard
 RUN_USER="${SUDO_USER:-nvidia}"
 AIO_NAV_BIN=""
 RESET_CONFIG=0
-WITH_SYSMON=1
+WITH_SYSMON=0
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -34,13 +35,18 @@ while [[ $# -gt 0 ]]; do
     --prefix) PREFIX="$2"; shift 2 ;;
     --with-aio-nav) AIO_NAV_BIN="$2"; shift 2 ;;
     --reset-config) RESET_CONFIG=1; shift ;;
-    --no-sysmon) WITH_SYSMON=0; shift ;;
-    -h|--help) sed -n '2,16p' "$0"; exit 0 ;;
+    --with-sysmon) WITH_SYSMON=1; shift ;;
+    --no-sysmon) shift ;;                        # old flag: the recorder is off by default now
+    -h|--help) sed -n '2,21p' "$0"; exit 0 ;;
     *) echo "unknown option: $1" >&2; exit 1 ;;
   esac
 done
 
 [[ $EUID -eq 0 ]] || { echo "run with sudo" >&2; exit 1; }
+if [[ $WITH_SYSMON -eq 0 && -f /etc/systemd/system/aio-sysmon.service && -d "$SRC/aio_sysmon" ]]; then
+  echo "==> the system recorder is already installed: updating it (use deploy/uninstall.sh to remove)"
+  WITH_SYSMON=1
+fi
 id "$RUN_USER" >/dev/null 2>&1 || { echo "user $RUN_USER does not exist" >&2; exit 1; }
 python3 -c 'import sys; assert sys.version_info >= (3, 8)' || { echo "python3 >= 3.8 required" >&2; exit 1; }
 

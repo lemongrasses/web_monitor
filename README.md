@@ -16,7 +16,7 @@ the system. It does not start navigation or sensor processes, so a dashboard cra
 **Manuals:** operation, alignment SOP and UDP output format:
 [English](docs/OPERATION.md) · [繁體中文](docs/OPERATION.zh-TW.md).
 Settings: [English](docs/CONFIG.md) · [繁體中文](docs/CONFIG.zh-TW.md).
-System recorder (a black box for the computer, to trace freezes and power cuts): [English](docs/SYSMON.md) · [繁體中文](docs/SYSMON.zh-TW.md).
+Optional system recorder (a black box for the computer, to trace freezes and power cuts; install with `sudo deploy/install.sh --with-sysmon`): [English](docs/SYSMON.md) · [繁體中文](docs/SYSMON.zh-TW.md).
 
 ## Architecture
 
@@ -175,3 +175,13 @@ Re-run `install.sh` after changing which units are restartable.
 
 AIO NAV stop/restart buttons, editable NAV destination, recording, offline map tiles,
 trend charts, deep IMU/camera/LiDAR diagnostics, and ROS message browsing.
+
+## Optional modules
+
+Features that not every machine needs are separate modules that are **not installed by default**; the dashboard never depends on them. Each one is added with an install flag, can be switched off in its own config, and is left out of the release package unless asked for.
+
+| Module | Install flag | What it is |
+|--------|--------------|------------|
+| System recorder (`aio_sysmon`) | `--with-sysmon` | a power-loss-safe black box, see above |
+
+New optional features follow the same pattern (own folder, own flag, own `enabled` setting) and are developed on a short-lived `feature/<name>` branch that is merged into `main`.

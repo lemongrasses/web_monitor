@@ -137,7 +137,7 @@ aio-sysmon snapshots stall       # 開啟名稱含 "stall" 的最新一份
 
 ## 6. 安裝、權限與移除
 
-`sudo deploy/install.sh` 會連同儀表板一起安裝(加 `--no-sysmon` 可略過)。它也會讓系統 journal 保存在磁碟上(`/etc/systemd/journald.conf.d/aio-persistent.conf`,300 MB),這樣核心自己的日誌在重開機後也還在。
+這是選配功能,**預設不安裝**:執行 `sudo deploy/install.sh --user <使用者> --with-sysmon` 才會安裝(裝過之後,再執行安裝程式會自動更新它)。它也會讓系統 journal 保存在磁碟上(`/etc/systemd/journald.conf.d/aio-persistent.conf`,300 MB),這樣核心自己的日誌在重開機後也還在。
 
 服務以 root 身分執行,是為了讀取核心訊息和卡住工作的堆疊,但有沙箱限制:系統對它是唯讀、看不到家目錄,只有 `/var/log/aio-sysmon` 可以寫入。快照裡有程序的命令列,所以只有 root 與 `adm` 群組可以讀。
 
