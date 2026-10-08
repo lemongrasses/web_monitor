@@ -108,14 +108,14 @@ class Guard:
         if not isinstance(password, str) or not check_password(password, stored):
             with self._lock:
                 self._failures.setdefault(ip, []).append(now)
-            self._event("warning", "Maintenance unlock failed")
+            self._event("warning", "Maintenance sign-in failed")
             return jsonify({"success": False, "summary": "wrong password"}), 403
         token = secrets.token_urlsafe(32)
         with self._lock:
             self._failures.pop(ip, None)
             self._sessions = {t: e for t, e in self._sessions.items() if e[1] > now}   # drop expired
             self._sessions[token] = (ip, now + self.idle_s)
-        self._event("info", "Maintenance tools unlocked")
+        self._event("info", "Maintenance unlocked")
         resp = jsonify({"success": True, "summary": "unlocked", "expires_in_s": self.idle_s})
         resp.set_cookie(COOKIE, token, httponly=True, samesite="Strict", max_age=int(self.idle_s) + 60, path="/")
         return resp

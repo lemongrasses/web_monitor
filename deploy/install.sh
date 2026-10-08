@@ -223,6 +223,6 @@ else
 fi
 "$PREFIX/bin/aio-dashboard" urls
 if [[ ! -s "$PREFIX/config/maint_password" ]]; then
-  echo "Maintenance config editor and terminal stay locked until a password is set:  aio-dashboard password"
+  echo "The maintenance view stays locked until a password is set:  aio-dashboard password"
 fi
 echo "Re-run install.sh after changing restartable units so the sudoers rule is regenerated."

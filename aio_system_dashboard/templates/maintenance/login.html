@@ -1,0 +1,57 @@
+{% from "macros.html" import brand_mark %}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Sign in · AIO Maintenance</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='vendor/bootstrap.min.css') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/dashboard.css') }}">
+</head>
+<body class="login-page">
+  <main class="login-card panel shadow-sm">
+    <div class="login-brand">{{ brand_mark() }}<span>AIO Maintenance</span></div>
+    <form id="login" class="panel-b" novalidate>
+      {% if configured %}
+      <p class="small muted mb-3">The maintenance view can restart services, change AIO NAV's settings and open a
+        terminal on this device. Sign in with the maintenance password. You are signed out after {{ minutes }} minutes
+        without use.</p>
+      <label class="small" for="pw">Password</label>
+      <input id="pw" type="password" class="form-control" autocomplete="current-password" autofocus required>
+      <p id="msg" class="small text-danger mt-2 mb-0" role="alert"></p>
+      <button type="submit" class="btn btn-primary w-100 mt-3" id="go">Sign in</button>
+      {% else %}
+      <p class="mb-2"><strong>No maintenance password is set on this device yet.</strong></p>
+      <p class="small mb-1">Set one on the device (SSH or its own screen):</p>
+      <pre class="login-cmd">aio-dashboard password</pre>
+      <p class="small muted mb-0">Then reload this page. Until then the maintenance view stays locked.</p>
+      {% endif %}
+    </form>
+    <p class="small muted text-center mb-3"><a id="product" href="#">Open the product view</a> (no password needed)</p>
+  </main>
+  <script>
+  (function () {
+    "use strict";
+    const next = {{ next_url|tojson }};
+    document.getElementById("product").href = location.protocol + "//" + location.hostname + ":8080/";
+    const form = document.getElementById("login"), pw = document.getElementById("pw"),
+          msg = document.getElementById("msg"), go = document.getElementById("go");
+    if (!pw) return;
+    form.addEventListener("submit", async (ev) => {
+      ev.preventDefault();
+      if (!pw.value) { msg.textContent = "Enter the password."; return; }
+      go.disabled = true; msg.textContent = "";
+      try {
+        const r = await fetch("/api/maint/auth/unlock", {
+          method: "POST", headers: { "Content-Type": "application/json", "X-Requested-With": "aio-dashboard" },
+          body: JSON.stringify({ password: pw.value }) });
+        const j = await r.json();
+        if (j.success) { location.replace(next); return; }
+        msg.textContent = j.summary || "Sign-in failed.";
+      } catch (e) { msg.textContent = "Cannot reach the device: " + e.message; }
+      pw.value = ""; pw.focus(); go.disabled = false;
+    });
+  })();
+  </script>
+</body>
+</html>

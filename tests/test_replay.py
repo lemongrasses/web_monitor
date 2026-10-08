@@ -269,6 +269,7 @@ class ModulePlumbingTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             data = copy.deepcopy(DEFAULTS)
             data["modules"] = {"replay": {"bag_roots": [tmp]}}
+            data["maintenance"]["lock"] = "tools"          # module plumbing here, not the password
             make_bag(Path(tmp) / "run1")
             cfg = Config(data, None)
             with mock.patch.object(Config, "state_file", lambda _s, n: Path(tmp) / "state" / n):

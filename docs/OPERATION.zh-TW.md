@@ -368,10 +368,10 @@ ROS domain 與網路設定必須和 AIO NAV 相同：**Live** 使用 domain 10�
 | **Camera / LiDAR**（有安裝時） | 連線狀態、驅動程式狀態、topic 狀態、**Live view**（相機影像；光達點雲，可切換俯視／3D）、**Run diagnostic**、**Restart driver**（會先確認）。 |
 | **Network** | 網路介面與位址、感測器連線狀態、導航輸出目的地與其路由。 |
 | **Diagnostics** | 目前的故障與警告、診斷與重新啟動的結果，以及事件紀錄。 |
-| **AIO NAV config** | 編輯 AIO NAV 的設定檔（Live 用 `aio_nav.yaml`，Bag replay 用 `aio_nav_bag.yaml`）。**Settings** 是常用設定的表單（輸出、ROS、紀錄、對準、輔助、桿臂）；**Edit file** 是整份檔案。檔案中的註解會保留。**Review changes** 會檢查檔案並列出確切的變更；接著按 **Save**，或 **Save and restart AIO NAV** 讓設定立即生效。每次儲存都會保留前一版（**Earlier versions**，可還原）。需要維護密碼。 |
-| **Terminal** | 在瀏覽器中開啟裝置上的 shell，方便快速檢查（`ros2 topic hz …`、`journalctl …`、`top`）。以儀表板的使用者身分執行，並載入您平常的設定檔；**Use active ROS domain** 會輸入目前模式的 export 指令。最多同時 3 個；30 分鐘沒有輸入會自動關閉。需要維護密碼。 |
+| **AIO NAV config** | 編輯 AIO NAV 的設定檔（Live 用 `aio_nav.yaml`，Bag replay 用 `aio_nav_bag.yaml`）。**Settings** 是常用設定的表單（輸出、ROS、紀錄、對準、輔助、桿臂）；**Edit file** 是整份檔案。檔案中的註解會保留。**Review changes** 會檢查檔案並列出確切的變更；接著按 **Save**，或 **Save and restart AIO NAV** 讓設定立即生效。每次儲存都會保留前一版（**Earlier versions**，可還原）。 |
+| **Terminal** | 在瀏覽器中開啟裝置上的 shell，方便快速檢查（`ros2 topic hz …`、`journalctl …`、`top`）。以儀表板的使用者身分執行，並載入您平常的設定檔；**Use active ROS domain** 會輸入目前模式的 export 指令。最多同時 3 個；30 分鐘沒有輸入會自動關閉。 |
 
-**AIO NAV config** 與 **Terminal** 會更動裝置，所以另外用密碼鎖住。密碼在裝置上以 `aio-dashboard password` 設定（沒有預設密碼，設定之前會一直鎖住）。側邊欄最下方的 **Unlock** 會詢問密碼；解鎖後 15 分鐘沒有使用、或按 **Lock** 就會重新鎖上。解鎖、密碼錯誤、儲存設定與開啟終端機都會記錄在事件紀錄（Diagnostics）中。
+維護頁面可以更動裝置，所以需要密碼；產品頁面不需要。密碼在裝置上以 `aio-dashboard password` 設定（沒有預設密碼：設定之前維護頁面會一直鎖住，登入頁會說明如何設定）。開啟任何維護頁面都會先顯示登入頁，登入後再回到您要開的頁面。15 分鐘沒有使用會自動登出（開啟頁面與執行操作算使用，頁面自己的定時更新不算），也可以按側邊欄最下方的 **Sign out**。登入、密碼錯誤、儲存設定與開啟終端機都會記錄在事件紀錄（Diagnostics）中。
 
 Live view 只在該頁面開啟時才讀取感測器的 ROS topic。刻意停止的驅動不會被當成問題。
 裝置上的指令：

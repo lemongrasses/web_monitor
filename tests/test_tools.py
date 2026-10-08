@@ -113,6 +113,8 @@ class ConfigFilesTest(unittest.TestCase):
 class GuardWebTest(unittest.TestCase):
     """Password lock and the protected routes, through the Maintenance app."""
 
+    LOCK = "tools"                      # these tests: only the config editor and terminal are locked
+
     def setUp(self):
         try:
             from aio_system_dashboard.web.maintenance import create_maintenance_app
@@ -131,6 +133,7 @@ class GuardWebTest(unittest.TestCase):
         data["nav"]["aio_nav_config"] = str(d / "aio_nav.yaml")
         data["ros"]["mode"] = "live"
         data["maintenance"]["password_file"] = str(base / "pw")
+        data["maintenance"]["lock"] = self.LOCK
         for p in (mock.patch.object(Config, "state_file", lambda _s, n: base / "state" / n),
                   mock.patch.object(Config, "ros_mode_file", lambda _s: base / "state" / "ros_mode.json")):
             p.start()
@@ -138,7 +141,8 @@ class GuardWebTest(unittest.TestCase):
         self.events = []
         ctx = SimpleNamespace(cfg=Config(data, None), modules=[], store=SimpleNamespace(get=lambda k, d=None: d),
                               actions=SimpleNamespace(describe=lambda: []), preview=SimpleNamespace(describe=lambda: {}),
-                              events=SimpleNamespace(add=lambda *a, **k: self.events.append(a[2])))
+                              events=SimpleNamespace(add=lambda *a, **k: self.events.append(a[2]),
+                                                     recent=lambda n: []))
         self.ctx = ctx
         self.app = create_maintenance_app(ctx)
         self.addCleanup(lambda: ctx.terminals.shutdown())
@@ -159,7 +163,7 @@ class GuardWebTest(unittest.TestCase):
         self.assertIn("SameSite=Strict", r.headers["Set-Cookie"])
         r = self.post("/api/maint/aionav/live/save", save)
         self.assertTrue(r.get_json()["success"], r.get_json())
-        self.assertIn("Maintenance unlock failed", self.events)
+        self.assertIn("Maintenance sign-in failed", self.events)
         self.assertIn("AIO NAV config aio_nav.yaml saved", self.events)
         self.post("/api/maint/auth/lock", {})
         self.assertEqual(self.post("/api/maint/aionav/live/save", save).status_code, 401)
@@ -189,6 +193,50 @@ class GuardWebTest(unittest.TestCase):
                        environ_base={"REMOTE_ADDR": "10.0.0.9"})
         self.assertEqual(r.status_code, 401)                 # no session there at all
         self.assertTrue(self.post(f"/api/maint/term/{sid}/input", {"data": "exit\r"}).get_json()["success"])
+
+
+class WholeSiteLockTest(GuardWebTest):
+    """maintenance.lock: all (the default): every maintenance page and API needs the password."""
+    LOCK = "all"
+
+    # the tools-only tests do not apply here
+    test_locked_until_the_right_password = test_preview_needs_no_password_and_writes_nothing = None
+    test_terminal_belongs_to_the_browser_that_opened_it = None
+
+    def test_pages_go_to_sign_in_and_apis_say_locked(self):
+        r = self.c.get("/system")
+        self.assertEqual(r.status_code, 302)
+        self.assertTrue(r.headers["Location"].endswith("/login?next=/system"))
+        self.assertEqual(self.c.get("/api/maint/snapshot").status_code, 401)
+        self.assertEqual(self.c.get("/api/maint/events").status_code, 401)
+        self.assertEqual(self.post("/api/maint/actions/restart_service", {"target": "x"}).status_code, 401)
+        self.assertEqual(self.c.get("/login").status_code, 200)
+        self.assertEqual(self.c.get("/static/css/dashboard.css").status_code, 200)
+        self.assertEqual(self.c.get("/api/maint/auth").get_json()["scope"], "all")
+
+    def test_signed_in_everything_opens(self):
+        self.assertEqual(self.post("/api/maint/auth/unlock", {"password": "right-password"}).status_code, 200)
+        self.assertEqual(self.c.get("/system").status_code, 200)
+        self.assertEqual(self.c.get("/api/maint/events").status_code, 200)
+        self.assertEqual(self.c.get("/login?next=/ros").headers["Location"], "/ros")   # already signed in
+        self.post("/api/maint/auth/lock", {})
+        self.assertEqual(self.c.get("/system").status_code, 302)
+
+    def test_sign_in_only_returns_to_this_site(self):
+        self.post("/api/maint/auth/unlock", {"password": "right-password"})
+        for bad in ("//evil.example/x", "https://evil.example/", "javascript:alert(1)"):
+            self.assertEqual(self.c.get("/login", query_string={"next": bad}).headers["Location"], "/", bad)
+
+    def test_background_refresh_does_not_keep_it_open(self):
+        self.post("/api/maint/auth/unlock", {"password": "right-password"})
+        guard = self.ctx.guard
+        token = next(iter(guard._sessions))
+        ip, expires = guard._sessions[token]
+        guard._sessions[token] = (ip, expires - 100)
+        self.c.get("/api/maint/events")                  # a poll: does not extend
+        self.assertAlmostEqual(guard._sessions[token][1], expires - 100, delta=1)
+        self.c.get("/system")                            # opening a page: extends
+        self.assertGreater(guard._sessions[token][1], expires - 50)
 
 
 class TerminalManagerTest(unittest.TestCase):

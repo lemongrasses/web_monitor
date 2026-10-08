@@ -24,8 +24,8 @@
       </nav>
       <div class="side-lock" :class="auth.unlocked ? 'open' : ''">
         <span class="side-lock-ico" aria-hidden="true" x-text="auth.unlocked ? '🔓' : '🔒'"></span>
-        <span class="lbl" x-text="auth.unlocked ? 'Tools unlocked' : 'Tools locked'"></span>
-        <button type="button" class="btn btn-sm side-lock-btn" x-show="auth.unlocked" @click="lockTools()">Lock</button>
+        <span class="lbl" x-text="auth.scope === 'all' ? 'Signed in' : (auth.unlocked ? 'Tools unlocked' : 'Tools locked')"></span>
+        <button type="button" class="btn btn-sm side-lock-btn" x-show="auth.unlocked" @click="lockTools()" x-text="auth.scope === 'all' ? 'Sign out' : 'Lock'">Lock</button>
         <button type="button" class="btn btn-sm side-lock-btn" x-show="!auth.unlocked" @click="needUnlock()">Unlock</button>
       </div>
     </aside>

@@ -22,17 +22,19 @@
       results: {},          // "action:target" -> result
       eventFilter: "",
       // password lock of the config editor and the terminal
-      auth: { configured: true, unlocked: false, expires_in_s: null, idle_s: 900 },
+      auth: { configured: true, unlocked: false, expires_in_s: null, idle_s: 900, scope: "all" },
       unlockOpen: false, unlockPw: "", unlockMsg: "", unlockBusy: false, _afterUnlock: null, _onCancel: null,
 
       init() {
         AIO.poll("/api/maint/snapshot", 1000, (d) => { this.d = d; this.connected = true; lastOk = Date.now(); },
                  () => { if (Date.now() - lastOk > 4000) this.connected = false; });
         AIO.poll("/api/maint/events?limit=200", 3000, (e) => { this.events = e; });
-        AIO.poll("/api/maint/auth", 15000, (a) => { this.auth = a; });
+        AIO.poll("/api/maint/auth", 15000, (a) => { this.auth = a; if (a.scope === "all" && !a.unlocked) this.toLogin(); });
       },
 
       // ---------- password lock
+      /* The whole maintenance view is locked (maintenance.lock: all): back to the sign-in page. */
+      toLogin() { location.href = "/login?next=" + encodeURIComponent(location.pathname + location.search); },
       async loadAuth() {
         try { this.auth = await (await fetch("/api/maint/auth", { cache: "no-store" })).json(); } catch (e) { /* keep */ }
         return this.auth;
@@ -40,6 +42,7 @@
       /* Run cb now if the tools are unlocked, else ask for the password first. */
       needUnlock(cb, onCancel) {
         if (this.auth.unlocked) { if (cb) cb(); return; }
+        if (this.auth.scope === "all") { this.toLogin(); return; }
         this._afterUnlock = cb || null; this._onCancel = onCancel || null;
         this.unlockPw = ""; this.unlockMsg = this.auth.configured ? "" :
           "No password is set on this device yet. Run 'aio-dashboard password' on it first.";
@@ -71,6 +74,7 @@
         await fetch("/api/maint/auth/lock", { method: "POST",
           headers: { "Content-Type": "application/json", "X-Requested-With": "aio-dashboard" }, body: "{}" });
         await this.loadAuth();
+        if (this.auth.scope === "all") { this.toLogin(); return; }
         window.dispatchEvent(new CustomEvent("tools-locked"));
       },
       /* fetch + JSON for the protected tools: a 401 opens the password dialog and retries after it. */

@@ -19,7 +19,7 @@ Usage: aio-dashboard <command>
   check                    check the settings file for mistakes
   urls                     print the web addresses
   version                  print the installed version
-  password                 set the password that unlocks the Maintenance config editor and terminal
+  password                 set the password of the maintenance view (sign-in)
   run [args]               run in the foreground (used by systemd; also for debugging)
 
 Settings: $CONFIG
@@ -109,7 +109,7 @@ case "${1:-}" in
       "$APP_DIR/config/maint_password"
     sudo chown "root:$owner" "$APP_DIR/config/maint_password"
     sudo chmod 0640 "$APP_DIR/config/maint_password"
-    echo "Password set. Open Maintenance > Config or Terminal and unlock with it."
+    echo "Password set. Sign in to the maintenance view with it."
     ;;
   -h|--help|help|"")
     usage

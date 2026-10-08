@@ -35,7 +35,8 @@ def register_tools(ctx, app, page_context) -> None:
     # ------------------------------------------------------------------ password lock
     @app.route("/api/maint/auth")
     def api_auth():
-        return jsonify(guard.status())
+        scope = "tools" if str(mcfg.get("lock", "all")) == "tools" else "all"
+        return jsonify(dict(guard.status(), scope=scope))
 
     @app.route("/api/maint/auth/unlock", methods=["POST"])
     def api_unlock():

@@ -2,7 +2,9 @@
 
 import logging
 
-from flask import Response, abort, jsonify, render_template, request
+from urllib.parse import quote
+
+from flask import Response, abort, jsonify, redirect, render_template, request
 
 from ..actions import process_control
 from ..actions.registry import ActionError
@@ -117,6 +119,39 @@ def create_maintenance_app(ctx):
             return jsonify({"success": False, "summary": str(e)}), e.status
 
     register_tools(ctx, app, page_context)        # config editor + terminal (password protected)
+    guard = ctx.guard
+
+    # maintenance.lock: "all" (default) = the whole Maintenance site needs the password;
+    # "tools" = only the config editor and the terminal do.
+    lock_all = str(ctx.cfg["maintenance"].get("lock", "all")) != "tools"
+
+    @app.before_request
+    def _require_unlock():
+        if not lock_all:
+            return None
+        path = request.path
+        if path == "/login" or path.startswith(("/api/maint/auth", "/static/")):
+            return None
+        if guard.unlocked():
+            # Opening pages and acting counts as use; the pages' own background refresh does not,
+            # so a page left open still locks after maintenance.unlock_minutes.
+            if request.method != "GET" or not path.startswith("/api/"):
+                guard.touch()
+            return None
+        if path.startswith("/api/"):
+            return jsonify({"success": False, "locked": True,
+                            "summary": "locked: sign in to the maintenance view"}), 401
+        return redirect("/login?next=" + quote(request.full_path.rstrip("?"), safe="/?=&"))
+
+    @app.route("/login")
+    def login():
+        nxt = request.args.get("next") or "/"
+        if not nxt.startswith("/") or nxt.startswith("//"):
+            nxt = "/"                                 # only back to a page of this site
+        if guard.unlocked() or not lock_all:
+            return redirect(nxt)
+        return render_template("maintenance/login.html", next_url=nxt, configured=guard.configured(),
+                               minutes=round(guard.idle_s / 60))
 
     for m in ctx.modules:
         try:

@@ -106,8 +106,9 @@ maintenance:  { host: 0.0.0.0, port: 8081 }
 |-----|---------|---------|
 | `host` | `0.0.0.0` | Network address to listen on. `0.0.0.0` = all interfaces, so other computers can open the page. `127.0.0.1` = only this Jetson. |
 | `port` | `8080` / `8081` | Port of the product view / maintenance view. |
-| `maintenance.password_file` | `config/maint_password` | Where the hash of the maintenance password is kept (set it with `aio-dashboard password`). It unlocks the AIO NAV config editor and the terminal. No file: they stay locked. |
-| `maintenance.unlock_minutes` | `15` | An unlocked browser locks again after this many minutes without use. |
+| `maintenance.password_file` | `config/maint_password` | Where the hash of the maintenance password is kept (set it with `aio-dashboard password`). No file: what it protects stays locked. |
+| `maintenance.lock` | `all` | `all`: the whole maintenance view needs the password. `tools`: only the AIO NAV config editor and the terminal do (the other maintenance pages are open, e.g. on a development machine). |
+| `maintenance.unlock_minutes` | `15` | A signed-in browser is signed out after this many minutes without use (the pages' own refresh does not count). |
 
 The product view is for operators. The maintenance view is for engineers and can
 restart drivers. To keep the maintenance view reachable only from the Jetson itself,
