@@ -5,6 +5,7 @@ import json
 import glob
 import logging
 import os
+import time
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
@@ -212,16 +213,40 @@ def _read_aio_nav_params(path: str) -> Dict[str, Any]:
 
 
 class Config:
+    AIO_NAV_MAX_AGE_S = 2.0      # how long a read of aio_nav.yaml is reused (Start / Restart always re-read)
+
     def __init__(self, data: Dict[str, Any], source: Optional[Path] = None):
         self.data = data
         self.source = source
-        self.aio_nav = read_aio_nav_params(self._aio_nav_path())
-        if data["nav"].get("aio_nav_config", "auto") in ("", "auto", None):
-            self.aio_nav["auto"] = True  # found in the install folder, not named in the config
-        if data["data"].get("roots") in ("auto", None):
-            out = aio_nav_output_dir(self.aio_nav.get("path", ""), self.aio_nav.get("fusion_txt_path", ""))
-            data["data"]["roots"] = ([{"id": "aio-nav-logs", "name": "AIO NAV logs", "path": out}]
-                                     if out else [])
+        self._aio_nav: Optional[Dict[str, Any]] = None
+        self._aio_nav_at = 0.0
+        self._roots_auto = data["data"].get("roots") in ("auto", None)
+        if self._roots_auto:
+            data["data"]["roots"] = self.auto_data_roots()
+
+    @property
+    def aio_nav(self) -> Dict[str, Any]:
+        """Parameters of the active aio-nav-ros config file. Re-read when it is older than
+        AIO_NAV_MAX_AGE_S, and the file is only parsed again when it changed on disk, so editing
+        aio_nav.yaml takes effect without restarting the dashboard."""
+        now = time.monotonic()
+        if self._aio_nav is None or now - self._aio_nav_at > self.AIO_NAV_MAX_AGE_S:
+            params = read_aio_nav_params(self._aio_nav_path())
+            if self.data["nav"].get("aio_nav_config", "auto") in ("", "auto", None):
+                params["auto"] = True  # found in the install folder, not named in the config
+            self._aio_nav, self._aio_nav_at = params, now
+        return self._aio_nav
+
+    def refresh_aio_nav(self) -> Dict[str, Any]:
+        """Read aio_nav.yaml now (before starting AIO NAV, so it starts with what is on disk)."""
+        self._aio_nav = None
+        if self._roots_auto:
+            self.data["data"]["roots"] = self.auto_data_roots()
+        return self.aio_nav
+
+    def auto_data_roots(self) -> List[Dict[str, Any]]:
+        out = aio_nav_output_dir(self.aio_nav.get("path", ""), self.aio_nav.get("fusion_txt_path", ""))
+        return [{"id": "aio-nav-logs", "name": "AIO NAV logs", "path": out}] if out else []
 
     def __getitem__(self, key: str) -> Any:
         return self.data[key]
@@ -288,6 +313,7 @@ class Config:
         f = self.ros_mode_file()
         f.parent.mkdir(parents=True, exist_ok=True)
         f.write_text(json.dumps({"mode": mode}) + "\n", encoding="utf-8")
+        self._aio_nav = None                     # the mode decides which config file is read
 
     def _mode_ros(self, mode: str, params: Dict[str, Any]) -> Dict[str, Any]:
         """Domain / localhost-only of a mode: its own override, else the values in its config file."""

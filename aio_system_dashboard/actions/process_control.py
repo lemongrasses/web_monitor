@@ -236,6 +236,8 @@ def _alive(pid: int) -> bool:
 
 def control(cfg, target: str, verb: str, grace_s: float, fake=None) -> Dict:
     keys = _keys(cfg, target)
+    if verb in ("start", "restart"):
+        cfg.refresh_aio_nav()            # start with the aio-nav-ros config file as it is on disk now
     if cfg.fake:
         time.sleep(1.5)
         for k in keys:

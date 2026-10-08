@@ -75,9 +75,27 @@ class DashboardContext:
         self.actions = ActionRegistry(cfg, self.store, self.events, self.network.check_device,
                                       self.fake)
         self.data = DataRoots(cfg["data"]["roots"])
+        self.ros_env_at_start = dict(cfg.ros_env())   # this process's own ROS connection uses these
+        self.actions.after_run = self._after_action
         self.modules = modules.load(cfg)      # optional modules (installed with --with-<name>)
         self.maint_pages = []                 # sidebar of the Maintenance app, filled when it is built
         self._workers = [self.nav, self.system, self.services, self.network, self.ros, self.health]
+
+    def _after_action(self, action_id: str, target: str, result: dict) -> None:
+        """After AIO NAV was started with a freshly read config file: follow what changed in it."""
+        if action_id not in ("start_process", "restart_process") or \
+                target not in (process_control.GROUP, self.cfg["nav"]["service"]):
+            return
+        self.data = DataRoots(self.cfg["data"]["roots"])          # its log folder may have moved
+        now = dict(self.cfg.ros_env())
+        if now != self.ros_env_at_start:
+            # The dashboard's own ROS connection cannot change domain while it runs: restart it
+            # (AIO NAV and DSO keep running) so it sees the same domain as AIO NAV again.
+            old = ", ".join(f"{k}={v}" for k, v in sorted(self.ros_env_at_start.items())) or "unset"
+            new = ", ".join(f"{k}={v}" for k, v in sorted(now.items())) or "unset"
+            self.events.add("warning", "system", "ROS settings in the AIO NAV config changed",
+                            f"{old} -> {new}; dashboard restarting to follow")
+            self.request_restart()
 
     def request_restart(self):
         """Stop this process shortly (systemd Restart=always brings it back with the new settings)."""

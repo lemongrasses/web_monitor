@@ -78,6 +78,33 @@ class RosModeTest(unittest.TestCase):
         self.assertEqual(cfg.ros_env(), {})
         self.assertEqual(cfg.ros_mode_info()["label"], "Environment")
 
+    def edit_live(self, **changes):
+        text = LIVE
+        for k, v in changes.items():
+            text = text.replace(f"{k}: ", f"{k}: {v} #", 1)
+        f = self.cfgdir / "aio_nav.yaml"
+        f.write_text(text)
+        st = f.stat()
+        os.utime(f, ns=(st.st_atime_ns, st.st_mtime_ns + 1_000_000_000))   # a later edit
+
+    def test_edits_to_aio_nav_yaml_are_seen_without_a_restart(self):
+        cfg = self.make()
+        self.assertEqual(cfg.expected_nav_rate, 100.0)
+        self.edit_live(output_rate=50.0)
+        self.assertEqual(cfg.expected_nav_rate, 100.0)           # reused for a moment ...
+        cfg._aio_nav_at -= cfg.AIO_NAV_MAX_AGE_S + 1
+        self.assertEqual(cfg.expected_nav_rate, 50.0)            # ... then read again
+
+    def test_start_reads_the_file_at_once(self):
+        from aio_system_dashboard.actions import process_control
+        cfg = self.make()
+        self.assertEqual(cfg.ros_env()["ROS_DOMAIN_ID"], "10")
+        self.edit_live(ros_domain_id=12)
+        cfg.data["fake"]["enabled"] = True                       # no real process in a test
+        with mock.patch.object(process_control.time, "sleep", lambda s: None):
+            process_control.control(cfg, "aio_nav", "start", 0.1)
+        self.assertEqual(cfg.ros_env()["ROS_DOMAIN_ID"], "12")   # AIO NAV starts with the new domain
+
     def test_garbage_state_file_falls_back_to_config(self):
         self.state.parent.mkdir(parents=True)
         self.state.write_text("{not json")
@@ -125,3 +152,35 @@ class RosModeTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class FollowConfigAfterStartTest(unittest.TestCase):
+    def hook(self, env_at_start, env_now, action="start_process", target="nav_core"):
+        from types import SimpleNamespace
+        try:
+            from aio_system_dashboard.__main__ import DashboardContext
+        except ImportError as e:                       # Flask not importable here
+            self.skipTest(str(e))
+        calls = []
+        cfg = type("C", (), {"ros_env": lambda s: env_now,
+                             "__getitem__": lambda s, k: {"nav": {"service": "aio_nav"}, "data": {"roots": []}}[k]})()
+        ctx = SimpleNamespace(cfg=cfg, ros_env_at_start=env_at_start, data=None,
+                              events=SimpleNamespace(add=lambda *a, **k: calls.append(("event", a[2]))),
+                              request_restart=lambda: calls.append(("restart",)))
+        DashboardContext._after_action(ctx, action, target, {"success": True})
+        return calls, ctx
+
+    def test_domain_change_restarts_the_dashboard(self):
+        calls, _ = self.hook({"ROS_DOMAIN_ID": "10"}, {"ROS_DOMAIN_ID": "12"})
+        self.assertIn(("restart",), calls)
+
+    def test_same_domain_no_restart_but_data_roots_refreshed(self):
+        calls, ctx = self.hook({"ROS_DOMAIN_ID": "10"}, {"ROS_DOMAIN_ID": "10"})
+        self.assertEqual(calls, [])
+        self.assertIsNotNone(ctx.data)
+
+    def test_other_actions_are_ignored(self):
+        calls, _ = self.hook({"ROS_DOMAIN_ID": "10"}, {"ROS_DOMAIN_ID": "12"}, action="stop_process")
+        self.assertEqual(calls, [])
+        calls, _ = self.hook({"ROS_DOMAIN_ID": "10"}, {"ROS_DOMAIN_ID": "12"}, target="dso")
+        self.assertEqual(calls, [])

@@ -106,7 +106,7 @@ access:
 | 項目 | 預設值 | 說明 |
 |------|--------|------|
 | `udp_bind` | `127.0.0.1:9000` | 儀表板接收 AIO NAV 封包的位址。`aio_nav_node` 一律送往 `127.0.0.1:9000`，請勿修改。只有儀表板在監聽:AIO Nav 桌面程式(`aio-nav-ui`)綁定同一個埠,所以不要與儀表板同時使用。 |
-| `aio_nav_config` | `auto` | AIO NAV 的 `aio_nav.yaml` 路徑。儀表板從中讀取 UDP 目的地（`output_udp`）與輸出頻率（`output_rate`）來顯示。`auto` 會搜尋 `/home/*/aio-nav-ros/install/...` 與 `~/.local/opt/aio-nav-ros/...`，並使用最新的檔案；也可以用環境變數 `AIO_NAV_CONFIG` 指定。 |
+| `aio_nav_config` | `auto` | AIO NAV 的 `aio_nav.yaml` 路徑。儀表板從中讀取 UDP 目的地（`output_udp`）與輸出頻率（`output_rate`）來顯示。`auto` 會搜尋 `/home/*/aio-nav-ros/install/...` 與 `~/.local/opt/aio-nav-ros/...`，並使用最新的檔案；也可以用環境變數 `AIO_NAV_CONFIG` 指定。修改檔案後約 2 秒內就會生效，而且 **Start**／**Restart** 一定會先重新讀取，讓 AIO NAV 以磁碟上最新的設定啟動。如果修改了目前模式的 ROS domain 或 localhost 設定，儀表板會在啟動後自己重新啟動（幾秒鐘；AIO NAV 不受影響），讓它自己的 ROS 連線跟上。 |
 | `expected_rate_hz` | `null` | 預期的封包頻率。`null` = 使用 `aio_nav.yaml` 中的 `output_rate`。 |
 | `service` | `aio_nav` | `services` 中哪一個項目代表 AIO NAV。 |
 | `allow_control` | `false`(預設設定檔:`true`) | `true` 時,首頁會顯示 AIO NAV 的 **Start / Restart / Stop**。**Start** 會先啟動濾波器再啟動 DSO,**Stop** 兩者一起停止,做法與 AIO Nav 桌面程式相同(程序已在執行就不會重複啟動,所以不會跟桌面程式啟動的那份重複)。啟動的是 aio-nav-ros `install/` 資料夾內的 `aio-nav` 與 `aio-nav-dso`,不需要原始碼。Stop 與 Restart 需要再按一次確認。只有 `access.allowed_clients` 內的電腦連得到頁面。 |

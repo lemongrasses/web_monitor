@@ -37,6 +37,7 @@ class ActionError(Exception):
 
 class ActionRegistry:
     def __init__(self, cfg, store, events, network_probe, fake=None):
+        self.after_run = None    # optional hook(action_id, target, result), set by the app
         self.cfg = cfg
         self.events = events
         self._busy: set = set()
@@ -127,4 +128,9 @@ class ActionRegistry:
                         f"{title} {outcome}", result.get("summary", ""),
                         action=action_id, target=target)
         result["outcome"] = outcome
+        if self.after_run is not None:
+            try:
+                self.after_run(action_id, target, result)
+            except Exception:
+                logger.exception("after-action hook failed")
         return result
