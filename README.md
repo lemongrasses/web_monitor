@@ -17,6 +17,7 @@ the system. It does not start navigation or sensor processes, so a dashboard cra
 [English](docs/OPERATION.md) · [繁體中文](docs/OPERATION.zh-TW.md).
 Settings: [English](docs/CONFIG.md) · [繁體中文](docs/CONFIG.zh-TW.md).
 Optional system recorder (a black box for the computer, to trace freezes and power cuts; install with `sudo deploy/install.sh --with-sysmon`): [English](docs/SYSMON.md) · [繁體中文](docs/SYSMON.zh-TW.md).
+Ideas discussed and kept for later (in Traditional Chinese): [docs/IDEAS.md](docs/IDEAS.md).
 
 ## Architecture
 
