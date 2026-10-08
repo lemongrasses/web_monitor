@@ -286,3 +286,23 @@ class TerminalManagerTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class StaticVersionTest(unittest.TestCase):
+    """After an update the browser must not mix new pages with cached old CSS / JS."""
+
+    def test_static_links_carry_the_file_time(self):
+        try:
+            from flask import url_for
+            from aio_system_dashboard.web.common import create_base_app
+        except ImportError as e:
+            self.skipTest(str(e))
+        data = copy.deepcopy(DEFAULTS)
+        data["nav"]["aio_nav_config"] = ""
+        app = create_base_app("t", SimpleNamespace(cfg=Config(data, None)))
+        with app.test_request_context():
+            a = url_for("static", filename="css/dashboard.css")
+            self.assertRegex(a, r"^/static/css/dashboard\.css\?v=[0-9a-f]+$")
+            self.assertNotIn("v=", url_for("static", filename="no/such/file.js"))
+        r = app.test_client().get(a)
+        self.assertEqual(r.status_code, 200)                 # the query does not change what is served

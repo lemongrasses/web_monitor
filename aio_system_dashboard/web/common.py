@@ -3,6 +3,7 @@
 import ipaddress
 import logging
 import math
+import os
 from pathlib import Path
 
 from flask import Flask, abort, request
@@ -38,6 +39,35 @@ def create_base_app(name: str, ctx) -> Flask:
     app.json = SafeJSONProvider(app)
     app.config["SEND_FILE_MAX_AGE_DEFAULT"] = 3600
     app.extensions["dashboard"] = ctx
+
+    # Static files may be cached for an hour, so every link carries the file's modification time
+    # (?v=...): after an update the browser fetches the new CSS / JS at once instead of mixing
+    # new pages with old code.
+    stamps = {}
+
+    @app.url_defaults
+    def _static_version(endpoint, values):
+        if endpoint != "static" and not endpoint.endswith(".static"):
+            return
+        filename = values.get("filename")
+        if not filename or "v" in values:
+            return
+        if endpoint == "static":
+            folder = app.static_folder
+        else:
+            bp = app.blueprints.get(endpoint.rsplit(".", 1)[0])
+            folder = bp.static_folder if bp is not None else None
+        if not folder:
+            return
+        path = os.path.join(folder, filename)
+        try:
+            mtime = os.stat(path).st_mtime_ns
+        except OSError:
+            return
+        key = (path, mtime)
+        if key not in stamps:
+            stamps[key] = format(mtime // 1_000_000, "x")
+        values["v"] = stamps[key]
 
     allowed = ctx.cfg["access"]["allowed_clients"]
     nets = parse_allowed_clients(allowed)
