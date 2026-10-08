@@ -86,6 +86,10 @@ def create_maintenance_app(ctx):
         target = body.get("target")
         if not isinstance(target, str):
             return jsonify({"success": False, "summary": "target required"}), 400
+        nav_svc = (ctx.store.get("services", {}) or {}).get(ctx.cfg["nav"]["service"]) or {}
+        if target in (process_control.GROUP, ctx.cfg["nav"]["service"]) and (
+                action_id == "restart_process" or (action_id == "start_process" and not nav_svc.get("pids"))):
+            ctx.nav.clear("AIO NAV start requested")     # a new run starts from the default state
         try:
             return jsonify(ctx.actions.run(action_id, target))
         except ActionError as e:

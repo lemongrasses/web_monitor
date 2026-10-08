@@ -153,6 +153,10 @@ class NavUdpCollector:
         if self._on_session_reset:
             self._on_session_reset(session, reason)
 
+    def is_clear(self) -> bool:
+        with self._lock:
+            return self._latest is None and self._session_started is None and not self._flag_last_seen
+
     # ------------------------------------------------------------------ status
     def status(self, now: Optional[float] = None) -> Dict:
         now = time.monotonic() if now is None else now

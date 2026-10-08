@@ -2,6 +2,7 @@ import os
 import struct
 import tempfile
 import unittest
+from unittest import mock
 
 from aio_system_dashboard.data_access.files import DataAccessError, DataRoots
 from aio_system_dashboard.nav.decoder import (
@@ -223,13 +224,64 @@ class NavStopClearsStateTest(unittest.TestCase):
         from types import SimpleNamespace
         from aio_system_dashboard.state.health import HealthEngine
         calls = []
-        nav = SimpleNamespace(clear=lambda r: calls.append(("clear", r)),
-                              new_session=lambda r: calls.append(("new", r)))
-        h = SimpleNamespace(cfg={"nav": {"service": "aio_nav"}}, nav=nav, _last_nav_pids=None)
+        st = {"clear": True, "age": None}
+        def clear(r):
+            calls.append(("clear", r)); st["clear"] = True
+        nav = SimpleNamespace(clear=clear, new_session=lambda r: calls.append(("new", r)),
+                              is_clear=lambda: st["clear"], status=lambda: {"age_s": st["age"]})
+        h = SimpleNamespace(cfg={"nav": {"service": "aio_nav", "stale_fault_s": 2.0}}, nav=nav, _last_nav_pids=None)
         step = lambda pids: HealthEngine._check_nav_restart(h, {"aio_nav": {"pids": pids}})
-        step([]); self.assertEqual(calls, [])                 # never ran: nothing to clear
-        step([11]); step([11]); self.assertEqual(calls, [])  # running
+        step([]); self.assertEqual(calls, [])                 # never ran, already default: nothing to do
+        step([11]); st.update(clear=False, age=0.1); step([11]); self.assertEqual(calls, [])  # running
         step([]);  self.assertEqual(calls, [("clear", "AIO NAV stopped")])
         step([]);  self.assertEqual(len(calls), 1)            # cleared once, not every tick
         step([12]); step([13])
         self.assertEqual(calls[-1], ("new", "aio_nav_node restarted"))
+
+    def test_not_running_returns_to_default(self):
+        from types import SimpleNamespace
+        from aio_system_dashboard.state.health import HealthEngine
+        calls, st = [], {"clear": False, "age": 0.1}
+        nav = SimpleNamespace(clear=lambda r: calls.append(r), new_session=lambda r: None,
+                              is_clear=lambda: st["clear"], status=lambda: {"age_s": st["age"]})
+        h = SimpleNamespace(cfg={"nav": {"service": "aio_nav", "stale_fault_s": 2.0}}, nav=nav, _last_nav_pids=None)
+        step = lambda: HealthEngine._check_nav_restart(h, {"aio_nav": {"pids": []}})
+        step(); self.assertEqual(calls, [])       # packets still live: AIO NAV runs undetected, keep them
+        st["age"] = 5.0; step()
+        self.assertEqual(calls, ["AIO NAV not running"])    # old data without a running AIO NAV: reset
+
+
+class StartResetsOverviewTest(unittest.TestCase):
+    """Pressing Start resets the Overview, unless AIO NAV is already running (live data stays)."""
+
+    def run_control(self, verb, pids):
+        from types import SimpleNamespace
+        try:
+            from aio_system_dashboard.web.product import create_product_app
+        except ImportError as e:                      # Flask not importable in this environment
+            self.skipTest(str(e))
+        cleared, ran = [], []
+        store = SimpleNamespace(get=lambda k, d=None: {"aio_nav": {"pids": pids}} if k == "services" else d)
+        ctx = SimpleNamespace(
+            cfg={"nav": {"allow_control": True, "service": "aio_nav"}, "services": {},
+                 "access": {"allowed_clients": []}},
+            store=store, nav=SimpleNamespace(clear=cleared.append),
+            actions=SimpleNamespace(run=lambda a, t: ran.append(a) or {"success": True, "summary": "ok"}))
+        app = create_product_app(ctx)
+        with mock.patch("aio_system_dashboard.web.product.process_control.user_result", lambda c, v, r: r):
+            r = app.test_client().post("/api/nav/control", json={"action": verb},
+                                       headers={"X-Requested-With": "aio-dashboard"})
+        self.assertEqual(r.status_code, 200)
+        return cleared, ran
+
+    def test_start_when_stopped_clears(self):
+        cleared, ran = self.run_control("start", [])
+        self.assertEqual(cleared, ["AIO NAV start requested"]); self.assertEqual(ran, ["start_process"])
+
+    def test_start_when_running_keeps_live_data(self):
+        cleared, _ = self.run_control("start", [42])
+        self.assertEqual(cleared, [])
+
+    def test_restart_clears(self):
+        cleared, _ = self.run_control("restart", [42])
+        self.assertEqual(cleared, ["AIO NAV restart requested"])

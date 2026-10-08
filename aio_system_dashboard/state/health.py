@@ -139,8 +139,12 @@ class HealthEngine:
         pids = tuple(sorted(svc.get("pids") or []))
         if pids and self._last_nav_pids and pids != self._last_nav_pids:
             self.nav.new_session("aio_nav_node restarted")
-        elif not pids and self._last_nav_pids:
-            self.nav.clear("AIO NAV stopped")          # its next start begins from scratch
+        elif not pids and not self.nav.is_clear():
+            # Not running: back to the default state (its next start begins from scratch). Packets
+            # still arriving are shown, though: they mean AIO NAV runs where it is not detected.
+            age = self.nav.status().get("age_s")
+            if self._last_nav_pids or age is None or age > self.cfg["nav"]["stale_fault_s"]:
+                self.nav.clear("AIO NAV stopped" if self._last_nav_pids else "AIO NAV not running")
         self._last_nav_pids = pids or None
 
     def step(self) -> None:

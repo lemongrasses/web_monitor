@@ -39,6 +39,9 @@ def create_product_app(ctx):
                      "restart": "restart_process"}.get(verb)
         if action_id is None:
             return jsonify({"success": False, "summary": "action must be start, stop or restart"}), 400
+        nav_svc = (ctx.store.get("services", {}) or {}).get(ctx.cfg["nav"]["service"]) or {}
+        if verb == "restart" or (verb == "start" and not nav_svc.get("pids")):
+            ctx.nav.clear(f"AIO NAV {verb} requested")   # a new run starts from the default state
         try:
             result = ctx.actions.run(action_id, process_control.GROUP)
             return jsonify(process_control.user_result(ctx.cfg, verb, result))
