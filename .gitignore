@@ -9,3 +9,6 @@ dev/sample_data/
 build/
 dist/
 state/
+
+# reports written by tools/target_survey.sh
+tools/target-*.txt
