@@ -35,7 +35,9 @@ SERVICE_DOWN_STATES = ("stopped", "failed", "not_installed")
 
 # GNSS receiver quality -> (lamp level, label)
 GNSS_LEVEL = {"fixed": (HEALTHY, "RTK fix"), "float": (WARNING, "RTK float"),
-              "spp": (FAULT, "SPP"), "none": (FAULT, "No signal")}
+              "spp": (FAULT, "SPP"), "none": (FAULT, "No signal"),
+              # a position whose status the driver does not rate (it uses -1 for some fixes)
+              "unrated": (WARNING, "Fix (type unknown)"), "unrated_poor": (FAULT, "Fix (type unknown)")}
 
 ALIGN_LAMPS = ("alignment", "heading_valid", "fine_alignment")
 
@@ -283,8 +285,12 @@ class HealthEngine:
         }
         advisories: List[Dict] = []
         if g_level == FAULT:
-            advisories.append({"level": WARNING, "title": f"GNSS: {self._gnss_label}",
-                               "detail": "Position accuracy is poor. Inertial navigation remains active."})
+            if quality == "none":
+                why = gq.get("reason") or "no usable position"
+                detail = f"No GNSS position: {why}. Inertial navigation remains active."
+            else:
+                detail = "Position accuracy is poor. Inertial navigation remains active."
+            advisories.append({"level": WARNING, "title": f"GNSS: {self._gnss_label}", "detail": detail})
 
         for key, dev_cfg in self.cfg["devices"].items():
             d = (network.get("devices") or {}).get(key) or {}
@@ -349,7 +355,9 @@ class HealthEngine:
     @staticmethod
     def _gnss_detail(gq: Dict) -> str:
         s = gq.get("sigma_h_m")
-        if not gq.get("available") or s is None or gq.get("quality") == "none":
+        if gq.get("available") and gq.get("quality") == "none":
+            return gq.get("reason") or ""
+        if not gq.get("available") or s is None:
             return ""
         return f"horizontal accuracy {s * 100:.0f} cm" if s < 1 else f"horizontal accuracy {s:.1f} m"
 

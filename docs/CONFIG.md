@@ -348,8 +348,13 @@ gnss:
 
 The GNSS lamp shows the receiver's position quality, taken from `NavSatFix.status.status`
 (checked against a recorded drive): **green** RTK fix (status 2, about 3 cm), **yellow** RTK float
-(status 1, about 10 cm), **red** SPP (status 0, 10 m) or no signal (status -1, or no message for
-`timeout_s`). It is advisory and never changes Ready. It is not the same as the "GNSS" aiding lamp on
+(status 1, about 10 cm), **red** SPP (status 0, 10 m). The driver also sends status -1 *with* a
+valid position (about 10 cm, single epochs inside RTK float periods), so a message with a usable
+position (finite latitude/longitude and a known covariance) is never "No signal": with an unrated
+status it shows **Fix (type unknown)**, amber when better than 1 m, red otherwise. **No signal** means
+no usable position: no message for `timeout_s`, or a status without a position; the advisory then
+says which (for example *no GNSS message for 3 h*, i.e. the receiver driver sends nothing). It is
+advisory and never changes Ready. It is not the same as the "GNSS" aiding lamp on
 the Navigation page, which shows whether the navigation filter used GNSS in the last second.
 
 ### 4.8 `data`: the Data (download) page

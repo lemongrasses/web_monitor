@@ -88,7 +88,7 @@
 | **Alignment** | 第 1 步，粗對準（調平）。 |
 | **Initial heading** | 第 2 步，濾波器取得有效航向。 |
 | **Fine alignment** | 第 3 步，航向精度達到目標。 |
-| **GNSS** | GNSS 接收機的定位品質：**綠色** = *RTK fix*（公分級）、**琥珀色** = *RTK float*（約 10 公分，精度較差）、**紅色** = *SPP*（單點定位，公尺級）或 *No signal*。琥珀與紅色只是警告：慣性導航會繼續，但精度會慢慢下降。 |
+| **GNSS** | GNSS 接收機的定位品質：**綠色** = *RTK fix*（公分級）、**琥珀色** = *RTK float*（約 10 公分，精度較差）、**紅色** = *SPP*（單點定位，公尺級）或 *No signal*（沒有可用的位置；燈號下方的提示會說明原因，例如接收機沒有送出任何訊息）。*Fix (type unknown)* 是接收機沒有說明種類的位置（優於 1 公尺時為琥珀色）。琥珀與紅色只是警告：慣性導航會繼續，但精度會慢慢下降。 |
 | **Camera / LiDAR**（有安裝時） | 感測器在網路上有回應。「Not set up」代表沒有設定 IP；不需要時屬正常。 |
 | **Network** | 感測器網路連線正常。 |
 | **ZUPT / ZIHR / NHC / VUPT**（Navigation 頁面） | 濾波器此刻使用了哪些輔助（見[名詞解釋](#sec10)）。青色 = 作用中，灰色 = 閒置；閒置是正常的。 |
@@ -466,6 +466,7 @@ aio-dashboard password   # 設定維護頁面的密碼
 | 一直停在 **Initializing** | 對準尚未完成 | 依照[對準 SOP](#sec5) 與 5.3 處理。 |
 | 事件「DSO used too much memory: restarting DSO」（維護頁面 → Diagnostics） | DSO 的記憶體一直增加（曾發現它保留每一張相機影像），監控在機器記憶體用完之前把它重新啟動 | 不需要立即處理，AIO NAV 會繼續執行。若重複發生，請回報給 DSO 的維護者。上限是 `dso_watchdog.max_memory_mb`。 |
 | **GNSS** 燈為琥珀或紅色（*RTK float*、*SPP*、*No signal*） | 天空被遮蔽、沒有 RTK 校正資料、天線或 GNSS 接收器問題 | 導航會繼續；移到開闊處；檢查天線與校正資料連線。 |
+| **GNSS: No signal**，提示為 *no GNSS message for …* | 接收機驅動完全沒有送出位置（看不到天空，或接收機／驅動需要重新啟動） | 檢查天線與天空視野；重新啟動感測器驅動（維護頁面 → ROS 2）；驅動的紀錄在 `~/openrtk330-basler-driver.log`。 |
 | **Low rate**／**Stale** | 裝置負載過高，或濾波器輸入中斷 | 檢查 System 頁面（CPU、溫度）與 ROS 2 頁面。 |
 | 相機／光達 **Not connected** | 感測器未開機、線路問題或 IP 錯誤 | 檢查電源與線路；維護頁面 → Camera／LiDAR → **Run diagnostic**。 |
 | 儀表板顯示 Streaming，但您的應用程式收不到 | 目的地或防火牆 | 確認 **Output** 列上的位址是您的電腦；在該電腦的防火牆開放 UDP port（第 6.7 節）。 |

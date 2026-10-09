@@ -103,7 +103,7 @@ something needs attention.**
 | **Alignment** | Step 1, coarse alignment (leveling). |
 | **Initial heading** | Step 2, the filter has a valid heading. |
 | **Fine alignment** | Step 3, heading accuracy reached its target. |
-| **GNSS** | Position quality of the GNSS receiver: **green** = *RTK fix* (centimeter level), **amber** = *RTK float* (about 10 cm, less accurate), **red** = *SPP* (single-point positioning, meters) or *No signal*. Amber and red are warnings only: inertial navigation continues, but accuracy slowly degrades. |
+| **GNSS** | Position quality of the GNSS receiver: **green** = *RTK fix* (centimeter level), **amber** = *RTK float* (about 10 cm, less accurate), **red** = *SPP* (single-point positioning, meters) or *No signal* (no usable position; the advisory under the lamps says why, e.g. the receiver sends no messages). *Fix (type unknown)* is a position whose type the receiver did not report (amber when better than 1 m). Amber and red are warnings only: inertial navigation continues, but accuracy slowly degrades. |
 | **Camera / LiDAR** (if fitted) | The sensor answers on the network. "Not set up" means no IP is configured; this is normal if not needed. |
 | **Network** | The sensor network link is up. |
 | **ZUPT / ZIHR / NHC / VUPT** (Navigation page) | Which aiding the filter is using at the moment (see the [glossary](#10-glossary)). Cyan = active, grey = idle. Idle is normal. |
@@ -551,6 +551,7 @@ aio-dashboard password   # set the maintenance password
 | Stuck at **Initializing** | Alignment not finished | Follow the [Alignment SOP](#5-alignment-sop) and 5.3. |
 | Event *DSO used too much memory: restarting DSO* (Maintenance → Diagnostics) | DSO kept growing (it was seen keeping every camera frame); the watchdog restarted it before the machine ran out of memory | Nothing to do right away; AIO NAV keeps running. If it repeats, report it to the DSO maintainers. The limit is `dso_watchdog.max_memory_mb`. |
 | **GNSS** lamp amber or red (*RTK float*, *SPP*, *No signal*) | Sky view blocked, no RTK correction data, antenna or GNSS receiver issue | Navigation continues; move to open sky; check the antenna and the correction link. |
+| **GNSS: No signal** with *no GNSS message for …* | The receiver driver publishes no position at all (no sky view, or the receiver/driver needs a restart) | Check the antenna and sky view; restart the sensor drivers (Maintenance → ROS 2); the driver log is `~/openrtk330-basler-driver.log`. |
 | **Low rate** / **Stale** | Device overloaded or filter input interrupted | Check the System page (CPU, temperature) and the ROS 2 page. |
 | Camera/LiDAR **Not connected** | Sensor powered off, cable, or wrong IP | Check power and cable; Maintenance → Camera/LiDAR → **Run diagnostic**. |
 | Your application receives nothing, dashboard says Streaming | Destination or firewall | Check that the address on the **Output** line matches your computer; open the UDP port in its firewall (section 6.7). |
