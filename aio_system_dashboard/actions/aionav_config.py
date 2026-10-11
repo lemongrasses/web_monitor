@@ -66,6 +66,9 @@ FIELDS: List[Dict[str, Any]] = [
      "help": "Odometry.leverarm, IMU to the camera."},
 ]
 
+# The only settings the Product page (no password) may change, in the file of the active mode.
+USER_FIELDS = ("Motion.leverarm", "GNSS.leverarm")
+
 KEY_LINE = re.compile(r"^(\s*)([A-Za-z_][\w.-]*)\s*:(.*)$")
 TOPIC = re.compile(r"^/[A-Za-z0-9_/~{}]*$")
 
@@ -243,8 +246,9 @@ def files(cfg) -> List[Dict[str, Any]]:
         path = cfg.mode_config_path(name)
         if path:
             st = os.stat(path)
+            # mtime_ns as text: a browser number cannot hold it exactly (and the save check would fail)
             out.append({"mode": name, "label": m.get("label", name), "name": os.path.basename(path),
-                        "path": path, "mtime_ns": st.st_mtime_ns, "active": name == active})
+                        "path": path, "mtime_ns": str(st.st_mtime_ns), "active": name == active})
     return out
 
 
@@ -267,9 +271,9 @@ def backups(cfg, name: str) -> List[Dict[str, Any]]:
     return [{"id": p.name, "time": p.stat().st_mtime, "size": p.stat().st_size} for p in items]
 
 
-def save(cfg, mode: str, text: str, base_mtime_ns: Optional[int]) -> Dict[str, Any]:
+def save(cfg, mode: str, text: str, base_mtime_ns: Optional[str]) -> Dict[str, Any]:
     f = file_for(cfg, mode)
-    if base_mtime_ns is not None and int(base_mtime_ns) != f["mtime_ns"]:
+    if base_mtime_ns is not None and str(base_mtime_ns) != f["mtime_ns"]:
         raise ConfigError("the file changed on disk since you opened it; reload and edit again")
     errors, warnings = validate(text)
     if errors:

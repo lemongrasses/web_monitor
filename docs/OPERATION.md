@@ -32,9 +32,10 @@ state, and download its logs.
 | Service | Where | For | What it does |
 |---------|-------|-----|--------------|
 | **Navigation output** | UDP, binary, 100 Hz | Your application | The product output: position, velocity, attitude, accuracy and status flags (section 6). |
-| **Product view** | `http://<device-ip>:8080` | Operators | Overview, Navigation and Data pages: is navigation usable, where is the vehicle, is the output streaming. |
+| **Product view** | `http://<device-ip>:8080` | Operators | Overview, Navigation, Data and Settings pages: is navigation usable, where is the vehicle, is the output streaming. |
 | **AIO NAV control** | Overview page | Operators | Start, stop and restart the navigation filter (if enabled on this device). |
 | **Data download** | Product view, Data page | Operators | Download AIO NAV log files to your computer. |
+| **Lever arms** | Product view, Settings page | Operators | Change the vehicle and GNSS antenna lever arms (if enabled on this device). |
 | **Maintenance view** | `http://<device-ip>:8081` (password) | Engineers | Pinpoint whether a problem is in the system, a service, ROS, a sensor or the network; live camera and LiDAR view; driver diagnostics and restarts; starting and stopping the sensor drivers; editing AIO NAV's settings; a terminal; bag replay (optional module). |
 | **`aio-dashboard` command** | Device terminal | Engineers | Start, stop, check and configure the dashboard itself. |
 
@@ -143,6 +144,14 @@ application received it.
   **Show whole trajectory** zooms to the full track; **Follow vehicle** re-centers.
 - **Data**: AIO NAV log folders. Click a folder to open it and **Download** to save a
   file. Nothing on the device can be changed from this page.
+- **Settings**: the two lever arms an operator may change: **Vehicle lever arm**
+  (`Motion.leverarm`, IMU to the vehicle reference point) and **GNSS antenna lever arm**
+  (`GNSS.leverarm`, IMU to the antenna), each as x, y, z in metres, in the AIO NAV settings
+  file in use. A wrong value makes the solution less accurate without any error, so change
+  them only after the sensors have been moved or measured again, and ask technical support
+  if you are not sure. **Save…** shows the old and new values for a last check; **Save now**
+  writes them and keeps the previous file (Maintenance view, AIO NAV config, **Earlier
+  versions**). AIO NAV uses the new values after **Restart**. Every change is in the event log.
 
 ![Navigation page](images/user/navigation.png)
 *Navigation page: the whole track of this run, every value with its accuracy, the aiding lamps.*

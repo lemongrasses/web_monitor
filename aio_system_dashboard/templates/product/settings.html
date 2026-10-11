@@ -1,0 +1,75 @@
+{% extends "product/base.html" %}
+{% block title %}Settings · AIO Navigation{% endblock %}
+{% block content %}
+<div x-data="leverarmPage()" x-init="laInit()" class="la-wrap">
+  <section class="panel" aria-labelledby="la-title">
+    <div class="panel-h"><strong id="la-title">Lever arms</strong>
+      <span class="small muted" x-show="file" x-cloak x-text="file ? file.label + ' · ' + file.name : ''"></span></div>
+    <div class="panel-b">
+      <p class="muted small mb-0" x-show="loading">Loading…</p>
+      <p class="small mb-0" x-show="!loading && !enabled" x-cloak>Changing the lever arms is turned off on this device. Ask technical support.</p>
+      <p class="small text-danger mb-0" x-show="error" x-cloak x-text="'The settings cannot be read: ' + error"></p>
+
+      <template x-if="enabled && fields.length">
+      <div>
+        <div class="la-caution" role="note">
+          <strong>Change with care</strong>
+          <p>The lever arms are the measured offsets from the IMU to the vehicle reference point and to the
+            GNSS antenna. A wrong value makes the navigation solution less accurate, and no error is shown.</p>
+          <p>Change them only after the sensors have been moved or measured again. If you are not sure,
+            contact technical support before saving.</p>
+        </div>
+
+        <template x-for="f in fields" :key="f.key">
+          <div class="la-field" :class="changed(f) ? 'changed' : ''">
+            <div class="la-label" x-text="f.label"></div>
+            <template x-if="f.value === null">
+              <div class="small muted">Not in the settings file. Ask technical support.</div>
+            </template>
+            <template x-if="f.value !== null">
+              <div>
+                <div class="la-xyz">
+                  <template x-for="(axis, i) in ['x', 'y', 'z']" :key="axis">
+                    <label class="la-axis"><span x-text="axis"></span>
+                      <input type="number" step="any" class="form-control form-control-sm" inputmode="decimal"
+                             :aria-label="f.label + ' ' + axis" x-model.number="form[f.key][i]"
+                             :disabled="busy" @input="confirm = false; result = null"></label>
+                  </template>
+                </div>
+                <div class="small muted la-help" x-text="f.help"></div>
+              </div>
+            </template>
+          </div>
+        </template>
+
+        <div class="la-bar" x-show="!confirm">
+          <button type="button" class="btn btn-sm btn-primary" :disabled="!dirty() || busy" @click="ask()">Save…</button>
+          <button type="button" class="btn btn-sm btn-outline-secondary" :disabled="!dirty() || busy" @click="reset()">Undo changes</button>
+          <span class="small" :class="invalid() ? 'text-danger' : 'muted'" x-text="invalid() || (dirty() ? 'Not saved yet' : '')"></span>
+        </div>
+
+        <div class="la-confirm" x-show="confirm" x-cloak role="alertdialog" aria-labelledby="la-ask">
+          <strong id="la-ask">Save these lever arms?</strong>
+          <table class="table table-sm mb-2">
+            <thead><tr><th></th><th>Now</th><th>New</th></tr></thead>
+            <tbody>
+              <template x-for="f in fields.filter((x) => changed(x))" :key="f.key">
+                <tr><td x-text="f.label"></td><td class="mono" x-text="vec(f.value)"></td><td class="mono la-new" x-text="vec(form[f.key])"></td></tr>
+              </template>
+            </tbody>
+          </table>
+          <p class="small mb-2">Check the numbers and the signs. AIO NAV uses the new values after it is restarted.</p>
+          <div class="d-flex flex-wrap gap-2">
+            <button type="button" class="btn btn-sm btn-danger" :disabled="busy" @click="save()">
+              <span x-show="busy" class="spinner-border spinner-border-sm me-1"></span>Save now</button>
+            <button type="button" class="btn btn-sm btn-outline-secondary" id="la-cancel" :disabled="busy" @click="confirm = false">Cancel</button>
+          </div>
+        </div>
+        <div class="ctl-msg mt-2" :class="result ? (result.success ? 'ok' : 'bad') : ''" role="status" aria-live="polite"
+             x-text="result ? result.summary : ''"></div>
+      </div>
+      </template>
+    </div>
+  </section>
+</div>
+{% endblock %}

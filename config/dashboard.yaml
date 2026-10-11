@@ -22,6 +22,7 @@ nav:
   expected_rate_hz: null         # null = output_rate from aio_nav.yaml
   service: aio_nav
   allow_control: true            # Overview Start/Stop launches AIO NAV + DSO, like the AIO Nav app
+  allow_leverarm_edit: true      # Settings page: users may change the vehicle and GNSS lever arms
   control_group: [aio_nav, dso]  # started in this order; both stopped together
   stale_warn_s: 0.5              # UDP "Stale" after this packet age
   stale_fault_s: 2.0             # UDP "Lost" / product Fault after this packet age

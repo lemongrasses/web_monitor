@@ -31,6 +31,7 @@ DEFAULTS: Dict[str, Any] = {
         "service": "aio_nav",
         "allow_control": False,    # True: the Overview page can start/stop AIO NAV (+ DSO)
         "control_group": ["aio_nav", "dso"],   # what Start/Stop acts on, in start order
+        "allow_leverarm_edit": False,  # True: the Settings page can change the vehicle and GNSS lever arms
         "startup_grace_s": 3.0,
         "startup_timeout_s": 60.0,   # after AIO NAV starts: no output for this long is a fault
         "stale_warn_s": 0.5,

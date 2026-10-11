@@ -239,6 +239,71 @@ class WholeSiteLockTest(GuardWebTest):
         self.assertGreater(guard._sessions[token][1], expires - 50)
 
 
+class LeverarmWebTest(unittest.TestCase):
+    """Product Settings page: only the vehicle and GNSS lever arms, no password."""
+
+    def setUp(self):
+        try:
+            from aio_system_dashboard.web.product import create_product_app
+        except ImportError as e:
+            self.skipTest(str(e))
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        base = Path(self.tmp.name)
+        d = base / "install" / "aio_nav_ros" / "share" / "aio_nav_ros" / "config"
+        d.mkdir(parents=True)
+        self.live = LIVE.replace("    GNSS:\n", "    Motion:\n      leverarm: [0.0, 0.0, 0.0]\n    GNSS:\n")
+        (d / "aio_nav.yaml").write_text(self.live)
+        self.path = d / "aio_nav.yaml"
+        data = copy.deepcopy(DEFAULTS)
+        data["nav"]["aio_nav_config"] = str(self.path)
+        data["nav"]["allow_leverarm_edit"] = True
+        data["ros"]["mode"] = "live"
+        for p in (mock.patch.object(Config, "state_file", lambda _s, n: base / "state" / n),
+                  mock.patch.object(Config, "ros_mode_file", lambda _s: base / "state" / "ros_mode.json")):
+            p.start()
+            self.addCleanup(p.stop)
+        self.events = []
+        self.ctx = SimpleNamespace(cfg=Config(data, None), store=SimpleNamespace(get=lambda k, d=None: d),
+                                   events=SimpleNamespace(add=lambda *a, **k: self.events.append(a[2:])))
+        self.c = create_product_app(self.ctx).test_client()
+
+    def post(self, body):
+        return self.c.post("/api/settings/leverarm", json=body, headers={"X-Requested-With": "aio-dashboard"})
+
+    def test_shows_only_the_two_lever_arms(self):
+        d = self.c.get("/api/settings/leverarm").get_json()
+        self.assertEqual([f["key"] for f in d["fields"]], ["Motion.leverarm", "GNSS.leverarm"])
+        self.assertEqual(d["fields"][1]["value"], [-0.49, 0.0, 0.0])
+        self.assertEqual(d["file"]["name"], "aio_nav.yaml")
+        self.assertEqual(self.c.get("/settings").status_code, 200)
+
+    def test_save_changes_the_lever_arm_only(self):
+        mtime = self.c.get("/api/settings/leverarm").get_json()["file"]["mtime_ns"]
+        self.assertIsInstance(mtime, str)          # a browser number would round it and fail the check
+        r = self.post({"values": {"GNSS.leverarm": [-0.5, 0.1, 0.2]}, "base_mtime_ns": mtime}).get_json()
+        self.assertTrue(r["success"], r)
+        text = self.path.read_text()
+        self.assertIn("      leverarm: [-0.5, 0.1, 0.2]\n", text)
+        self.assertEqual(text.replace("[-0.5, 0.1, 0.2]", "[-0.49, 0.0, 0.0]"), self.live)
+        self.assertIn("GNSS.leverarm: [-0.49, 0.0, 0.0] -> [-0.5, 0.1, 0.2]", self.events[0][1])
+        self.assertEqual(len(ac.backups(self.ctx.cfg, "aio_nav.yaml")), 1)
+
+    def test_refuses_other_settings_bad_values_and_stale_pages(self):
+        for body in ({"values": {"output_rate": 50}}, {"values": {"GNSS.leverarm": [1, 2], "output_rate": 5}},
+                     {"values": {}}):
+            self.assertEqual(self.post(body).status_code, 400, body)
+        self.assertEqual(self.post({"values": {"GNSS.leverarm": [1, 2]}}).status_code, 409)
+        self.assertEqual(self.post({"values": {"GNSS.leverarm": [1, 2, 3]}, "base_mtime_ns": 1}).status_code, 409)
+        self.assertEqual(self.path.read_text(), self.live)
+
+    def test_turned_off(self):
+        self.ctx.cfg.data["nav"]["allow_leverarm_edit"] = False
+        self.assertFalse(self.c.get("/api/settings/leverarm").get_json()["enabled"])
+        self.assertEqual(self.post({"values": {"GNSS.leverarm": [1, 2, 3]}}).status_code, 403)
+        self.assertEqual(self.path.read_text(), self.live)
+
+
 class TerminalManagerTest(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()

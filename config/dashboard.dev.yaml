@@ -9,6 +9,7 @@ nav:
   udp_bind: 127.0.0.1:9000
   aio_nav_config: auto
   allow_control: true
+  allow_leverarm_edit: true
   control_group: [aio_nav, dso]
   trajectory: { recent_window_s: 60, recent_hz: 10, older_hz: 1 }
 

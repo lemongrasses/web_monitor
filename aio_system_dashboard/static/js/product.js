@@ -159,6 +159,70 @@
     };
   };
 
+  /* Settings: the vehicle and GNSS lever arms of the AIO NAV settings file in use. */
+  window.leverarmPage = function () {
+    const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
+    return {
+      loading: true, enabled: false, error: null, file: null, fields: [], form: {},
+      confirm: false, busy: false, result: null,
+      async laInit() {
+        try {
+          const d = await (await fetch("/api/settings/leverarm", { cache: "no-store" })).json();
+          this.enabled = !!d.enabled;
+          this.error = d.error || null;
+          this.file = d.file || null;
+          this.fields = d.fields || [];
+          this.reset();
+        } catch (e) {
+          this.error = e.message;
+        } finally { this.loading = false; }
+      },
+      reset() {
+        const form = {};
+        for (const f of this.fields) if (f.value !== null) form[f.key] = f.value.slice();
+        this.form = form;
+        this.confirm = false;
+      },
+      changed(f) { return f.value !== null && !!this.form[f.key] && !same(this.form[f.key], f.value); },
+      dirty() { return this.fields.some((f) => this.changed(f)); },
+      invalid() {
+        for (const f of this.fields) {
+          if (this.changed(f) && !this.form[f.key].every((x) => AIO.isNum(x))) return "Enter a number in every box.";
+        }
+        return "";
+      },
+      vec(v) { return "[" + v.map((x) => AIO.isNum(x) ? x : "?").join(", ") + "] m"; },
+      ask() {
+        if (this.invalid()) return;
+        this.result = null;
+        this.confirm = true;
+        setTimeout(() => { const b = document.getElementById("la-cancel"); if (b) b.focus(); }, 50);  // safe default
+      },
+      async save() {
+        const values = {};
+        for (const f of this.fields) if (this.changed(f)) values[f.key] = this.form[f.key];
+        this.busy = true;
+        try {
+          const r = await fetch("/api/settings/leverarm", {
+            method: "POST",
+            headers: { "Content-Type": "application/json", "X-Requested-With": "aio-dashboard" },
+            body: JSON.stringify({ values, base_mtime_ns: this.file && this.file.mtime_ns }),
+          });
+          const d = await r.json();
+          if (d.success) {
+            await this.laInit();          // show what is in the file now
+          }
+          this.result = d;
+        } catch (e) {
+          this.result = { success: false, summary: "request failed: " + e.message };
+        } finally {
+          this.busy = false;
+          this.confirm = false;
+        }
+      },
+    };
+  };
+
   window.dataPage = function () {
     return {
       roots: [], root: null, listing: null, error: null, loading: false, fmt,

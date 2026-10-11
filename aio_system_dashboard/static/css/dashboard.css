@@ -339,6 +339,26 @@ h1, h2, h3 { font-family: var(--cond); font-weight: 600; letter-spacing: .005em;
   .cfg-field > label { padding-top: 0; font-weight: 600; }
 }
 
+/* product Settings page: lever arms */
+.la-wrap { max-width: 44rem; }
+.la-caution { border: 1px solid var(--caution); border-left-width: 4px; border-radius: 3px; background: #fff6e5;
+              padding: .6rem .8rem; margin-bottom: 1rem; font-size: var(--t-s); }
+.la-caution strong { color: var(--caution); font-family: var(--cond); font-size: var(--t-m); }
+.la-caution p { margin: .3rem 0 0; }
+.la-field { padding: .5rem 0; border-top: 1px solid var(--rule-soft); }
+.la-label { font-weight: 600; margin-bottom: .3rem; }
+.la-field.changed .la-label { color: var(--caution); }
+.la-field.changed .la-label::after { content: " •"; }
+.la-xyz { display: grid; grid-template-columns: repeat(3, minmax(0, 9rem)); gap: .5rem; }
+.la-axis { display: flex; align-items: center; gap: .35rem; margin: 0; }
+.la-axis > span { font-family: var(--code); color: var(--muted); }
+.la-axis input { min-width: 0; }
+.la-help { margin-top: .25rem; }
+.la-bar { display: flex; flex-wrap: wrap; align-items: center; gap: .5rem; padding-top: .8rem; border-top: 1px solid var(--rule-soft); }
+.la-confirm { border: 1px solid var(--warning); border-radius: 3px; padding: .7rem .8rem; margin-top: .8rem; }
+.la-confirm table { margin-top: .4rem; font-size: var(--t-s); }
+.la-new { color: var(--caution); font-weight: 700; }
+
 .term-bar { display: flex; flex-wrap: wrap; align-items: center; gap: .5rem; margin-bottom: .5rem; }
 .term-box { height: calc(100vh - 14rem); min-height: 22rem; background: #0f1b2a; border-radius: 3px; padding: .35rem; }
 

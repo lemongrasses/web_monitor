@@ -32,6 +32,7 @@
 | **產品頁面** | `http://<裝置IP>:8080` | 操作人員 | Overview、Navigation、Data 三個頁面：導航能不能用、車輛在哪裡、輸出是否正常送出。 |
 | **AIO NAV 控制** | Overview 頁面 | 操作人員 | 啟動、停止、重新啟動導航濾波器（需在此裝置上開啟此功能）。 |
 | **資料下載** | 產品頁面的 Data 頁 | 操作人員 | 把 AIO NAV 的紀錄檔下載到您的電腦。 |
+| **桿臂（lever arm）** | 產品頁面的 Settings 頁 | 操作人員 | 修改車輛與 GNSS 天線的桿臂（需此裝置開啟此功能）。 |
 | **維護頁面** | `http://<裝置IP>:8081`（需要密碼） | 工程人員 | 判斷問題出在系統、服務、ROS、感測器還是網路；相機與光達的即時畫面；驅動程式診斷與重新啟動；啟動與停止感測器驅動；編輯 AIO NAV 設定；終端機；bag 回放（選配模組）。 |
 | **`aio-dashboard` 指令** | 裝置終端機 | 工程人員 | 啟動、停止、檢查與設定儀表板本身。 |
 
@@ -117,6 +118,7 @@ UDP 沒有回應確認：「Streaming」代表裝置有在送，不代表您的�
 - **Overview**：狀態區與 AIO NAV 按鈕、輸出列、顯示最近 60 秒軌跡的地圖、位置、航向（附箭頭，上方為北）、速度、橫滾角與俯仰角、燈號、提示、儲存空間。
 - **Navigation**：顯示本次執行完整軌跡的大地圖，以及每個數值與其精度（±）：位置、北／東／天速度、速率、姿態、NAV 時間。下方是輔助燈號與輸出列（含封包數）。**Show whole trajectory** 會縮放到整條軌跡；**Follow vehicle** 會重新跟隨車輛。
 - **Data**：AIO NAV 的紀錄資料夾。點資料夾開啟，按 **Download** 存檔。此頁面無法更動裝置上的任何檔案。
+- **Settings**：操作人員可修改的兩個桿臂：**Vehicle lever arm**（`Motion.leverarm`，IMU 到車輛參考點）與 **GNSS antenna lever arm**（`GNSS.leverarm`，IMU 到天線），各為 x、y、z（公尺），寫入目前使用中的 AIO NAV 設定檔。數值錯誤會讓導航解變差，而且不會出現任何錯誤訊息，因此只有在感測器移動過或重新量測後才修改；不確定時請先聯絡技術支援。按 **Save…** 會列出新舊數值供最後確認，按 **Save now** 才寫入，並保留修改前的檔案（維護頁面 AIO NAV config 的 **Earlier versions**）。新數值在 AIO NAV **Restart** 後生效。每次修改都會記錄在事件紀錄中。
 
 ![Navigation 頁面](images/user/navigation.png)
 *Navigation 頁面：本次執行的完整軌跡、每個數值與其精度、輔助燈號。*

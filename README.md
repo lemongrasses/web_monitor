@@ -4,7 +4,7 @@ Web dashboard for the Jetson AIO navigation system.
 
 | UI | Port | Audience | Pages |
 |----|------|----------|-------|
-| Product | `:8080` | Operators (no login) | Overview · Navigation · Data, with Start / Restart / Stop of AIO NAV |
+| Product | `:8080` | Operators (no login) | Overview · Navigation · Data · Settings (lever arms), with Start / Restart / Stop of AIO NAV |
 | Maintenance | `:8081` | Engineers (password) | Overview · System · ROS 2 · Camera · LiDAR · Network · Diagnostics · AIO NAV config · Terminal (· Replay with the replay module) |
 
 The main data source is the **AIO NAV 0x04 binary packet** that `aio_nav_node`
@@ -185,7 +185,7 @@ Re-run `install.sh` after changing which units are restartable.
 - Restarts need confirmation in the UI, have a timeout, and are logged (Diagnostics page and `logs/events.jsonl`), as are sign-ins, config saves and terminals.
 - POSTs require JSON and the header `X-Requested-With: aio-dashboard`, which blocks plain cross-site form posts.
 - Downloads are limited to the configured roots: realpath containment rejects `..`, absolute paths and escaping symlinks. There is no upload, delete or rename.
-- Each port serves only its own routes. Maintenance APIs are not reachable on :8080. The product view has no login.
+- Each port serves only its own routes. Maintenance APIs are not reachable on :8080. The product view has no login; it changes only AIO NAV Start / Stop and the two lever arms on Settings, each behind a config switch.
 
 ## Not included
 
