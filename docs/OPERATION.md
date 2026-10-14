@@ -74,6 +74,7 @@ position and attitude, and the status lamps.*
 | **Starting** | Teal | AIO NAV was started and is getting ready; no navigation output yet. | Wait. If nothing comes out within 60 s it becomes **Fault**. |
 | **Initializing** | Amber | AIO NAV is running and sends output, but alignment is not finished. It shows the current step and what to do, for example *Step 1 of 3: Alignment — Keep the vehicle completely still*. | Follow the instruction ([Alignment SOP](#5-alignment-sop)). Do not use the output yet. |
 | **Ready** | Green | AIO NAV is running, data is fresh, and alignment is complete. The output can be used. | Operate normally. |
+| **Degraded** | Amber | The output *was* Ready in this run, but a required condition (for example RTK) or the alignment is lost. It never goes back to the alignment prompts while the vehicle may be moving. | Stop using navigation as the vehicle's safety procedure says. Restart AIO NAV only with the vehicle standing still. |
 | **Fault** | Red | AIO NAV has a problem: it stopped although nobody pressed Stop, it runs but has sent nothing for 60 s after starting, or its output stopped for more than 2 s. The reason is shown. | See [Troubleshooting](#9-troubleshooting). |
 | **Unknown** / **Offline** | Dark grey | The dashboard just started, or your browser lost its connection to the device. | Wait a few seconds; check the network if it persists. |
 
@@ -179,6 +180,13 @@ The **Start** button is in the status area at the top of the Overview and Naviga
 ![Initializing, step 1 of 3](images/user/overview-initializing.png)
 *Initializing: the status area names the current alignment step and what to do; the step's lamp is
 amber, later steps are grey.*
+
+**Automatic start.** On a device with `autostart` on ([configuration manual 4.2b](CONFIG.md)),
+you do not press Start: after power-on the status area shows **Starting** — *Starting
+automatically* while it waits for the sensors, then the alignment steps. If AIO NAV does not
+start or sends nothing, it is tried again a few times by itself. After you press **Stop**, it
+stays stopped (also after a reboot) until someone presses **Start**. Once Ready was reached it
+is never restarted automatically until the next power-on.
 
 If the state becomes **Fault** with *AIO NAV stopped unexpectedly*, or the message under the
 buttons reads *AIO NAV did not start: …*, see [Troubleshooting](#9-troubleshooting). If there
@@ -433,6 +441,109 @@ For C/C++, use a packed struct (`#pragma pack(push, 1)`) with the field order of
 2. Your receiver prints packets at the expected rate (100 per second by default).
 3. Latitude, longitude and heading match the Navigation page.
 4. The flags show ALIGN, HEADING and FINE when the dashboard shows **Ready**.
+
+### 6.8 Status packet (0x05)
+
+The 0x04 packet starts **before** alignment is complete, so receiving it does not mean the
+data may be used. When `status_udp` is on ([configuration manual 4.2c](CONFIG.md)) the
+dashboard also sends a **0x05 status packet**, twice a second and at once on every change, to
+the same address and port as 0x04. It carries the same readiness snapshot as the pages:
+the state, what the operator should do, and every reason the output must not be used. It
+keeps coming after READY: silence means "do not use".
+
+> 0x05 must be formally reserved by the AIO NAV and vehicle teams before use; the id is
+> configurable (`status_udp.message_id`).
+
+**Frame**: same as 0x04: `55 AA`, message id `0x05`, payload length `36` (uint16 LE), payload,
+checksum (sum of the bytes from the message id to the end of the payload, modulo 256).
+42 bytes in all. Little-endian. Python `struct`: `<BBBBIIQIIBBHHH`.
+
+| Offset (payload) | Field | Type | Meaning |
+|---:|---|---|---|
+| 0 | protocol_version | uint8 | `1` |
+| 1 | state | uint8 | Table below |
+| 2 | requested_action | uint8 | Table below |
+| 3 | gnss_quality | uint8 | 0 unknown, 1 none, 2 SPP, 3 RTK float, 4 RTK fix |
+| 4 | session_id | uint32 | New at every dashboard start |
+| 8 | sequence | uint32 | +1 per packet, wraps to 0 |
+| 12 | uptime_ms | uint64 | Dashboard uptime |
+| 20 | health_flags | uint32 | Conditions that hold (bits below) |
+| 24 | inhibit_flags | uint32 | Reasons not to use 0x04 (bits below); **any bit set = do not use** |
+| 28 | nav_flags | uint8 | The 0x04 flags in normal bit order (**not** bit-reversed) |
+| 29 | reserved | uint8 | 0 |
+| 30 | nav_rate_dhz | uint16 | Navigation output rate × 10 |
+| 32 | nav_age_ms | uint16 | Age of the last 0x04; 65535 = none or older |
+| 34 | reserved | uint16 | 0 |
+
+| Code | State | Meaning |
+|---:|---|---|
+| 0 | `BOOTING` | Dashboard just started |
+| 1 | `CHECKING` | Waiting for prerequisites or for the automatic start |
+| 2 | `NAV_STARTING` | AIO NAV started, no valid output yet |
+| 3 | `KEEP_STILL` | Alignment stage 1 (output flows, not aligned) |
+| 4 | `MOVE_STRAIGHT` | Alignment stage 2 (no valid heading yet) |
+| 5 | `REFINING` | Alignment stage 3, or aligned while a required condition is missing |
+| 6 | `READY` | May be used (inhibit_flags is 0) |
+| 7 | `DEGRADED` | Was READY in this run; a required condition or the alignment is lost |
+| 8 | `FAULT` | AIO NAV, its output or its ownership has a problem |
+| 9 | `MAINTENANCE` | Stopped (operator Stop, or not started) |
+
+| Code | Requested action | Operator text |
+|---:|---|---|
+| 0 | `NONE` | Nothing to do. |
+| 1 | `HOLD_STILL` | Keep the vehicle completely still. |
+| 2 | `DRIVE_STRAIGHT` | Drive straight at a steady speed in a safe, open area. |
+| 3 | `KEEP_DRIVING` | Keep driving normally with GNSS available. |
+| 4 | `SAFE_STOP` | Stop using navigation and follow the vehicle's safety procedure. |
+| 5 | `SERVICE_REQUIRED` | Maintenance is needed. |
+| 6 | `MAINTENANCE_HOLD` | Stopped. Press Start to resume. |
+
+| Bit | health_flags | inhibit_flags |
+|---:|---|---|
+| 0 | `DASHBOARD_OK` | `BOOT_IN_PROGRESS` |
+| 1 | `CONFIG_OK` | `CONFIG_INVALID` |
+| 2 | `IMU_STREAM_OK` | `IMU_MISSING_OR_STALE` |
+| 3 | `GNSS_STREAM_OK` | `GNSS_MISSING_OR_STALE` |
+| 4 | `GNSS_QUALITY_OK` | `GNSS_QUALITY_LOW` |
+| 5 | `NAV_PROCESS_OK` | `NAV_NOT_RUNNING` |
+| 6 | `NAV_OUTPUT_OK` | `NAV_OUTPUT_STALE` |
+| 7 | `ALIGNMENT_OK` | `KEEP_STILL_REQUIRED` |
+| 8 | `HEADING_OK` | `MOVE_STRAIGHT_REQUIRED` |
+| 9 | `FINE_ALIGNMENT_OK` | `FINE_ALIGNMENT_REQUIRED` |
+| 10 | `DSO_OK` | `DSO_NOT_READY` |
+| 11 | `EXTERNAL_ROUTE_OK` | `EXTERNAL_ROUTE_DOWN` |
+| 12 | `RTK_CORRECTION_OK` | `RTK_CORRECTION_LOST` |
+| 13 | `STORAGE_OK` | `STORAGE_NOT_WRITABLE` |
+| 14 | `VEHICLE_ACK_OK` | `MAINTENANCE_HOLD` |
+| 15 | `TIME_SYNC_OK` | `STARTUP_TIMEOUT` |
+| 16 | `NO_DUPLICATE_PROCESS` | `OWNERSHIP_CONFLICT` |
+| 17 | `WIFI_OK` | `INTERNAL_FAULT` |
+
+Bits that are not implemented stay 0 (for example `VEHICLE_ACK_OK`, `RTK_CORRECTION_OK`,
+`TIME_SYNC_OK`, `WIFI_OK`); receivers ignore unknown bits.
+
+**Receiver rules** (the reference implementation is `aio_system_dashboard/nav/vehicle_gate.py`):
+
+1. Start blocked. Block at once when no valid 0x05 arrived for 3 s, on a bad checksum or an
+   unknown version, and when `session_id` changes (the dashboard restarted).
+2. Allow only when `state` is READY (6) **and** `inhibit_flags` is 0, continuously for 2 s in
+   the same session.
+3. Also check the 0x04 itself: at most 0.5 s old, the ALIGN, HEADING and FINE flags set, a time
+   stamp that moves forward, and only finite values.
+4. A lost status packet alone never blocks (the sequence number counts losses); only the
+   time-outs do.
+
+To watch the rules work on the vehicle's port: `python3 tools/vehicle_gate.py --port 9000`.
+
+**Golden vector** (any implementation must encode and decode exactly this): READY, action
+NONE, RTK float, session `0x12345678`, sequence 482, uptime 123456789 ms, health `0x10FFF`,
+inhibit 0, nav flags `0xE8`, 100.0 Hz, age 12 ms:
+
+```
+55aa0524000106000378563412e201000015cd5b0700000000ff0f010000000000e800e8030c0000005c
+```
+
+The same snapshot is available as JSON at `http://<device-ip>:8080/api/readiness`.
 
 ## 7. Other outputs: ROS 2 topics and log files
 

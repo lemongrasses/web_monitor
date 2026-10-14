@@ -63,6 +63,7 @@
 | **Starting** | 藍綠 | AIO NAV 已啟動、正在準備，還沒有導航輸出。 | 等待。60 秒內都沒有輸出就會變成 **Fault**。 |
 | **Initializing** | 琥珀 | AIO NAV 正在執行並有輸出，但對準尚未完成。會顯示目前是第幾步與該做什麼，例如「Step 1 of 3: Alignment — Keep the vehicle completely still」。 | 照著指示操作（[對準 SOP](#sec5)），此時先不要使用輸出。 |
 | **Ready** | 綠 | AIO NAV 正在執行、資料即時，且對準已完成，輸出可以使用。 | 正常作業。 |
+| **Degraded** | 琥珀 | 本次執行中輸出*曾經* Ready，但之後必要條件（例如 RTK）或對準失效。車輛可能正在行駛，所以不會再回到對準提示。 | 依車輛的安全程序停止使用導航。只在車輛靜止時才重新啟動 AIO NAV。 |
 | **Fault** | 紅 | AIO NAV 出了問題：沒有人按 Stop 它卻停了、啟動後 60 秒都沒有輸出，或輸出中斷超過 2 秒。會顯示原因。 | 見[問題排除](#sec9)。 |
 | **Unknown**／**Offline** | 深灰 | 儀表板剛啟動，或您的瀏覽器與裝置失去連線。 | 等幾秒；持續出現請檢查網路。 |
 
@@ -154,6 +155,8 @@ UDP 沒有回應確認：「Streaming」代表裝置有在送，不代表您的�
 ![Initializing：第 1 步，共 3 步](images/user/overview-initializing.png)
 *Initializing：狀態區會寫出目前的對準步驟與該做什麼；目前這一步的燈是琥珀色，之後的步驟是灰色。*
 
+
+**自動啟動。** 開啟 `autostart` 的裝置（[設定手冊 4.2b](CONFIG.zh-TW.md)）不需要按 Start：開機後狀態區會顯示 **Starting**，等待感測器時顯示「Starting automatically」，接著進入對準步驟。若 AIO NAV 沒有啟動或沒有輸出，系統會自動重試幾次。按下 **Stop** 後會保持停止（重開機後也一樣），直到有人按 **Start**。一旦達到 Ready，在下次開機前都不會再自動重新啟動。
 
 如果狀態變成 **Fault**「AIO NAV stopped unexpectedly」，或按鈕下方的訊息是「AIO NAV did not start: …」，請見[問題排除](#sec9)。如果沒有按鈕，代表此裝置關閉了網頁控制功能（`nav.allow_control`），請管理員開啟。用其他方式啟動的 AIO NAV 也偵測得到。
 
@@ -355,6 +358,94 @@ C/C++ 請使用緊密排列的 struct（`#pragma pack(push, 1)`），欄位順�
 2. 您的接收程式以預期頻率印出封包（預設每秒 100 個）。
 3. 經緯度與航向和 Navigation 頁面一致。
 4. 儀表板顯示 **Ready** 時，旗標中有 ALIGN、HEADING、FINE。
+
+### 6.8 狀態封包（0x05）
+
+0x04 封包在對準完成**之前**就會開始送出，所以收到它不代表資料可以使用。開啟 `status_udp`（[設定手冊 4.2c](CONFIG.zh-TW.md)）後，儀表板還會送出 **0x05 狀態封包**，每秒兩次、狀態一改變就立即送出，目的地與 0x04 相同。內容與網頁上的 readiness 快照相同：狀態、操作人員該做什麼，以及所有禁止使用輸出的原因。READY 之後仍會持續送出：收不到就代表「不要使用」。
+
+> 使用前，0x05 必須由 AIO NAV 與車端團隊正式保留；訊息 ID 可以設定（`status_udp.message_id`）。
+
+**封包框架**：與 0x04 相同：`55 AA`、訊息 ID `0x05`、資料長度 `36`（uint16 LE）、資料內容、檢查碼（從訊息 ID 到資料內容結尾各位元組的總和取 256 的餘數）。共 42 位元組，little-endian。Python `struct` 格式：`<BBBBIIQIIBBHHH`。
+
+| 位移（資料內容） | 欄位 | 型別 | 意義 |
+|---:|---|---|---|
+| 0 | protocol_version | uint8 | `1` |
+| 1 | state | uint8 | 見下表 |
+| 2 | requested_action | uint8 | 見下表 |
+| 3 | gnss_quality | uint8 | 0 未知、1 無、2 SPP、3 RTK float、4 RTK fix |
+| 4 | session_id | uint32 | 儀表板每次啟動都會換新 |
+| 8 | sequence | uint32 | 每個封包加 1，溢位後回到 0 |
+| 12 | uptime_ms | uint64 | 儀表板執行時間 |
+| 20 | health_flags | uint32 | 成立中的條件（位元見下表） |
+| 24 | inhibit_flags | uint32 | 不可使用 0x04 的原因（位元見下表）；**任一位元為 1 = 不可使用** |
+| 28 | nav_flags | uint8 | 0x04 的旗標，正常位元順序（**未**反轉） |
+| 29 | reserved | uint8 | 0 |
+| 30 | nav_rate_dhz | uint16 | 導航輸出頻率 × 10 |
+| 32 | nav_age_ms | uint16 | 最後一個 0x04 的延遲；65535 = 沒有或更久 |
+| 34 | reserved | uint16 | 0 |
+
+| 代碼 | 狀態 | 意義 |
+|---:|---|---|
+| 0 | `BOOTING` | 儀表板剛啟動 |
+| 1 | `CHECKING` | 等待前置條件或自動啟動 |
+| 2 | `NAV_STARTING` | AIO NAV 已啟動，尚無有效輸出 |
+| 3 | `KEEP_STILL` | 對準第 1 階段（有輸出，尚未對準） |
+| 4 | `MOVE_STRAIGHT` | 對準第 2 階段（尚無有效航向） |
+| 5 | `REFINING` | 對準第 3 階段，或已對準但缺少必要條件 |
+| 6 | `READY` | 可以使用（inhibit_flags 為 0） |
+| 7 | `DEGRADED` | 本次執行曾經 READY，之後必要條件或對準失效 |
+| 8 | `FAULT` | AIO NAV、其輸出或其管理者出了問題 |
+| 9 | `MAINTENANCE` | 已停止（操作人員按 Stop，或尚未啟動） |
+
+| 代碼 | 要求的動作 | 操作人員看到的說明 |
+|---:|---|---|
+| 0 | `NONE` | 不需動作。 |
+| 1 | `HOLD_STILL` | 保持車輛完全靜止。 |
+| 2 | `DRIVE_STRAIGHT` | 在安全、開闊的區域以穩定速度直線行駛。 |
+| 3 | `KEEP_DRIVING` | 在有 GNSS 的環境繼續正常行駛。 |
+| 4 | `SAFE_STOP` | 停止使用導航，依車輛的安全程序處理。 |
+| 5 | `SERVICE_REQUIRED` | 需要維護人員處理。 |
+| 6 | `MAINTENANCE_HOLD` | 已停止。按 Start 繼續。 |
+
+| 位元 | health_flags | inhibit_flags |
+|---:|---|---|
+| 0 | `DASHBOARD_OK` | `BOOT_IN_PROGRESS` |
+| 1 | `CONFIG_OK` | `CONFIG_INVALID` |
+| 2 | `IMU_STREAM_OK` | `IMU_MISSING_OR_STALE` |
+| 3 | `GNSS_STREAM_OK` | `GNSS_MISSING_OR_STALE` |
+| 4 | `GNSS_QUALITY_OK` | `GNSS_QUALITY_LOW` |
+| 5 | `NAV_PROCESS_OK` | `NAV_NOT_RUNNING` |
+| 6 | `NAV_OUTPUT_OK` | `NAV_OUTPUT_STALE` |
+| 7 | `ALIGNMENT_OK` | `KEEP_STILL_REQUIRED` |
+| 8 | `HEADING_OK` | `MOVE_STRAIGHT_REQUIRED` |
+| 9 | `FINE_ALIGNMENT_OK` | `FINE_ALIGNMENT_REQUIRED` |
+| 10 | `DSO_OK` | `DSO_NOT_READY` |
+| 11 | `EXTERNAL_ROUTE_OK` | `EXTERNAL_ROUTE_DOWN` |
+| 12 | `RTK_CORRECTION_OK` | `RTK_CORRECTION_LOST` |
+| 13 | `STORAGE_OK` | `STORAGE_NOT_WRITABLE` |
+| 14 | `VEHICLE_ACK_OK` | `MAINTENANCE_HOLD` |
+| 15 | `TIME_SYNC_OK` | `STARTUP_TIMEOUT` |
+| 16 | `NO_DUPLICATE_PROCESS` | `OWNERSHIP_CONFLICT` |
+| 17 | `WIFI_OK` | `INTERNAL_FAULT` |
+
+尚未實作的位元維持 0（例如 `VEHICLE_ACK_OK`、`RTK_CORRECTION_OK`、`TIME_SYNC_OK`、`WIFI_OK`）；接收端應忽略未知位元。
+
+**接收端規則**（參考實作：`aio_system_dashboard/nav/vehicle_gate.py`）：
+
+1. 預設為禁止。3 秒內沒有收到有效的 0x05、檢查碼錯誤、版本不支援，或 `session_id` 改變（儀表板重新啟動）時，立即禁止。
+2. 只有在 `state` 為 READY（6）**且** `inhibit_flags` 為 0，並在同一個 session 中持續 2 秒，才允許使用。
+3. 也要檢查 0x04 本身：延遲不超過 0.5 秒、ALIGN／HEADING／FINE 旗標成立、時間戳持續前進、數值皆為有限值。
+4. 單獨遺失一個狀態封包不會造成禁止（sequence 用來計算遺失數）；只有逾時才會。
+
+在車端的 port 上觀察規則運作：`python3 tools/vehicle_gate.py --port 9000`。
+
+**Golden vector**（任何實作都必須能編碼與解碼出完全相同的內容）：READY、動作 NONE、RTK float、session `0x12345678`、sequence 482、uptime 123456789 ms、health `0x10FFF`、inhibit 0、nav flags `0xE8`、100.0 Hz、延遲 12 ms：
+
+```
+55aa0524000106000378563412e201000015cd5b0700000000ff0f010000000000e800e8030c0000005c
+```
+
+同一份快照也可以用 JSON 取得：`http://<裝置IP>:8080/api/readiness`。
 
 <a id="sec7"></a>
 ## 7. 其他輸出：ROS 2 topic 與紀錄檔

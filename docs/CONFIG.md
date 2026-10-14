@@ -165,6 +165,69 @@ Ready must stay stable for about 2 s. These timings are built in and not configu
 > `output_udp` in AIO NAV's `aio_nav.yaml`. Change it there, then restart AIO NAV and
 > the dashboard.
 
+### 4.2a `readiness`: what READY requires (and what the vehicle is told)
+
+The dashboard keeps one *readiness* snapshot: the state for the vehicle (`BOOTING`,
+`CHECKING`, `NAV_STARTING`, `KEEP_STILL`, `MOVE_STRAIGHT`, `REFINING`, `READY`, `DEGRADED`,
+`FAULT`, `MAINTENANCE`), the action the operator should take, and bit masks of what is healthy
+and of every reason the output must not be used. The pages, `GET /api/readiness` and the 0x05
+status packet (section 4.2c) all show this same snapshot.
+
+By default READY means exactly what it meant before: AIO NAV running, fresh output, the
+`nav.ready_requires` flags set. `require` adds conditions on top.
+
+| Key | Default | Meaning |
+|-----|---------|---------|
+| `require` | `[]` | Extra conditions for READY. Any of: `imu` (the IMU topic is healthy), `gnss` (the receiver reports a position), `gnss_quality` (at least `gnss_min_quality`), `dso` (DSO odometry is fresh and valid), `vehicle_route` (the kernel has a route to the `output_udp` destination), `storage` (disk below `system.disk_warn_percent`). |
+| `stable_s` | `2.0` | A condition must hold this long before READY counts it. |
+| `loss_s` | `1.0` | Once counted, a condition is dropped only after failing this long, so a single missed sample does not toggle READY. |
+| `gnss_min_quality` | `float` | For `gnss_quality`: `spp`, `float` or `fixed`. A position the driver reports without a type but with good accuracy counts as float (it happens inside float periods). |
+| `gnss_stable_s` | `3.0` | `stable_s` for `gnss_quality`. |
+| `imu_topic` | `auto` | Which `ros.topics` entry is the IMU for `imu`. `auto` = the first one in group `nav`. Its *state* is used, not its raw age, so it also works with `ros.sampling`. |
+| `dso_stale_s` | `1.0` | DSO odometry older than this is not ready. |
+| `dso_only_with_vupt` | `true` | With `dso` in `require`, DSO is only required when `Odometry.vupt` is on in `aio_nav.yaml` (AIO NAV uses it). |
+
+After READY was reached in a navigation run, losing a required condition (or the alignment)
+gives **DEGRADED** with the action *stop using navigation*, never a return to the alignment
+prompts: the vehicle may be moving. A new run (AIO NAV restarted) starts the flow again.
+
+> Requiring `gnss_quality` makes READY wait for RTK. That fits a demonstration with a working
+> RTK link; without RTK (only SPP) the system never becomes READY. Decide per site.
+
+### 4.2b `autostart`: start AIO NAV by itself after power-on
+
+| Key | Default | Meaning |
+|-----|---------|---------|
+| `enabled` | `false` | `true` starts AIO NAV and DSO (`nav.control_group`) after the dashboard starts. Needs `nav.allow_control: true`. |
+| `prerequisites` | `[]` | Readiness conditions (see 4.2a, e.g. `imu`, `gnss`) that must hold before the first start, so AIO NAV does not start while sensors are still coming up. |
+| `prerequisite_stable_s` | `2.0` | How long the prerequisites must hold. |
+| `retry_backoff_s` | `[5, 15, 30, 60]` | Before READY: if AIO NAV does not start, exits, or sends nothing within `nav.startup_timeout_s`, it is stopped and tried again after these waits. |
+| `max_attempts` | `5` | After this many attempts the state is **Fault** (*automatic start gave up*); **Start** tries again. |
+
+Rules that always apply:
+
+- **Stop** (Overview or Maintenance) puts the automatic start **on hold**, also across a
+  reboot, until someone presses **Start**.
+- Once READY was reached, AIO NAV is **never started or restarted automatically again until
+  the next power-on**, even if it stops or the dashboard restarts: the vehicle may be moving.
+- A program that already runs (dashboard restart, desktop app) is adopted, never started twice.
+- Only one program should own AIO NAV. With `autostart` on, an `aio-nav.service` that is
+  enabled at boot is a **Fault** (`OWNERSHIP_CONFLICT`). With `autostart` on, `install.sh` does
+  not enable that unit and disables it if it was; with only `nav.allow_control` it warns.
+
+### 4.2c `status_udp`: the 0x05 status packet for the vehicle
+
+| Key | Default | Meaning |
+|-----|---------|---------|
+| `enabled` | `false` | `true` sends the readiness snapshot as a 42-byte 0x05 packet (format: [Operation manual, section 6.8](OPERATION.md#68-status-packet-0x05)). |
+| `destination` | `auto` | `host:port`. `auto` = `output_udp` of `aio_nav.yaml`, the same address and port the vehicle reads 0x04 from; it tells them apart by message id. The dashboard's own listener (`nav.udp_bind`) is refused. |
+| `message_id` | `5` | Change only if AIO NAV and the vehicle team assign another id. |
+| `rate_hz` | `2.0` | Packets per second; a change of state, action or inhibit mask is sent at once. It keeps sending after READY. |
+
+The Maintenance Overview shows the readiness snapshot, the condition table, the automatic
+start state and the packet counters (sent, errors). It says *Transmitting*, never *received*:
+UDP has no acknowledgement.
+
 ### 4.3 `services`: systemd units to watch (and restart)
 
 ```yaml
