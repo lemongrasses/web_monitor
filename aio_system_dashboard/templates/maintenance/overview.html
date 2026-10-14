@@ -61,6 +61,41 @@
   </div>
 </div>
 
+<!-- READINESS: what the vehicle is told (the same snapshot as /api/readiness and the 0x05 packet) -->
+<div class="panel mt-3 rd-panel" x-show="rd.state" x-cloak>
+  <div class="panel-h"><strong>Readiness for the vehicle</strong>{{ chip("rdChip()") }}</div>
+  <div class="panel-b">
+    <div class="row g-3">
+      <div class="col-lg-5">
+        <div class="vrow"><span class="k">Operator action</span><span class="v" x-text="rd.action_text || 'None'"></span></div>
+        <div class="vrow"><span class="k">Why not ready</span><span class="v small" x-text="(rd.reasons || []).join('; ') || '—'"></span></div>
+        <div class="vrow"><span class="k">Inhibit</span><span class="v mono small" x-text="(rd.inhibit || []).join(', ') || 'none'"></span></div>
+        <div class="vrow"><span class="k">Flags</span>
+          <span class="v mono small" x-text="'health ' + hex(rd.health_flags) + '  inhibit ' + hex(rd.inhibit_flags)"></span></div>
+        <div class="vrow"><span class="k">Session</span>
+          <span class="v mono small" x-text="rd.session_id"></span></div>
+      </div>
+      <div class="col-lg-4">
+        <div class="small muted mb-1" x-text="(rd.required || []).length ? 'Required for Ready: ' + rd.required.join(', ') : 'Extra Ready conditions: none required (readiness.require)'"></div>
+        <template x-for="c in (rd.conditions || [])" :key="c.name">
+          <div class="vrow"><span class="k"><span x-text="c.label"></span><span class="muted small" x-show="c.required"> · required</span></span>
+            <span :title="c.reason">{{ chip("condChip(c)") }}</span></div>
+        </template>
+      </div>
+      <div class="col-lg-3">
+        <div class="vrow"><span class="k">Automatic start</span>
+          <span class="v small" x-text="rd.autostart && rd.autostart.enabled ? (rd.autostart.state || '').replace(/_/g, ' ') : 'off'"></span></div>
+        <div class="small muted mb-2" x-show="rd.autostart && rd.autostart.detail" x-text="rd.autostart && rd.autostart.detail"></div>
+        <div class="vrow"><span class="k">Status packet (0x05)</span>
+          <span class="v small" x-text="tx.enabled ? (tx.destination || 'no destination') : 'off'"></span></div>
+        <div class="small muted" x-show="tx.enabled"
+             x-text="'sequence ' + (tx.sequence || 0) + ', sent ' + (tx.sent || 0) + ', errors ' + (tx.errors || 0) + (tx.last_error ? ': ' + tx.last_error : (tx.destination_error ? ': ' + tx.destination_error : ''))"></div>
+        <div class="small muted mt-1" x-show="tx.enabled">Transmitting only: UDP has no acknowledgement from the vehicle.</div>
+      </div>
+    </div>
+  </div>
+</div>
+
 <div class="panel mt-3">
   <div class="panel-h"><strong>Active issues</strong><span class="muted small" x-text="issues.length + ' active'"></span></div>
   <div class="panel-b">

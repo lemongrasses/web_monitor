@@ -14,7 +14,10 @@
 #   `systemctl restart <unit>` for units marked `restartable: true` in the config
 # - installs the `aio-dashboard` command (start/stop/status/logs/config)
 # - optionally installs aio-nav.service (--with-aio-nav); not needed for the Overview page,
-#   which starts AIO NAV and DSO itself, like the AIO Nav desktop app
+#   which starts AIO NAV and DSO itself, like the AIO Nav desktop app. When the dashboard starts
+#   AIO NAV by itself at boot (autostart.enabled), the unit is installed but NOT enabled, and an
+#   already enabled one is disabled: two boot-time managers for one program fight. Otherwise it
+#   is enabled as before, with a warning if the Overview page can also start/stop it.
 # - optional, off by default: --with-sysmon installs aio-sysmon.service, the computer's black box
 #   (docs/SYSMON.md), and keeps the system journal across reboots. If it is already installed,
 #   re-running the installer updates it even without the flag.
@@ -167,13 +170,36 @@ else
   echo "    no restartable units configured"
 fi
 
+# Who starts AIO NAV at boot? "autostart": the dashboard does (then systemd must not); "control":
+# the Overview page can start/stop it, nothing automatic; "no": the dashboard only watches.
+NAV_OWNER=$(PYTHONPATH="$PREFIX/lib" python3 - "$PREFIX/config/dashboard.yaml" <<'EOF2'
+import sys, yaml
+cfg = yaml.safe_load(open(sys.argv[1])) or {}
+control = bool((cfg.get("nav") or {}).get("allow_control"))
+auto = bool((cfg.get("autostart") or {}).get("enabled"))
+print("autostart" if control and auto else "control" if control else "no")
+EOF2
+)
 if [[ -n "$AIO_NAV_BIN" ]]; then
   [[ -x "$AIO_NAV_BIN" ]] || { echo "aio-nav wrapper not executable: $AIO_NAV_BIN" >&2; exit 1; }
   echo "==> systemd unit aio-nav.service ($AIO_NAV_BIN)"
   sed -e "s|@USER@|$RUN_USER|g" -e "s|@AIO_NAV_BIN@|$AIO_NAV_BIN|g" "$SRC/deploy/aio-nav.service" \
     > /etc/systemd/system/aio-nav.service
   systemctl daemon-reload
-  systemctl enable aio-nav.service
+  if [[ "$NAV_OWNER" == autostart ]]; then
+    echo "    not enabled at boot: the dashboard starts AIO NAV itself (autostart.enabled)"
+  else
+    systemctl enable aio-nav.service
+  fi
+fi
+if systemctl is-enabled --quiet aio-nav.service 2>/dev/null; then
+  if [[ "$NAV_OWNER" == autostart ]]; then
+    echo "==> aio-nav.service was enabled at boot; disabling it (the dashboard starts AIO NAV itself)"
+    systemctl disable aio-nav.service
+  elif [[ "$NAV_OWNER" == control ]]; then
+    echo "    note: aio-nav.service starts AIO NAV at boot and the Overview page can also start/stop it;"
+    echo "    keep one manager (the dashboard Maintenance page shows this as a warning)"
+  fi
 fi
 
 if [[ $WITH_SYSMON -eq 1 && -d "$SRC/aio_sysmon" ]]; then

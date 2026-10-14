@@ -74,6 +74,7 @@ h1, h2, h3 { font-family: var(--cond); font-weight: 600; letter-spacing: .005em;
 .master-READY { background: var(--go); }
 .master-INITIALIZING { background: var(--caution); }
 .master-FAULT { background: var(--warning); }
+.master-DEGRADED { background: var(--caution); }
 .master-UNKNOWN { background: #52606d; }
 .master-STARTING { background: var(--advisory); }
 .master-STOPPED { background: #dfe5eb; color: var(--ink); }
@@ -266,6 +267,7 @@ h1, h2, h3 { font-family: var(--cond); font-weight: 600; letter-spacing: .005em;
 .hero-INITIALIZING { background: var(--caution); }
 .hero-STARTING { background: var(--advisory); }
 .hero-FAULT { background: var(--warning); }
+.hero-DEGRADED { background: var(--caution); box-shadow: inset 6px 0 0 var(--warning); }
 .hero-UNKNOWN { background: #52606d; }
 .hero-STOPPED { background: #dfe5eb; color: var(--ink); border-bottom: 1px solid var(--rule); }
 .hero-STOPPED .hero-detail, .hero-STOPPED .hero-meta { opacity: 1; color: var(--ink-2); }
@@ -349,3 +351,9 @@ h1, h2, h3 { font-family: var(--cond); font-weight: 600; letter-spacing: .005em;
                font-weight: 700; font-size: var(--t-xl); color: var(--ink); }
 .login-brand .brand-mark { width: 1.6rem; height: 1.6rem; }
 .login-cmd { background: #f0f4f8; border: 1px solid var(--rule-soft); border-radius: 2px; padding: .4rem .6rem; font-size: .9rem; }
+
+/* Maintenance readiness panel: long reason / flag lists wrap instead of running into the next column. */
+.rd-panel .vrow { align-items: flex-start; }
+.rd-panel .vrow .k { flex: none; }
+.rd-panel .vrow .v { font-size: var(--t-s); white-space: normal; text-align: right; overflow-wrap: anywhere; min-width: 0; }
+.rd-panel .vrow .v.mono { font-size: var(--t-xs); }

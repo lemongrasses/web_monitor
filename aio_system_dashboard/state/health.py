@@ -11,12 +11,15 @@ flags). GNSS, camera, LiDAR and network only produce advisories (spec §11–14)
                 but sends nothing after the start-up time, or its output stopped
 """
 
+import datetime
 import logging
+import secrets
 import threading
 import time
 from typing import Dict, List, Optional, Tuple
 
 from ..actions import process_control
+from . import readiness as rd
 from .indicator import DebouncedStatus, FAULT, HEALTHY, UNKNOWN, WARNING
 
 logger = logging.getLogger(__name__)
@@ -25,6 +28,7 @@ READY = "READY"
 INITIALIZING = "INITIALIZING"
 STARTING = "STARTING"
 STOPPED = "STOPPED"
+DEGRADED = "DEGRADED"              # was READY in this run, a required condition is now lost
 PRODUCT_FAULT = "FAULT"
 PRODUCT_UNKNOWN = "UNKNOWN"
 _PRODUCT_SEVERITY = {PRODUCT_UNKNOWN: 0, STOPPED: 0, READY: 1, STARTING: 1, INITIALIZING: 2, PRODUCT_FAULT: 3}
@@ -153,6 +157,25 @@ class HealthEngine:
         self._run_since: Optional[float] = None       # when the current AIO NAV process was first seen
         self._step: Optional[Dict] = None
         self._fresh_since: Optional[float] = None
+        # Readiness (state/readiness.py): one snapshot for the pages, /api/readiness and 0x05.
+        self.session_id = secrets.randbits(32) or 1     # new at every dashboard start
+        self._sequence = 0
+        rcfg = cfg["readiness"]
+        self.conditions = {n: rd.Condition(rcfg["gnss_stable_s"] if n == "gnss_quality" else rcfg["stable_s"],
+                                           rcfg["loss_s"]) for n in rd.CONDITIONS}
+        # READY reached by the current AIO NAV process. Per process, not per NAV session: when AIO
+        # NAV dies the NAV state is cleared (a new session) at once, and the latch must survive that
+        # so a crash while driving says "stop using navigation", not "starting".
+        self._ready_run = False
+        unknown = [n for n in (rcfg.get("require") or []) if n not in rd.CONDITIONS]
+        if unknown:
+            logger.error("readiness.require: unknown condition(s) %s; READY is blocked until fixed "
+                         "(known: %s)", ", ".join(unknown), ", ".join(rd.CONDITIONS))
+        self._duplicate = DebouncedStatus(3.0, 2.0, clock=clock)   # a stop/start overlap is not a fault
+        self._rd_state: Optional[str] = None
+        self._rd_since = clock()
+        self.autostart_status = None                   # callable -> dict, set by the app
+        self.status_publisher = None                   # 0x05 sender, set by the app
         self._stop = threading.Event()
         self._thread: Optional[threading.Thread] = None
 
@@ -192,6 +215,7 @@ class HealthEngine:
         pids = tuple(sorted(svc.get("pids") or []))
         if pids and pids != self._last_nav_pids:
             self._run_since = self._clock()          # a new process: its start-up time begins now
+            self._ready_run = False                  # and it has to become READY again
         elif not pids:
             self._run_since = None
         if pids and self._last_nav_pids and pids != self._last_nav_pids:
@@ -277,6 +301,9 @@ class HealthEngine:
         aiding = {k: (flag_age.get(k) is not None and flag_age[k] <= ncfg["flag_active_s"] and fresh)
                   for k in ("zupt", "zihr", "nhc", "vupt", "gnss")}
 
+        readiness = self._readiness(now, shown, nav, nav_svc, gq, fresh, latest, in_grace)
+        health_view = self._health_view(shown, readiness)
+
         network = self.store.get("network", {}) or {}
         indicators = {
             **align_lamps,
@@ -331,11 +358,8 @@ class HealthEngine:
         nav_out["fresh"] = fresh
         self.store.set("product", {
             "ts": time.time(),
-            "health": {"state": shown, "since_s": now - self.product.since,
-                       "title": self._product_reasons[0] if self._product_reasons else "",
-                       "detail": self._product_reasons[1] if len(self._product_reasons) > 1 else "",
-                       "reasons": [r for r in self._product_reasons if r],
-                       "step": self._step},
+            "health": health_view,
+            "readiness": readiness,
             "nav": nav_out,
             "solution": latest if latest else None,
             "udp": {"level": u_shown, "label": self._udp_label[0], "detail": self._udp_label[1],
@@ -349,8 +373,153 @@ class HealthEngine:
             "uptime_s": system.get("uptime_s"),
             "session_uptime_s": (time.time() - nav["session_started"]) if nav.get("session_started") else None,
         })
-        self.store.set("maint", self._maintenance(now, services, network, system,
-                                                  shown, u_shown, nav, expected))
+        self.store.set("readiness", readiness)
+        maint = self._maintenance(now, services, network, system, shown, u_shown, nav, expected)
+        maint["product_state"] = health_view["state"]      # the same state the user pages show
+        self.store.set("maint", maint)
+        if self.status_publisher is not None:
+            self.status_publisher.publish(readiness, now)
+
+    # -------------------------------------------------------------- readiness
+    def _imu_topic(self, ros: Dict) -> Optional[Dict]:
+        name = self.cfg["readiness"].get("imu_topic") or "auto"
+        watched = ros.get("watched") or []
+        if name == "auto":
+            return next((t for t in watched if t.get("group") == "nav"), None)
+        return next((t for t in watched if t.get("name") == name), None)
+
+    def _condition_inputs(self, gq: Dict) -> Dict[str, Tuple[Optional[bool], str]]:
+        """(holds now, why not) for every optional READY condition, required or not (the health
+        bits report them all)."""
+        rcfg = self.cfg["readiness"]
+        out: Dict[str, Tuple[Optional[bool], str]] = {}
+
+        ros = self.store.get("ros", {}) or {}
+        t = self._imu_topic(ros) if ros.get("available") else None
+        if t is None:
+            out["imu"] = (False, "No IMU topic seen" if ros.get("available") else "ROS 2 monitor not available")
+        else:
+            # The topic's state, not its raw age: with ros.sampling a 100 Hz topic is only listened
+            # to in windows, so its age grows between them while its state stays "healthy".
+            out["imu"] = (t.get("state") == "healthy", f"IMU {t['name']}: {t.get('state', 'unknown').replace('_', ' ')}")
+
+        quality = gq.get("quality") if gq.get("available") else None
+        out["gnss"] = (quality not in (None, "none"), "No GNSS position" if quality == "none" else "No GNSS data")
+        want = rcfg.get("gnss_min_quality") or "float"
+        need = rd.MIN_QUALITY.get(str(want).lower(), 3)
+        label = GNSS_LEVEL.get(quality, (None, "no data"))[1]
+        out["gnss_quality"] = (rd.gnss_rank(quality) >= need,
+                               f"GNSS {label}; needs {rd.GNSS_CODE_NAMES[need].replace('_', ' ')} or better")
+
+        dso = (self.store.get("watchdog", {}) or {}).get("dso") or {}
+        age = dso.get("last_msg_age_s")
+        dso_ok = dso.get("state") == "ok" and age is not None and age <= rcfg["dso_stale_s"]
+        out["dso"] = (dso_ok, f"DSO odometry {dso.get('state') or 'not monitored'}"
+                              + (f", last message {age:.1f} s ago" if age is not None and not dso_ok else ""))
+
+        network = self.store.get("network", {}) or {}
+        externals = [d for d in self.cfg.nav_destinations() if d.get("kind") == "external"]
+        routes = network.get("nav_routes") or {}
+        if not externals:
+            out["vehicle_route"] = (False, "No vehicle destination set (output_udp in aio_nav.yaml)")
+        else:
+            bad = [f'{d["host"]}:{d["port"]}' for d in externals
+                   if not (routes.get(f'{d["host"]}:{d["port"]}') or {}).get("ok")]
+            out["vehicle_route"] = (not bad, f"No route to the vehicle {', '.join(bad)}")
+
+        storage = self._storage(self.store.get("system", {}) or {})
+        full = storage is not None and storage["percent"] >= self.cfg["system"]["disk_warn_percent"]
+        out["storage"] = (storage is not None and not full,
+                          f"Storage almost full ({storage['percent']:.0f}%)" if full else "Storage not checked yet")
+        return out
+
+    def _ownership(self, now: float, nav_svc: Dict, autostart_on: bool) -> Optional[str]:
+        """Two managers or two processes for AIO NAV (the configured nav service only)."""
+        dup = self._duplicate.update(FAULT if nav_svc.get("duplicate") else HEALTHY, now) == FAULT
+        if dup:
+            return f"AIO NAV is running twice (pids {', '.join(map(str, nav_svc.get('pids') or []))})"
+        unit = (nav_svc.get("unit_state") or {})
+        if autostart_on and unit.get("file_state") == "enabled":
+            return (f"{nav_svc.get('unit') or 'aio-nav.service'} also starts AIO NAV at boot; "
+                    f"disable it (sudo systemctl disable {nav_svc.get('unit') or 'aio-nav.service'})")
+        return None
+
+    def _readiness(self, now, shown, nav, nav_svc, gq, fresh, latest, in_grace) -> Dict:
+        rcfg = self.cfg["readiness"]
+        required = set(rcfg.get("require") or [])
+        if "dso" in required and rcfg.get("dso_only_with_vupt", True) and not self.cfg.aio_nav.get("vupt"):
+            required.discard("dso")                 # DSO only matters when AIO NAV uses it (VUPT)
+        conditions, listing = {}, []
+        unknown_required = sorted(n for n in required if n not in rd.CONDITIONS)
+        for name, (ok, why) in self._condition_inputs(gq).items():
+            ready = self.conditions[name].update(ok, now)
+            label = rd.CONDITIONS[name][2]
+            reason = "" if ready else (why if not ok else f"{label}: waiting for it to stay stable")
+            conditions[name] = {"required": name in required, "ok": bool(ok), "ready": ready, "reason": reason}
+            listing.append({"name": name, "label": label, **conditions[name]})
+
+        auto = (self.autostart_status() if self.autostart_status else None) or {"enabled": False}
+        ever_ready = self._ready_run
+        inp = {
+            "product_state": shown, "product_reasons": self._product_reasons, "step": self._step,
+            "nav_running": bool(nav_svc.get("pids")), "nav_fresh": fresh, "nav_flags": latest,
+            "ever_output": bool(latest), "ever_ready": ever_ready, "booting": in_grace,
+            "conditions": conditions, "hold": bool(auto.get("hold")), "autostart": auto,
+            "nav_required_flags": [f for f in self.cfg["nav"]["ready_requires"] if f in ALIGN_LAMPS],
+            "wanted": process_control.wanted(self.cfg, self.cfg["nav"]["service"]),
+            "unknown_required": unknown_required,
+            "ownership": self._ownership(now, nav_svc, bool(auto.get("enabled"))),
+            "config_ok": bool(self.cfg.aio_nav.get("loaded")),
+        }
+        snap = rd.evaluate(inp)
+        if snap["state"] == "READY":
+            self._ready_run = True
+        if snap["state"] != self._rd_state:
+            level = {"READY": "success", "FAULT": "fault", "DEGRADED": "warning"}.get(snap["state"], "info")
+            if self._rd_state is not None:
+                self.events.add(level, "readiness", f"Readiness {snap['state']}", "; ".join(snap["reasons"]))
+            self._rd_state, self._rd_since = snap["state"], now
+        self._sequence = (self._sequence + 1) & 0xFFFFFFFF
+        quality = gq.get("quality") if gq.get("available") else None
+        code = {"none": 1, "spp": 2, "unrated_poor": 2, "float": 3, "unrated": 3, "fixed": 4}.get(quality, 0)
+        snap.update({
+            "schema_version": rd.SCHEMA_VERSION, "session_id": self.session_id, "sequence": self._sequence,
+            "state_age_s": round(now - self._rd_since, 1),
+            "observed_at": datetime.datetime.now().astimezone().isoformat(timespec="milliseconds"),
+            "uptime_ms": int((now - self.started) * 1000),
+            "gnss_quality": rd.GNSS_CODE_NAMES[code], "gnss_quality_code": code,
+            "nav": {"age_ms": None if nav.get("age_s") is None else int(nav["age_s"] * 1000),
+                    "rate_hz": round(nav.get("rate_hz") or 0.0, 1),
+                    "flags_c": int(latest.get("flags_c", 0)) if fresh and latest else 0},
+            "required": sorted(required), "conditions": listing,
+            "autostart": {k: v for k, v in auto.items() if k != "enabled"} | {"enabled": bool(auto.get("enabled"))},
+        })
+        return snap
+
+    def _health_view(self, shown: str, r: Dict) -> Dict:
+        """What the pages show. The product state as before, except where readiness knows more:
+        a required condition missing, degraded after READY, an operator stop, or a start-up the
+        coordinator is waiting for. The pages and the vehicle (0x05) then never disagree."""
+        state, lines, step = shown, list(self._product_reasons), self._step
+        why = "; ".join(r["reasons"])
+        if r["state"] == "DEGRADED" and shown in (READY, INITIALIZING):
+            state, lines, step = DEGRADED, ["Navigation degraded: " + why, r["action_text"]], None
+        elif r["state"] == "REFINING" and shown == READY:          # aligned, a required condition is missing
+            state, lines, step = INITIALIZING, ["Waiting for: " + why, r["action_text"]], None
+        elif r["state"] == "FAULT" and "OWNERSHIP_CONFLICT" in r["inhibit"]:
+            state, lines, step = PRODUCT_FAULT, [why, "Maintenance is needed before AIO NAV can be used."], None
+        elif r["state"] == "FAULT" and r["requested_action"] == "SAFE_STOP" and shown != PRODUCT_FAULT:
+            state, lines, step = PRODUCT_FAULT, [why, r["action_text"]], None
+        elif r["state"] == "FAULT" and "STARTUP_TIMEOUT" in r["inhibit"] and shown == STOPPED:
+            state, lines, step = PRODUCT_FAULT, [why, "Automatic start gave up. Press Start to try again."], None
+        elif r["state"] == "CHECKING" and shown in (STOPPED, PRODUCT_FAULT, PRODUCT_UNKNOWN):
+            state, lines, step = STARTING, ["Starting automatically", why], None
+        elif r["state"] == "MAINTENANCE" and "MAINTENANCE_HOLD" in r["inhibit"]:
+            lines = ["Stopped by an operator", "Press Start to resume."]
+        return {"state": state, "since_s": self._clock() - self.product.since,
+                "title": lines[0] if lines else "", "detail": lines[1] if len(lines) > 1 else "",
+                "reasons": [x for x in lines if x], "step": step,
+                "action": r["requested_action"], "readiness": r["state"]}
 
     @staticmethod
     def _gnss_detail(gq: Dict) -> str:
@@ -422,6 +591,14 @@ class HealthEngine:
             # AIO NAV stopped on purpose (nobody asked it to run) is a normal state, not an issue.
             if key == nav_key and state == "stopped" and product_state == STOPPED:
                 continue
+            if key == nav_key:
+                unit = svc.get("unit") or "aio-nav.service"
+                if svc.get("duplicate"):
+                    issue("services", FAULT, f"{svc.get('label', key)} is running twice",
+                          "pids " + ", ".join(map(str, svc.get("pids") or [])), "system")
+                if self.cfg["nav"]["allow_control"] and (svc.get("unit_state") or {}).get("file_state") == "enabled":
+                    issue("services", WARNING, f"{unit} starts AIO NAV at boot, and the dashboard also controls it",
+                          f"one manager only: sudo systemctl disable {unit}", "system")
             if state in SERVICE_DOWN_STATES and not optional and (key == nav_key or state != "not_installed"):
                 level = FAULT if key == nav_key else WARNING
                 issue("services", level, f"{svc.get('label', key)} {state.replace('_', ' ')}",

@@ -13,6 +13,7 @@ import threading
 
 from werkzeug.serving import make_server
 
+from .actions.autostart import StartupCoordinator
 from .actions.registry import ActionRegistry
 from .collectors.fake import FakeState
 from .actions import process_control
@@ -23,6 +24,7 @@ from .collectors.ros_guard import RosIsolationGuard
 from .collectors.network import NetworkCollector
 from .collectors.ros2 import Ros2Collector
 from .collectors.services import ServicesCollector
+from .collectors.status_udp import StatusUdpPublisher
 from .collectors.system import SystemCollector
 from . import modules
 from .config import load_config, resolve_path
@@ -79,12 +81,22 @@ class DashboardContext:
         self.data = DataRoots(cfg["data"]["roots"])
         self.ros_env_at_start = dict(cfg.ros_env())   # this process's own ROS connection uses these
         self.actions.after_run = self._after_action
+        # Start-up coordinator (autostart) and the 0x05 status packet; both off unless configured.
+        self.autostart = StartupCoordinator(cfg, self.store, self.actions, self.events,
+                                            on_start=lambda: self.nav.clear("AIO NAV automatic start"))
+        self.health.autostart_status = self.autostart.status
+        self.status_udp = StatusUdpPublisher(cfg, self.store)
+        self.health.status_publisher = self.status_udp
         self.modules = modules.load(cfg)      # optional modules (installed with --with-<name>)
         self.maint_pages = []                 # sidebar of the Maintenance app, filled when it is built
-        self._workers = [self.nav, self.system, self.services, self.network, self.ros, self.health]
+        self._workers = [self.nav, self.system, self.services, self.network, self.ros, self.health,
+                         self.autostart]
 
     def _after_action(self, action_id: str, target: str, result: dict) -> None:
         """After AIO NAV was started with a freshly read config file: follow what changed in it."""
+        coordinator = getattr(self, "autostart", None)
+        if coordinator is not None:
+            coordinator.on_action(action_id, target)    # an operator Stop holds the automatic start
         if action_id not in ("start_process", "restart_process") or \
                 target not in (process_control.GROUP, self.cfg["nav"]["service"]):
             return
@@ -118,6 +130,7 @@ class DashboardContext:
             w.stop()
         for w in self._workers:
             w.join()
+        self.status_udp.close()
 
 
 def main(argv=None) -> int:

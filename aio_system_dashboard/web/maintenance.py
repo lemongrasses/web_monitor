@@ -65,6 +65,8 @@ def create_maintenance_app(ctx):
             "ros": ctx.store.get("ros", {}),
             "watchdog": ctx.store.get("watchdog", {}),
             "gnss": ctx.store.get("gnss", {}),
+            "readiness": ctx.store.get("readiness", {}),
+            "status_udp": ctx.store.get("status_udp", {}) or {"enabled": False},
             "product": {k: product.get(k) for k in ("health", "udp", "nav", "indicators", "aiding")},
             "config": {
                 "aio_nav": ctx.cfg.aio_nav,

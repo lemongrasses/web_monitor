@@ -27,6 +27,14 @@ def create_product_app(ctx):
     def api_state():
         return jsonify(ctx.store.get("product", {}) or {})
 
+    @app.route("/api/readiness")
+    def api_readiness():
+        """The readiness snapshot alone: the same data the 0x05 status packet carries."""
+        snap = ctx.store.get("readiness")
+        if not snap:
+            return jsonify({"schema_version": 1, "state": "BOOTING", "reasons": ["System starting"]}), 503
+        return jsonify(snap)
+
     @app.route("/api/nav/control", methods=["POST"])
     def api_nav_control():
         """Start / stop / restart AIO NAV (with the programs that go with it, like the AIO Nav app)."""

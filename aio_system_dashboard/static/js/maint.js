@@ -95,7 +95,20 @@
       lvl(level, label) { return { level: level || "unknown", label: label || AIO.LEVEL_TEXT[level] || "Unknown" }; },
       get productState() { return this.connected && this.d && this.d.maint ? this.d.maint.product_state : "UNKNOWN"; },
       get state() { return this.productState; },
-      get stateLabel() { return { READY: "Ready", INITIALIZING: "Initializing", FAULT: "Fault", STARTING: "Starting", STOPPED: "Stopped" }[this.productState] || "Unknown"; },
+      get stateLabel() { return { READY: "Ready", INITIALIZING: "Initializing", FAULT: "Fault", STARTING: "Starting", STOPPED: "Stopped", DEGRADED: "Degraded" }[this.productState] || "Unknown"; },
+      get rd() { return (this.d && this.d.readiness) || {}; },
+      get tx() { return (this.d && this.d.status_udp) || {}; },
+      rdChip() {
+        const s = this.rd.state;
+        const level = s === "READY" ? "healthy" : s === "FAULT" ? "fault" : s ? "warning" : "unknown";
+        return this.lvl(level, s ? s.replace(/_/g, " ") : "Unknown");
+      },
+      condChip(c) {
+        if (c.ready) return this.lvl("healthy", "Ready");
+        if (c.ok) return this.lvl("warning", "Settling");
+        return this.lvl(c.required ? "fault" : "idle", c.required ? "Not ready" : "No");
+      },
+      hex(v) { return v == null ? "—" : "0x" + Number(v).toString(16).padStart(5, "0"); },
       get stateReasons() {
         if (!this.connected) return ["Lost connection to the dashboard. Values on this page are not live."];
         const h = this.d && this.d.product && this.d.product.health;
@@ -110,7 +123,7 @@
       pageLevel(page) {
         if (["config", "terminal", "replay"].includes(page)) return "idle";   // tools, not health
         if (!this.d) return "unknown";
-        if (page === "overview") return { READY: "healthy", FAULT: "fault", INITIALIZING: "warning" }[this.productState] || "unknown";
+        if (page === "overview") return { READY: "healthy", FAULT: "fault", INITIALIZING: "warning", DEGRADED: "warning" }[this.productState] || "unknown";
         const rel = this.issues.filter((i) => page === "diagnostics" || i.link === page ||
           (page === "ros" && i.layer === "dataflow" && i.link) || (page === "network" && i.layer === "network"));
         return rel.reduce((acc, i) => (SEV[i.level] > SEV[acc] ? i.level : acc), "healthy");
@@ -142,7 +155,8 @@
         // AIO NAV (and what starts and stops with it, DSO) stopped on purpose is normal: grey, not red.
         const c = (this.d && this.d.config) || {};
         const group = (c.nav_group || []).concat(c.nav_service ? [c.nav_service] : []);
-        if (group.includes(key) && this.productState === "STOPPED" && s && s.state === "stopped") return this.lvl("idle", "Stopped");
+        // STARTING includes an automatic start that is still waiting for its prerequisites.
+        if (group.includes(key) && ["STOPPED", "STARTING"].includes(this.productState) && s && s.state === "stopped") return this.lvl("idle", "Stopped");
         const m = SERVICE[(s && s.state) || "unknown"] || SERVICE.unknown;
         return this.lvl(m[0], m[1]);
       },

@@ -3,7 +3,7 @@
   "use strict";
   const fmt = AIO.fmt;
   const STATE_LABEL = { READY: "Ready", INITIALIZING: "Initializing", STARTING: "Starting",
-                        STOPPED: "Stopped", FAULT: "Fault", UNKNOWN: "Unknown" };
+                        STOPPED: "Stopped", FAULT: "Fault", DEGRADED: "Degraded", UNKNOWN: "Unknown" };
 
   window.productPage = function () {
     let navMap = null;            // Leaflet objects stay outside Alpine's reactive proxy

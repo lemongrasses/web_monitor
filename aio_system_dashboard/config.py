@@ -77,6 +77,25 @@ DEFAULTS: Dict[str, Any] = {
                      "fast_restarts": 3,      # this many restarts within window_s ...
                      "window_s": 60.0,        # ... and further restarts wait retry_s too
                      "max_memory_mb": "auto"},  # RAM + swap above this: restart DSO. auto: 20% of RAM; 0: off
+    # READY for the vehicle (state/readiness.py). By default READY needs only AIO NAV aligned with
+    # fresh output, as before. require: extra conditions, each held stable_s before READY counts
+    # and lost after failing loss_s: imu, gnss, gnss_quality, dso, vehicle_route, storage.
+    "readiness": {"require": [], "stable_s": 2.0, "loss_s": 1.0,
+                  "gnss_min_quality": "float",   # for gnss_quality: spp, float or fixed
+                  "gnss_stable_s": 3.0,
+                  "imu_topic": "auto",           # a ros.topics name; auto: the first one in group nav
+                  "dso_stale_s": 1.0},           # DSO odometry older than this is not ready
+    # Start AIO NAV (+ DSO, the nav.control_group) by itself after boot; needs nav.allow_control.
+    # It never restarts AIO NAV once READY was reached in this boot (the vehicle may be moving).
+    "autostart": {"enabled": False,
+                  "prerequisites": [],           # readiness conditions to wait for: imu, gnss
+                  "prerequisite_stable_s": 2.0,
+                  "retry_backoff_s": [5, 15, 30, 60],   # waits before attempts 2, 3, ...
+                  "max_attempts": 5},
+    # 0x05 status packet (docs/OPERATION.md): readiness for the vehicle, next to the 0x04 data.
+    "status_udp": {"enabled": False,
+                   "destination": "auto",       # host:port; auto: output_udp of aio_nav.yaml
+                   "message_id": 5, "rate_hz": 2.0},
     "events": {"log_file": "logs/events.jsonl", "max_memory": 500},
     "actions": {"restart_timeout_s": 30.0, "diagnostic_timeout_s": 15.0,
                 "stop_grace_s": 5.0},  # stop_grace_s: SIGTERM -> SIGKILL delay for AIO NAV / DSO
@@ -188,7 +207,7 @@ def _read_aio_nav_params(path: str) -> Dict[str, Any]:
         path = discover_aio_nav_config()
     result: Dict[str, Any] = {"path": path, "auto": auto, "loaded": False, "output_udp": "",
                               "output_rate": None, "fusion_txt_path": "", "ros_domain_id": None,
-                              "ros_localhost_only": None, "use_sim_time": None}
+                              "ros_localhost_only": None, "use_sim_time": None, "vupt": False}
     if not path:
         result["error"] = "aio_nav.yaml not found in the usual locations; set nav.aio_nav_config"
         return result
@@ -212,6 +231,8 @@ def _read_aio_nav_params(path: str) -> Dict[str, Any]:
                 result[key] = int(v) if isinstance(v, (int, float)) and not isinstance(v, bool) else None
             if isinstance(params.get("use_sim_time"), bool):
                 result["use_sim_time"] = params["use_sim_time"]
+            odo = params.get("Odometry")
+            result["vupt"] = bool(odo.get("vupt")) if isinstance(odo, dict) else False
             break
     return result
 

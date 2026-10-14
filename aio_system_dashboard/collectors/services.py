@@ -23,7 +23,8 @@ def systemd_unit_state(unit: str, timeout: float = 3.0, user: bool = False) -> D
         out = subprocess.run(
             ["systemctl"] + (["--user"] if user else []) + ["show", unit, "--no-pager",
              "-p", "LoadState", "-p", "ActiveState", "-p", "SubState",
-             "-p", "MainPID", "-p", "ActiveEnterTimestamp", "-p", "NRestarts"],
+             "-p", "MainPID", "-p", "ActiveEnterTimestamp", "-p", "NRestarts",
+             "-p", "UnitFileState"],
             capture_output=True, text=True, timeout=timeout, check=False,
             env=user_bus_env() if user else None,
         )
@@ -37,6 +38,7 @@ def systemd_unit_state(unit: str, timeout: float = 3.0, user: bool = False) -> D
         "main_pid": int(props.get("MainPID") or 0),
         "since": props.get("ActiveEnterTimestamp", ""),
         "restarts": props.get("NRestarts", ""),
+        "file_state": props.get("UnitFileState", ""),      # enabled = started by systemd at boot
     }
 
 
@@ -135,5 +137,7 @@ class ServicesCollector(PeriodicCollector):
                 "pids": pids or ([unit_state["main_pid"]] if unit_state.get("main_pid") else []),
                 "unit_state": unit_state,
                 "restartable": bool(svc.get("restartable")),
+                # More than one process for a single program (e.g. started twice by two managers).
+                "duplicate": len(pids or []) > 1,
             }
         return out
