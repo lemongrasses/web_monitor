@@ -81,7 +81,8 @@
         this.msg = ""; this.preview = null; this.view = v;
       },
       payload() {
-        const p = { base_mtime_ns: this.file.mtime_ns };
+        // version: a content hash string, compared as text (a nanosecond mtime lost precision here)
+        const p = { base_version: this.file.version };
         if (this.view === "raw") p.text = this.raw; else p.form = this.formChanges();
         return p;
       },
@@ -102,7 +103,12 @@
         this.busy = false;
         this.msg = (j.summary || "") + ((j.warnings || []).length ? " — note: " + j.warnings.join("; ") : "");
         this.msgClass = j.success ? "ok" : "bad";
-        if (j.success) { const keep = this.view; await this.load(this.mode); this.view = keep === "raw" ? "raw" : "form"; }
+        // Saved but not applied (restart failed) still changed the file: show what is on disk now.
+        if (j.success || j.saved) {
+          const keep = this.view, msg = this.msg, cls = this.msgClass;
+          await this.load(this.mode);
+          this.view = keep === "raw" ? "raw" : "form"; this.msg = msg; this.msgClass = cls;
+        }
       },
       discard() {
         this.raw = this.text; this.form = J(this.orig);

@@ -113,27 +113,43 @@ def register_tools(ctx, app, page_context) -> None:
             f, text = load(mode)
         except (ac.ConfigError, OSError) as e:
             return jsonify({"success": False, "summary": str(e)}), 404
+        base = b.get("base_version")
+        if base is None:
+            # A page from before this version sent a nanosecond mtime, which cannot be compared
+            # reliably; ask for a reload instead of saving without a conflict check.
+            return jsonify({"success": False, "saved": False,
+                            "summary": "this page is out of date; reload it and edit again"}), 409
         try:
-            result = ac.save(ctx.cfg, mode, new_text(text, b), b.get("base_mtime_ns"))
+            result = ac.save(ctx.cfg, mode, new_text(text, b), str(base))
+        except ac.ConflictError as e:
+            return jsonify({"success": False, "saved": False, "conflict": True, "summary": str(e)}), 409
         except ac.ConfigError as e:
-            return jsonify({"success": False, "summary": str(e)}), 409
+            return jsonify({"success": False, "saved": False, "summary": str(e)}), 422
         except OSError as e:
-            return jsonify({"success": False, "summary": f"cannot write {f['name']}: {e}"}), 500
+            ctx.events.add("fault", "action", f"AIO NAV config {f['name']} not saved",
+                           f"{e.__class__.__name__}: {e}")
+            return jsonify({"success": False, "saved": False,
+                            "summary": f"cannot write {f['name']}: {e}; the file on disk is unchanged"}), 500
         if not result["changed"]:
-            return jsonify({"success": True, "summary": "no changes", **result})
+            return jsonify({"success": True, "saved": False, "summary": "no changes", **result})
         lines = sum(1 for l in result["diff"].splitlines() if l[:1] == "+" and l[:3] != "+++")
         ctx.events.add("warning", "action", f"AIO NAV config {f['name']} saved",
                        f"{lines} line(s) changed from {request.remote_addr}; previous version {result['backup']}")
         summary = f"saved {f['name']} (previous version kept as {result['backup']})"
+        # Saving and applying are separate results: a save whose restart failed is not a success.
+        restart = {"requested": bool(b.get("restart")), "success": None}
         nav = (ctx.store.get("services", {}) or {}).get(ctx.cfg["nav"]["service"]) or {}
         if b.get("restart") and f["active"] and nav.get("pids"):
             r = ctx.actions.run("restart_process", process_control.GROUP)
-            summary += "; AIO NAV " + ("restarted" if r.get("success") else "restart failed: " + r.get("summary", ""))
+            restart["success"] = bool(r.get("success"))
+            summary += ("; AIO NAV restarted" if restart["success"] else
+                        "; saved but NOT applied: AIO NAV restart failed: " + r.get("summary", ""))
         elif f["active"] and nav.get("pids"):
             summary += "; it applies when AIO NAV is restarted"
         elif not f["active"]:
             summary += "; it applies when this mode is used"
-        return jsonify({"success": True, "summary": summary, **result})
+        ok = restart["success"] is not False
+        return jsonify({"success": ok, "saved": True, "restart": restart, "summary": summary, **result})
 
     @app.route("/api/maint/aionav/<mode>/backup/<backup_id>")
     def api_aionav_backup(mode, backup_id):

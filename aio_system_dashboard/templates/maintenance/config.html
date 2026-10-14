@@ -16,6 +16,10 @@
     <span class="muted small ms-auto" x-show="file" x-text="file ? file.path : ''"></span>
   </div>
   <div class="alert alert-warning py-2" x-show="loadError" x-text="loadError" x-cloak></div>
+  <div class="alert alert-warning py-2" x-show="file && file.writable === false" x-cloak>
+    This file cannot be saved from here: the dashboard's account may not replace files in its folder.
+    Saving needs write permission on the folder, not only on the file.
+  </div>
 
   <template x-if="file">
   <div>

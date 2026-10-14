@@ -93,21 +93,86 @@ class ConfigFilesTest(unittest.TestCase):
     def test_save_backup_conflict_and_restore(self):
         f = ac.file_for(self.cfg, "live")
         new = ac.apply_form(LIVE, {"output_rate": 50})
-        r = ac.save(self.cfg, "live", new, f["mtime_ns"])
+        r = ac.save(self.cfg, "live", new, f["version"])
         self.assertTrue(r["changed"])
         self.assertIn("+    output_rate: 50.0", r["diff"])
         self.assertEqual((self.dir / "aio_nav.yaml").read_text(), new)
+        self.assertEqual(r["version"], ac.file_for(self.cfg, "live")["version"])
         self.assertEqual(self.cfg.expected_nav_rate, 50.0)                   # the dashboard follows at once
         backups = ac.backups(self.cfg, "aio_nav.yaml")
         self.assertEqual(ac.read_backup(self.cfg, "aio_nav.yaml", backups[0]["id"]), LIVE)
-        with self.assertRaises(ac.ConfigError):                              # opened before the save
-            ac.save(self.cfg, "live", LIVE, f["mtime_ns"])
+        with self.assertRaises(ac.ConflictError):                            # opened before the save
+            ac.save(self.cfg, "live", LIVE, f["version"])
         with self.assertRaises(ac.ConfigError):                              # broken text is not written
             ac.save(self.cfg, "live", "x: [", None)
         for bad in ("../aio_nav.yaml", "aio_nav.yaml.x.bak", "aio_nav_bag.yaml.20260101-000000.bak"):
             with self.assertRaises(ac.ConfigError):
                 ac.read_backup(self.cfg, "aio_nav.yaml", bad)
         self.assertFalse(ac.save(self.cfg, "live", new, None)["changed"])   # same text: nothing to do
+
+    def test_version_survives_a_browser_round_trip(self):
+        """Regression: the version used to be st_mtime_ns (~1.8e18). A browser keeps numbers exact
+        only up to 2**53, so it sent back a rounded value and every save was a false conflict."""
+        path = self.dir / "aio_nav.yaml"
+        os.utime(path, ns=(1791266745638123456, 1791266745638123456))
+        f = ac.file_for(self.cfg, "live")
+        self.assertIsInstance(f["version"], str)
+        back = json.loads(json.dumps({"base_version": f["version"]}))["base_version"]   # what JS returns
+        r = ac.save(self.cfg, "live", ac.apply_form(LIVE, {"output_rate": 50}), back)
+        self.assertTrue(r["changed"])
+
+    def test_two_editors_the_second_gets_a_conflict(self):
+        opened = ac.file_for(self.cfg, "live")["version"]                    # both open the same file
+        first = ac.apply_form(LIVE, {"output_rate": 50})
+        ac.save(self.cfg, "live", first, opened)
+        with self.assertRaises(ac.ConflictError):
+            ac.save(self.cfg, "live", ac.apply_form(LIVE, {"output_rate": 20}), opened)
+        self.assertEqual((self.dir / "aio_nav.yaml").read_text(), first)   # the first save is kept
+
+    def test_invalid_text_writes_nothing_and_keeps_no_backup(self):
+        with self.assertRaises(ac.ConfigError):
+            ac.save(self.cfg, "live", "x: [", ac.file_for(self.cfg, "live")["version"])
+        self.assertEqual((self.dir / "aio_nav.yaml").read_text(), LIVE)
+        self.assertEqual(ac.backups(self.cfg, "aio_nav.yaml"), [])
+
+    def test_failed_replace_keeps_the_original_and_no_temp_file(self):
+        f = ac.file_for(self.cfg, "live")
+        with mock.patch("aio_system_dashboard.actions.aionav_config.os.replace",
+                        side_effect=OSError(28, "No space left on device")):
+            with self.assertRaises(OSError):
+                ac.save(self.cfg, "live", ac.apply_form(LIVE, {"output_rate": 50}), f["version"])
+        self.assertEqual((self.dir / "aio_nav.yaml").read_text(), LIVE)
+        self.assertEqual([p.name for p in self.dir.iterdir() if p.name.endswith(".tmp")], [])
+
+    def test_read_only_folder_is_reported_before_writing(self):
+        if os.geteuid() == 0:
+            self.skipTest("root may write anywhere")
+        os.chmod(self.dir, 0o555)
+        self.addCleanup(os.chmod, self.dir, 0o755)
+        f = ac.file_for(self.cfg, "live")
+        self.assertFalse(f["writable"])
+        with self.assertRaises(ac.ConfigError) as e:
+            ac.save(self.cfg, "live", ac.apply_form(LIVE, {"output_rate": 50}), f["version"])
+        self.assertIn("folder", str(e.exception))
+        self.assertEqual((self.dir / "aio_nav.yaml").read_text(), LIVE)
+
+    def test_fifty_saves_in_a_row(self):
+        """Every save gets a new version, the file always parses, and same-second backups
+        do not overwrite each other (newest first)."""
+        version, texts = ac.file_for(self.cfg, "live")["version"], [LIVE]
+        for i in range(50):
+            text = ac.apply_form(texts[-1], {"output_rate": 10 + i})
+            r = ac.save(self.cfg, "live", text, version)
+            self.assertNotEqual(r["version"], version)
+            version = r["version"]
+            texts.append(text)
+            self.assertEqual(ac.validate((self.dir / "aio_nav.yaml").read_text())[0], [])
+        self.assertEqual((self.dir / "aio_nav.yaml").read_text(), texts[-1])
+        kept = ac.backups(self.cfg, "aio_nav.yaml")
+        self.assertEqual(len(kept), ac.MAX_BACKUPS)
+        # the newest backup is the text just before the last save
+        self.assertEqual(ac.read_backup(self.cfg, "aio_nav.yaml", kept[0]["id"]), texts[-2])
+        self.assertTrue(all(ac.read_backup(self.cfg, "aio_nav.yaml", b["id"]) for b in kept))
 
 
 class GuardWebTest(unittest.TestCase):
@@ -161,12 +226,30 @@ class GuardWebTest(unittest.TestCase):
         self.assertEqual(r.status_code, 200)
         self.assertIn("HttpOnly", r.headers["Set-Cookie"])
         self.assertIn("SameSite=Strict", r.headers["Set-Cookie"])
+        r = self.post("/api/maint/aionav/live/save", save)               # no version: an old page
+        self.assertEqual(r.status_code, 409)
+        save["base_version"] = self.c.get("/api/maint/aionav/live").get_json()["file"]["version"]
         r = self.post("/api/maint/aionav/live/save", save)
         self.assertTrue(r.get_json()["success"], r.get_json())
+        self.assertTrue(r.get_json()["saved"])
+        self.assertEqual(self.post("/api/maint/aionav/live/save", save).status_code, 409)   # now stale
         self.assertIn("Maintenance sign-in failed", self.events)
         self.assertIn("AIO NAV config aio_nav.yaml saved", self.events)
         self.post("/api/maint/auth/lock", {})
         self.assertEqual(self.post("/api/maint/aionav/live/save", save).status_code, 401)
+
+    def test_saved_but_restart_failed_is_not_a_success(self):
+        self.post("/api/maint/auth/unlock", {"password": "right-password"})
+        nav = self.ctx.cfg["nav"]["service"]
+        self.ctx.store = SimpleNamespace(get=lambda k, d=None: {nav: {"pids": [123]}} if k == "services" else d)
+        self.ctx.actions.run = lambda *a: {"success": False, "summary": "launcher not found"}
+        version = self.c.get("/api/maint/aionav/live").get_json()["file"]["version"]
+        j = self.post("/api/maint/aionav/live/save",
+                      {"form": {"output_rate": 50}, "base_version": version, "restart": True}).get_json()
+        self.assertTrue(j["saved"])
+        self.assertFalse(j["success"])
+        self.assertEqual(j["restart"], {"requested": True, "success": False})
+        self.assertIn("NOT applied", j["summary"])
 
     def test_repeated_wrong_passwords_lock_out(self):
         for _ in range(5):

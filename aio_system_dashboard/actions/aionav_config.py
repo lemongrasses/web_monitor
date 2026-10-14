@@ -5,13 +5,21 @@
   editor saves the text as typed. Either way the result must parse, keep `ros__parameters`, and
   pass the checks below before it is written.
 * Every save keeps the previous version in state/aio_nav_backups/ (the last 30 per file) and
-  refuses to overwrite a file that changed on disk since it was opened.
+  refuses to overwrite a file that changed on disk since it was opened. "Changed" is decided by a
+  hash of the content (``version``, a string): a nanosecond mtime does not survive a browser,
+  whose numbers are exact only up to 2**53, so comparing it gave false conflicts.
+* The new text is written to a temporary file in the same folder, flushed to disk, renamed over
+  the original (atomic: a reader sees the old or the new file, never half of one), then read back
+  and compared before the save is reported as done.
 """
 
 import difflib
+import hashlib
 import json
 import os
 import re
+import tempfile
+import threading
 import time
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
@@ -19,6 +27,8 @@ from typing import Any, Dict, List, Optional, Tuple
 import yaml
 
 MAX_BACKUPS = 30
+BACKUP_ID = r"\.\d{8}-\d{6}(?:-\d+)?\.bak"      # name.YYYYMMDD-HHMMSS[-n].bak
+_SAVE_LOCK = threading.Lock()                  # one save at a time (two browsers, one file)
 
 # The settings offered as a form. path: keys below ros__parameters. Anything else: raw editor.
 FIELDS: List[Dict[str, Any]] = [
@@ -236,16 +246,30 @@ def diff(old: str, new: str, name: str) -> str:
 
 
 # ---------------------------------------------------------------------------- files
+def version_of(data: bytes) -> str:
+    """Opaque version of a file's content. A string, so it reaches the browser and comes back
+    unchanged (a nanosecond mtime is ~1.8e18, beyond the 2**53 a JavaScript number keeps exact)."""
+    return hashlib.sha256(data).hexdigest()
+
+
 def files(cfg) -> List[Dict[str, Any]]:
     """The editable files: one per configured mode that has one."""
     out, active = [], cfg.ros_mode()
     for name, m in cfg["ros"]["modes"].items():
         path = cfg.mode_config_path(name)
         if path:
-            st = os.stat(path)
+            with open(path, "rb") as fh:
+                version = version_of(fh.read())
             out.append({"mode": name, "label": m.get("label", name), "name": os.path.basename(path),
-                        "path": path, "mtime_ns": st.st_mtime_ns, "active": name == active})
+                        "path": path, "version": version, "active": name == active,
+                        "writable": _writable(path)})
     return out
+
+
+def _writable(path: str) -> bool:
+    """Saving replaces the file, so its folder must be writable, not only the file itself."""
+    folder = os.path.dirname(os.path.abspath(path))
+    return os.access(path, os.W_OK) and os.access(folder, os.W_OK | os.X_OK)
 
 
 def file_for(cfg, mode: str) -> Dict[str, Any]:
@@ -263,38 +287,95 @@ def backups(cfg, name: str) -> List[Dict[str, Any]]:
     d = backup_dir(cfg)
     if not d.is_dir():
         return []
-    items = sorted(d.glob(f"{name}.*.bak"), reverse=True)
-    return [{"id": p.name, "time": p.stat().st_mtime, "size": p.stat().st_size} for p in items]
+    pattern = re.compile(re.escape(name) + BACKUP_ID)
+    items = []
+    for p in d.glob(f"{name}.*.bak"):
+        if pattern.fullmatch(p.name):
+            st = p.stat()
+            items.append((st.st_mtime_ns, p.name, st))
+    # Newest first by write time: names alone misorder "x.<stamp>-1.bak" before "x.<stamp>.bak".
+    items.sort(key=lambda i: (i[0], i[1]), reverse=True)
+    return [{"id": n, "time": st.st_mtime, "size": st.st_size} for _, n, st in items]
 
 
-def save(cfg, mode: str, text: str, base_mtime_ns: Optional[int]) -> Dict[str, Any]:
-    f = file_for(cfg, mode)
-    if base_mtime_ns is not None and int(base_mtime_ns) != f["mtime_ns"]:
-        raise ConfigError("the file changed on disk since you opened it; reload and edit again")
+class ConflictError(ConfigError):
+    """The file changed on disk since the editor opened it."""
+
+
+def save(cfg, mode: str, text: str, base_version: Optional[str]) -> Dict[str, Any]:
+    """Validate and write ``text``. base_version: the ``version`` the editor opened (None: no
+    check). Raises ConflictError if the file changed since, ConfigError for bad text or a folder
+    that cannot be written; an OSError while writing leaves the original file intact."""
     errors, warnings = validate(text)
     if errors:
         raise ConfigError("; ".join(errors))
-    old = Path(f["path"]).read_text(encoding="utf-8")
-    if old == text:
-        return {"changed": False, "warnings": warnings, "diff": ""}
+    with _SAVE_LOCK:
+        f = file_for(cfg, mode)
+        path = Path(f["path"])
+        old_bytes = path.read_bytes()
+        current = version_of(old_bytes)
+        if base_version is not None and str(base_version) != current:
+            raise ConflictError("the file changed on disk since you opened it; reload and edit again")
+        old = old_bytes.decode("utf-8")
+        if old == text:
+            return {"changed": False, "warnings": warnings, "diff": "", "version": current}
+        if not f["writable"]:
+            raise ConfigError(f"cannot write {path}: this account may not replace files in "
+                              f"{path.parent} (the folder must be writable, not only the file)")
+        backup = _write_backup(cfg, f["name"], old)
+        new_version = _atomic_write(path, text.encode("utf-8"))
+    cfg.refresh_aio_nav()
+    return {"changed": True, "warnings": warnings, "diff": diff(old, text, f["name"]),
+            "backup": backup, "version": new_version}
+
+
+def _write_backup(cfg, name: str, old: str) -> str:
     d = backup_dir(cfg)
     d.mkdir(parents=True, exist_ok=True)
     stamp = time.strftime("%Y%m%d-%H%M%S")
-    (d / f"{f['name']}.{stamp}.bak").write_text(old, encoding="utf-8")
-    for extra in backups(cfg, f["name"])[MAX_BACKUPS:]:
+    bid, n = f"{name}.{stamp}.bak", 1
+    while (d / bid).exists():                   # two saves in the same second keep both versions
+        bid, n = f"{name}.{stamp}-{n}.bak", n + 1
+    (d / bid).write_text(old, encoding="utf-8")
+    for extra in backups(cfg, name)[MAX_BACKUPS:]:
         (d / extra["id"]).unlink(missing_ok=True)
-    path = Path(f["path"])
-    tmp = path.with_name(path.name + ".tmp")
-    tmp.write_text(text, encoding="utf-8")
-    os.chmod(tmp, path.stat().st_mode & 0o777)
-    os.replace(tmp, path)
-    cfg.refresh_aio_nav()
-    return {"changed": True, "warnings": warnings, "diff": diff(old, text, f["name"]),
-            "backup": f"{f['name']}.{stamp}.bak"}
+    return bid
+
+
+def _atomic_write(path: Path, data: bytes) -> str:
+    """Write next to the file, fsync, rename over it, fsync the folder, read back. Returns the new
+    version. On any failure the temporary file is removed and the original stays as it was."""
+    mode = path.stat().st_mode & 0o777
+    fd, tmp = tempfile.mkstemp(prefix=f".{path.name}.", suffix=".tmp", dir=str(path.parent))
+    try:
+        with os.fdopen(fd, "wb") as fh:
+            fh.write(data)
+            fh.flush()
+            os.fsync(fh.fileno())
+        os.chmod(tmp, mode)
+        os.replace(tmp, path)
+    except BaseException:
+        try:
+            os.unlink(tmp)
+        except OSError:
+            pass
+        raise
+    try:                                        # make the rename itself survive a power cut
+        dfd = os.open(str(path.parent), os.O_RDONLY)
+        try:
+            os.fsync(dfd)
+        finally:
+            os.close(dfd)
+    except OSError:
+        pass
+    written = path.read_bytes()
+    if written != data:
+        raise OSError(f"{path} reads back different from what was written")
+    return version_of(written)
 
 
 def read_backup(cfg, name: str, backup_id: str) -> str:
-    if not re.fullmatch(re.escape(name) + r"\.\d{8}-\d{6}\.bak", backup_id or ""):
+    if not re.fullmatch(re.escape(name) + BACKUP_ID, backup_id or ""):
         raise ConfigError("unknown backup")
     p = backup_dir(cfg) / backup_id
     if not p.is_file():
