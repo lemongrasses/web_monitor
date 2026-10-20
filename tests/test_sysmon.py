@@ -466,3 +466,11 @@ class ClockAheadTest(unittest.TestCase):
                 f.write(json.dumps({"t": time.time(), "kind": "start", "ts": "now"}) + "\n")
             self.assertEqual(report.last_unclean(d)["ts"], "ahead")
 
+
+
+class ClockNotSetTest(unittest.TestCase):
+    def test_times_before_2020_are_marked_unknown(self):
+        from aio_sysmon.report import fmt_ts
+        self.assertIn("clock not set yet", fmt_ts(38.0))        # seen: unclean stop "at 1970-01-01 08:00:38"
+        self.assertNotIn("clock not set", fmt_ts(1792485954.0))
+        self.assertEqual(fmt_ts(0), "-")

@@ -23,8 +23,16 @@ def _lines(path: str) -> Iterator[Dict]:
         return
 
 
+# Before 2020 is not a real time: the clock was not set yet (the hardware clock lost its time,
+# e.g. a long power-off; seen on the device as 1970-01-01 08:00:38). Say so instead of a 1970 date.
+MIN_VALID_TS = 1577836800.0
+
+
 def fmt_ts(t: float) -> str:
-    return time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(t)) if t else "-"
+    if not t:
+        return "-"
+    text = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(t))
+    return text if t >= MIN_VALID_TS else f"{text} (clock not set yet: time unknown)"
 
 
 def samples(base: str, since: float, until: float) -> List[Dict]:
