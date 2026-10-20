@@ -123,16 +123,17 @@ modules:
     bag_roots: ["~"]       # folders searched for bags (a folder with metadata.yaml)
     scan_depth: 2
 
-# Demonstration settings (configuration manual 4.2a-4.2c). Off here; uncomment on a device that
-# should start by itself and tell the vehicle when the output may be used.
+# Fully automatic (the default): AIO NAV + DSO start after power-on, are restarted after failures
+# (after READY only with the vehicle still) and the vehicle gets the 0x05 status packet. Override
+# here only to change that, e.g.:
 # readiness:
 #   require: [gnss_quality]          # e.g. imu, gnss, gnss_quality, dso, vehicle_route, storage
 #   gnss_min_quality: float          # spp, float or fixed
 # autostart:
-#   enabled: true                    # needs nav.allow_control: true
+#   enabled: false                   # manual Start/Stop only
 #   prerequisites: [imu]
 # status_udp:
-#   enabled: true                    # 0x05 status packet (operation manual 6.8)
+#   enabled: false                   # no 0x05 status packet (operation manual 6.8)
 #   destination: auto                # auto = output_udp of aio_nav.yaml
 
 events:

@@ -10,7 +10,13 @@ The vehicle's own software decides; this is the reference the vehicle team can t
 3. The newest 0x04 must be at most nav_max_age_s old, carry the alignment, heading and fine
    alignment flags, have a time stamp that moves forward, and only finite values.
 4. Sequence numbers are used to count lost and reordered status packets; one lost UDP packet
-   alone never blocks, only the time-outs do.
+   alone never blocks, only the time-outs do. A packet more than REORDER_WINDOW behind the newest
+   one in the same session means two senders (or a forged packet that jumped ahead): the
+   authorisation is cleared and the newest packet starts again. Without this, one forged packet
+   far ahead made the real ones look old: forged READY was trusted, the real stream was ignored.
+
+No authentication: anything that can send to the vehicle's port can still send a READY packet.
+Keep the link private (direct cable or a closed VLAN) and pin the sender's address (allowed_from).
 
 Pure: feed packets with their arrival time, ask allowed(now).
 """
@@ -22,11 +28,13 @@ from . import status_packet
 from .decoder import NAV_MSG_ID_SOLUTION, parse_nav_packet
 
 READY_CODE = 6
+REORDER_WINDOW = 5         # status packets (2.5 s at 2 Hz) that may arrive late and be ignored
 
 
 class VehicleGate:
     def __init__(self, status_timeout_s: float = 3.0, status_stable_s: float = 2.0,
-                 nav_max_age_s: float = 0.5, status_message_id: int = status_packet.DEFAULT_MESSAGE_ID):
+                 nav_max_age_s: float = 0.5, status_message_id: int = status_packet.DEFAULT_MESSAGE_ID,
+                 allowed_from: Optional[str] = None):
         self.status_timeout_s, self.status_stable_s = status_timeout_s, status_stable_s
         self.nav_max_age_s, self.status_id = nav_max_age_s, status_message_id
         self.status: Optional[Dict] = None
@@ -36,10 +44,14 @@ class VehicleGate:
         self.nav: Optional[Dict] = None
         self.nav_at: Optional[float] = None
         self.nav_time_backwards = False
-        self.lost = self.reordered = self.bad = 0
+        self.allowed_from = allowed_from         # sender IP to accept (None: any)
+        self.lost = self.reordered = self.bad = self.conflicts = self.foreign = 0
 
-    def feed(self, data: bytes, now: float) -> Optional[str]:
+    def feed(self, data: bytes, now: float, sender: Optional[str] = None) -> Optional[str]:
         """Take one datagram. Returns "status", "nav" or None (not a valid packet)."""
+        if self.allowed_from and sender is not None and sender != self.allowed_from:
+            self.foreign += 1
+            return None
         if len(data) >= 3 and data[:2] == status_packet.SYNC and data[2] == self.status_id:
             s = status_packet.decode(data, self.status_id)
             if s is None:
@@ -51,9 +63,13 @@ class VehicleGate:
             elif self.status is not None:
                 gap = (s["sequence"] - self.status["sequence"]) & 0xFFFFFFFF
                 if gap == 0 or gap > 0x7FFFFFFF:
-                    self.reordered += 1
-                    return "status"           # old or duplicate: ignore its content
-                self.lost += gap - 1
+                    if (self.status["sequence"] - s["sequence"]) & 0xFFFFFFFF <= REORDER_WINDOW:
+                        self.reordered += 1
+                        return "status"       # late or duplicate: ignore its content
+                    self.conflicts += 1       # far behind: two senders in one session
+                    self._clear()
+                else:
+                    self.lost += gap - 1
             self.session, self.status, self.status_at = s["session_id"], s, now
             if s["state"] == READY_CODE and s["inhibit_flags"] == 0:
                 if self.ready_since is None:

@@ -104,7 +104,8 @@ def evaluate(inp: Dict) -> Dict:
     conditions      {name: {"required": bool, "ok": bool|None, "ready": bool, "reason": str}}
                     ok = holds now; ready = held long enough to allow READY
     hold            stopped on purpose (maintenance hold)
-    autostart       {"enabled": bool, "state": str} from the start-up coordinator
+    autostart       {"enabled": bool, "state": str, "detail": str} from the start-up coordinator
+    needs_service   the product fault is one only a person can fix (not installed, port taken)
     ownership       None, or a text: two managers / two processes for AIO NAV
     config_ok       the AIO NAV config file was read
     """
@@ -170,9 +171,15 @@ def evaluate(inp: Dict) -> Dict:
     if auto.get("state") == "gave_up" and not inp.get("nav_running"):
         inhibit.add("STARTUP_TIMEOUT")
         return out("FAULT", "SERVICE_REQUIRED", [auto.get("detail") or "AIO NAV did not start"] + product_why)
-    if inp.get("ever_ready") and not inp.get("nav_running") and inp.get("wanted") and not inp.get("hold"):
+    # Automatic: the coordinator restarts AIO NAV by itself, so a failure asks the vehicle to stop
+    # or hold still and says what is being done, instead of asking for service.
+    automatic = (auto.get("enabled") and not inp.get("hold") and not inp.get("needs_service")
+                 and auto.get("state") not in ("gave_up", "disabled"))
+    auto_why = [auto["detail"]] if automatic and auto.get("detail") else []
+    if inp.get("ever_ready") and not inp.get("nav_running") and (inp.get("wanted") or automatic) \
+            and not inp.get("hold"):
         # READY was reached and AIO NAV is gone although it should run: the vehicle may be moving.
-        return out("FAULT", "SAFE_STOP", ["AIO NAV stopped after it was ready"])
+        return out("FAULT", "SAFE_STOP", ["AIO NAV stopped after it was ready"] + auto_why)
     if st == "UNKNOWN" or (inp.get("booting") and not inp.get("nav_running")):
         inhibit.add("BOOT_IN_PROGRESS")      # first: start-up runs BOOTING -> CHECKING -> ..., never back
         return out("BOOTING", "HOLD_STILL", ["System starting"])
@@ -180,9 +187,15 @@ def evaluate(inp: Dict) -> Dict:
             and not inp.get("ever_ready") and not inp.get("nav_running")):
         # The coordinator is still working through its start-up plan (wait, start, retry).
         return out("CHECKING", "HOLD_STILL", [auto.get("detail") or "Waiting to start AIO NAV"] + unmet)
+    if automatic and auto.get("state") == "starting" and not inp.get("nav_fresh"):
+        inhibit.add("NAV_OUTPUT_STALE")      # being started by the coordinator: say so
+        return out("NAV_STARTING", "HOLD_STILL", [auto.get("detail") or "Starting AIO NAV"])
     if st == "FAULT":
         if inp.get("nav_running") and not inp.get("ever_output"):
             inhibit.add("STARTUP_TIMEOUT")
+        if automatic:                        # being restarted: nobody needs to do anything
+            return out("FAULT", "SAFE_STOP" if inp.get("ever_ready") else "HOLD_STILL",
+                       product_why[:1] + auto_why)
         # After READY the vehicle may be moving: stop using navigation first, then service.
         return out("FAULT", "SAFE_STOP" if inp.get("ever_ready") else "SERVICE_REQUIRED", product_why)
     if st == "STOPPED":

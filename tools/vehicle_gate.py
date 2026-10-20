@@ -25,13 +25,15 @@ def main() -> int:
     ap.add_argument("--host", default="0.0.0.0")
     ap.add_argument("--port", type=int, default=9000)
     ap.add_argument("--status-id", type=lambda x: int(x, 0), default=0x05)
+    ap.add_argument("--from", dest="allowed_from", default=None,
+                    help="accept packets only from this sender IP (the dashboard computer)")
     ap.add_argument("--verbose", action="store_true")
     a = ap.parse_args()
 
     sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     sock.bind((a.host, a.port))
     sock.settimeout(0.1)
-    gate = VehicleGate(status_message_id=a.status_id)
+    gate = VehicleGate(status_message_id=a.status_id, allowed_from=a.allowed_from)
     t0 = time.monotonic()
     last = None
     usable_s, counts = 0.0, {"nav": 0, "status": 0}
@@ -40,9 +42,9 @@ def main() -> int:
     try:
         while True:
             try:
-                data, _ = sock.recvfrom(2048)
+                data, sender = sock.recvfrom(2048)
                 now = time.monotonic()
-                kind = gate.feed(data, now)
+                kind = gate.feed(data, now, sender[0])
                 if kind:
                     counts[kind] += 1
                 if kind == "status" and a.verbose:
@@ -63,7 +65,8 @@ def main() -> int:
     except KeyboardInterrupt:
         pass
     print(f"\nnav packets {counts['nav']}, status packets {counts['status']}, lost status {gate.lost}, "
-          f"reordered {gate.reordered}, invalid {gate.bad}, usable {usable_s:.1f} s")
+          f"reordered {gate.reordered}, invalid {gate.bad}, two senders {gate.conflicts}, "
+          f"other senders {gate.foreign}, usable {usable_s:.1f} s")
     return 0
 
 

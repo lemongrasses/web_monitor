@@ -142,23 +142,29 @@ def wanted_since(cfg, key: str) -> Optional[float]:
         return None
 
 
+_WANTED_LOCK = threading.Lock()
+
+
 def set_wanted(cfg, key: str, value: bool, restamp: bool = True) -> None:
     """restamp=False: only change the flag (no new start time if it is already set)."""
     f = _wanted_file(cfg)
     try:
-        try:
-            data = json.loads(f.read_text(encoding="utf-8"))
-        except (OSError, ValueError):
-            data = {}
-        if bool(data.get(key)) == value and not (value and restamp):
-            return
-        data[key] = value
-        if value:
-            data[f"{key}@"] = time.time()           # every start request: tells a crash from "still starting"
-        else:
-            data.pop(f"{key}@", None)
-        f.parent.mkdir(parents=True, exist_ok=True)
-        f.write_text(json.dumps(data) + "\n", encoding="utf-8")
+        with _WANTED_LOCK:                          # actions and the DSO watchdog write it
+            try:
+                data = json.loads(f.read_text(encoding="utf-8"))
+            except (OSError, ValueError):
+                data = {}
+            if bool(data.get(key)) == value and not (value and restamp):
+                return
+            data[key] = value
+            if value:
+                data[f"{key}@"] = time.time()       # every start request: tells a crash from "still starting"
+            else:
+                data.pop(f"{key}@", None)
+            f.parent.mkdir(parents=True, exist_ok=True)
+            tmp = f.with_name(f.name + ".tmp")      # never a half-written file after a power cut
+            tmp.write_text(json.dumps(data) + "\n", encoding="utf-8")
+            tmp.replace(f)
     except OSError as e:
         logger.warning("cannot record that %s should %srun: %s", key, "" if value else "not ", e)
 

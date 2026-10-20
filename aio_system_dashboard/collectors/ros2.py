@@ -9,7 +9,9 @@ rclpy is optional: on a dev machine without ROS the collector reports
 """
 
 import logging
+import math
 import random
+import struct
 import threading
 import time
 from collections import deque
@@ -71,6 +73,55 @@ def is_auto(name: Optional[str]) -> bool:
     return not name or name == "auto"
 
 
+# Message types whose first field is a std_msgs/Header: their time stamp is read from the raw CDR
+# bytes (4-byte encapsulation, then int32 sec, uint32 nanosec), nothing else is decoded.
+HEADER_FIRST_TYPES = {
+    "sensor_msgs/msg/Imu", "sensor_msgs/msg/NavSatFix", "sensor_msgs/msg/CameraInfo",
+    "sensor_msgs/msg/Image", "sensor_msgs/msg/CompressedImage", "sensor_msgs/msg/PointCloud2",
+    "nav_msgs/msg/Odometry",
+}
+# A stamp before this (2020-01-01 UTC) is not a real time: a GNSS receiver that has no time from
+# the satellites yet stamps with its epoch (OpenRTK330: 1980-01-05 23:59:42, the same for every
+# message), and AIO NAV cannot integrate such IMU data.
+MIN_VALID_STAMP = 1577836800.0
+STAMP_FROZEN_S = 1.0       # messages keep coming but the stamp has not moved for this long
+
+
+def header_stamp(raw) -> Optional[float]:
+    """Header time stamp (seconds) of a serialized header-first message, None if unreadable."""
+    try:
+        if len(raw) < 12:
+            return None
+        order = "<" if raw[1] & 1 else ">"           # CDR_LE (0x0001) / CDR_BE (0x0000)
+        sec, nsec = struct.unpack_from(order + "iI", raw, 4)
+        return sec + nsec * 1e-9
+    except (TypeError, struct.error, IndexError):
+        return None
+
+
+IMU_TYPE = "sensor_msgs/msg/Imu"
+MOTION_WINDOW_S = 2.0      # IMU samples judged together for "vehicle still"
+MOTION_MAX_AGE_S = 10.0    # older than this (sampling gaps are 3.5 s): unknown
+
+
+def imu_motion(raw) -> Optional[tuple]:
+    """(|angular velocity| rad/s, |linear acceleration| m/s2) of a serialized sensor_msgs/Imu.
+
+    CDR after the 4-byte encapsulation: header.stamp (8 bytes), header.frame_id (u32 length incl.
+    the NUL, then the characters), padding to 8, orientation (4 doubles), its covariance (9),
+    angular_velocity (3), its covariance (9), linear_acceleration (3)."""
+    try:
+        order = "<" if raw[1] & 1 else ">"
+        d = memoryview(raw)[4:]
+        n = struct.unpack_from(order + "I", d, 8)[0]
+        pos = (12 + n + 7) & ~7
+        g = struct.unpack_from(order + "3d", d, pos + 104)
+        a = struct.unpack_from(order + "3d", d, pos + 200)
+        return math.sqrt(g[0] ** 2 + g[1] ** 2 + g[2] ** 2), math.sqrt(a[0] ** 2 + a[1] ** 2 + a[2] ** 2)
+    except (TypeError, struct.error, IndexError, ValueError):
+        return None
+
+
 def stale_after_s(expected_hz: Optional[float]) -> float:
     if expected_hz and expected_hz > 0:
         return max(1.0, 5.0 / expected_hz)
@@ -94,7 +145,7 @@ def in_sampling_window(now: float, t0: float, period_s: float, window_s: float) 
 
 
 class _TopicStats:
-    def __init__(self, window_s: float):
+    def __init__(self, window_s: float, stamped: bool = False, imu: bool = False):
         self.window_s = window_s
         self.times: deque = deque()
         self.last: Optional[float] = None
@@ -102,14 +153,61 @@ class _TopicStats:
         # Sampled topics only (see Ros2Collector): result of the last listening window.
         self.sampling = False
         self.frozen: Optional[tuple] = None   # (rate, age at the end of the window, ended at)
+        # Header time stamps (header-first types): kept across sampling windows.
+        self.stamped = stamped
+        self._stamp: Optional[float] = None
+        self._stamp_moved_at: Optional[float] = None    # monotonic time the stamp last changed
+        self._stamp_seen_at: Optional[float] = None
+        self._stamp_moved = False
+        # IMU only: (time, |gyro|, |accel|) of the newest MOTION_WINDOW_S, kept between windows.
+        self.imu = imu
+        self._motion: deque = deque()
 
-    def tick(self) -> None:
+    def tick(self, raw=None) -> None:
         now = time.monotonic()
+        stamp = header_stamp(raw) if self.stamped and raw is not None else None
+        motion = imu_motion(raw) if self.imu and raw is not None else None
         with self.lock:
             self.last = now
             self.times.append(now)
             while self.times and self.times[0] < now - self.window_s:
                 self.times.popleft()
+            if motion is not None:
+                self._motion.append((now,) + motion)
+                while self._motion and self._motion[0][0] < now - MOTION_WINDOW_S:
+                    self._motion.popleft()
+            if stamp is not None:
+                if stamp != self._stamp:
+                    self._stamp_moved = self._stamp is not None
+                    self._stamp, self._stamp_moved_at = stamp, now
+                self._stamp_seen_at = now
+
+    def motion_status(self) -> Optional[Dict]:
+        """Largest rotation rate and spread of the acceleration magnitude over the newest samples
+        (the last listening window of a sampled topic); None when unknown or too old."""
+        now = time.monotonic()
+        with self.lock:
+            if len(self._motion) < 20 or now - self._motion[-1][0] > MOTION_MAX_AGE_S:
+                return None
+            g = max(m[1] for m in self._motion)
+            acc = [m[2] for m in self._motion]
+        mean = sum(acc) / len(acc)
+        sd = math.sqrt(sum((x - mean) ** 2 for x in acc) / len(acc))
+        return {"gyro_max": round(g, 4), "accel_std": round(sd, 4), "samples": len(acc),
+                "age_s": round(now - self._motion[-1][0], 1)}
+
+    def time_status(self):
+        """(time_ok, why): True when the stamps are real times and advance, False when they are not,
+        None when unknown (no stamped messages yet, or not a header-first type)."""
+        with self.lock:
+            if self._stamp is None:
+                return None, ""
+            if self._stamp < MIN_VALID_STAMP:
+                when = time.strftime("%Y-%m-%d %H:%M:%S", time.gmtime(max(self._stamp, 0)))
+                return False, f"time stamps say {when} UTC, not a real time"
+            if self._stamp_seen_at - self._stamp_moved_at > STAMP_FROZEN_S:
+                return False, "time stamps do not advance"
+            return (True, "") if self._stamp_moved else (None, "")
 
     def _live(self, now: float):
         """Rate and age as of `now`. The caller holds the lock."""
@@ -294,9 +392,10 @@ class Ros2Collector:
             logger.warning("cannot load message type %s for %s: %s", type_name, name, e)
             self._subs[name] = None
             return
-        stats = self._stats.setdefault(name, _TopicStats(float(self.rcfg["rate_window_s"])))
+        stats = self._stats.setdefault(name, _TopicStats(float(self.rcfg["rate_window_s"]),
+                                                         type_name in HEADER_FIRST_TYPES, type_name == IMU_TYPE))
         self._subs[name] = self._node.create_subscription(
-            msg_cls, name, lambda _msg, s=stats: s.tick(), self._qos, raw=True)
+            msg_cls, name, lambda msg, s=stats: s.tick(msg), self._qos, raw=True)
 
     # ------------------------------------------------- sampling of high-rate topics
     def _sampling_on(self, spec: Dict) -> bool:
@@ -315,10 +414,11 @@ class Ros2Collector:
                 return
         if info["cls"] is False:
             return
-        stats = self._stats.setdefault(name, _TopicStats(float(self.rcfg["rate_window_s"])))
+        stats = self._stats.setdefault(name, _TopicStats(float(self.rcfg["rate_window_s"]),
+                                                         info["type"] in HEADER_FIRST_TYPES, info["type"] == IMU_TYPE))
         stats.start_window()
         info["sub"] = self._node.create_subscription(
-            info["cls"], name, lambda _msg, s=stats: s.tick(), self._qos, raw=True)
+            info["cls"], name, lambda msg, s=stats: s.tick(msg), self._qos, raw=True)
 
     def _sample_stop(self, name: str) -> None:
         info = self._sampled.get(name)
@@ -385,6 +485,10 @@ class Ros2Collector:
             else:
                 rate, age = self._stats[name].read() if name in self._stats else (0.0, None)
             entry = self._topic_entry(t, bool(types), pubs, subs, rate, age)
+            if name in self._stats and entry["state"] == TOPIC_HEALTHY:
+                entry["time_ok"], entry["time_why"] = self._stats[name].time_status()
+                if self._stats[name].imu:
+                    entry["motion"] = self._stats[name].motion_status()
             entry["sampled"] = sampled
             entry["sample_age_s"] = ago
             watched_out.append(entry)

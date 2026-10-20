@@ -59,6 +59,25 @@ class ControlActionsTest(unittest.TestCase):
         self.assertTrue(reg.actions["stop_process"].confirm)
         self.assertFalse(reg.actions["start_process"].confirm)
 
+    def test_starts_and_stops_never_overlap(self):
+        """Found on the device: 20 Start/Stop presses at once let a Start and a Stop of AIO NAV run
+        together; afterwards nothing ran but "should run" was set (the page showed a fault)."""
+        import threading
+        reg = ActionRegistry(make(), {}, FakeEvents(), lambda d: {})
+        gate = threading.Event()
+        for a in ("start_process", "stop_process", "restart_process"):
+            reg.actions[a].run = lambda target: (gate.wait(5), {"success": True, "summary": ""})[1]
+        t = threading.Thread(target=reg.run, args=("stop_process", "nav_core"))
+        t.start()
+        time.sleep(0.05)
+        for action_id, target in (("start_process", "nav_core"), ("restart_process", "dso")):
+            with self.assertRaises(ActionError) as e:
+                reg.run(action_id, target)
+            self.assertEqual(e.exception.status, 409)
+        gate.set()
+        t.join()
+        self.assertTrue(reg.run("start_process", "nav_core")["success"])   # free again
+
     def test_unlisted_target_rejected(self):
         reg = ActionRegistry(make(), {}, FakeEvents(), lambda d: {})
         with self.assertRaises(ActionError):

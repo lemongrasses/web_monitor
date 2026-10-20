@@ -68,6 +68,12 @@ def alignment_step(latest: Dict, required: List[str]) -> Optional[Dict]:
     return None
 
 
+# Product faults that only a person can fix: automatic restarts cannot help with these.
+NO_RECEIVE = "Cannot receive navigation output"
+NOT_INSTALLED = "AIO NAV is not installed on this device"
+SERVICE_FAULTS = (NO_RECEIVE, NOT_INSTALLED)
+
+
 def raw_product_state(nav: Dict, run: Dict, ncfg: Dict) -> Tuple[str, List[str], Optional[Dict]]:
     """Undebounced product state, its two lines of text (what / what to do), and the alignment step.
 
@@ -77,11 +83,11 @@ def raw_product_state(nav: Dict, run: Dict, ncfg: Dict) -> Tuple[str, List[str],
     age = nav.get("age_s")
     fresh = age is not None and age <= ncfg["stale_fault_s"]
     if not nav.get("listening") and nav.get("bind_error"):
-        return PRODUCT_FAULT, ["Cannot receive navigation output", nav["bind_error"]], None
+        return PRODUCT_FAULT, [NO_RECEIVE, nav["bind_error"]], None
     state = run.get("service_state")
     if not run.get("running") and not fresh:
         if state == "not_installed":
-            return PRODUCT_FAULT, ["AIO NAV is not installed on this device",
+            return PRODUCT_FAULT, [NOT_INSTALLED,
                                    "Its launcher was not found in the aio-nav-ros install folder."], None
         wanted_age = run.get("wanted_age_s")
         if run.get("wanted") and wanted_age is not None and wanted_age < START_REQUEST_GRACE_S:
@@ -388,6 +394,21 @@ class HealthEngine:
             return next((t for t in watched if t.get("group") == "nav"), None)
         return next((t for t in watched if t.get("name") == name), None)
 
+    def _motion(self) -> Dict:
+        """Is the vehicle still? From the IMU topic's samples (collectors/ros2.py)."""
+        ros = self.store.get("ros", {}) or {}
+        t = self._imu_topic(ros) if ros.get("available") else None
+        m = (t or {}).get("motion") if (t or {}).get("state") == "healthy" else None
+        if not m:
+            return {"still": None, "reason": "no IMU data"}
+        rcfg = self.cfg["readiness"]
+        g_ok = m["gyro_max"] < float(rcfg["still_gyro_rad_s"])
+        a_ok = m["accel_std"] < float(rcfg["still_accel_std"])
+        reason = "" if g_ok and a_ok else (f"moving: rotation {m['gyro_max']:.2f} rad/s" if not g_ok
+                                           else f"moving: acceleration varies {m['accel_std']:.2f} m/s2")
+        return {"still": g_ok and a_ok, "reason": reason, "gyro_max": m["gyro_max"],
+                "accel_std": m["accel_std"], "age_s": m.get("age_s")}
+
     def _condition_inputs(self, gq: Dict) -> Dict[str, Tuple[Optional[bool], str]]:
         """(holds now, why not) for every optional READY condition, required or not (the health
         bits report them all)."""
@@ -402,6 +423,10 @@ class HealthEngine:
             # The topic's state, not its raw age: with ros.sampling a 100 Hz topic is only listened
             # to in windows, so its age grows between them while its state stays "healthy".
             out["imu"] = (t.get("state") == "healthy", f"IMU {t['name']}: {t.get('state', 'unknown').replace('_', ' ')}")
+            if out["imu"][0] and t.get("time_ok") is False:
+                # Data without a valid time is no use to AIO NAV (it starts, then its output stops).
+                out["imu"] = (False, f"IMU {t.get('time_why') or 'time not valid'}; the GNSS receiver "
+                                     "has no time yet (it needs open sky)")
 
         quality = gq.get("quality") if gq.get("available") else None
         out["gnss"] = (quality not in (None, "none"), "No GNSS position" if quality == "none" else "No GNSS data")
@@ -460,9 +485,11 @@ class HealthEngine:
 
         auto = (self.autostart_status() if self.autostart_status else None) or {"enabled": False}
         ever_ready = self._ready_run
-        if not nav_svc.get("pids") and auto.get("ready_this_boot"):
+        if not nav_svc.get("pids") and not fresh and auto.get("ready_this_boot"):
             # A dashboard restart loses the per-process latch; the start-up coordinator keeps
             # "READY in this boot" on disk, so a crash after READY still asks for a safe stop.
+            # Fresh output means a new run already started (the process list lags 2 s): that run
+            # has to become READY on its own, it did not lose anything.
             ever_ready = True
         inp = {
             "product_state": shown, "product_reasons": self._product_reasons, "step": self._step,
@@ -473,6 +500,8 @@ class HealthEngine:
             "wanted": process_control.wanted(self.cfg, self.cfg["nav"]["service"]),
             "unknown_required": unknown_required,
             "ownership": self._ownership(now, nav_svc, bool(auto.get("enabled"))),
+            "needs_service": shown == PRODUCT_FAULT and self._product_reasons[:1] and
+                             self._product_reasons[0] in SERVICE_FAULTS,
             "config_ok": bool(self.cfg.aio_nav.get("loaded")),
         }
         snap = rd.evaluate(inp)
@@ -495,7 +524,7 @@ class HealthEngine:
             "nav": {"age_ms": None if nav.get("age_s") is None else int(nav["age_s"] * 1000),
                     "rate_hz": round(nav.get("rate_hz") or 0.0, 1),
                     "flags_c": int(latest.get("flags_c", 0)) if fresh and latest else 0},
-            "required": sorted(required), "conditions": listing,
+            "required": sorted(required), "conditions": listing, "motion": self._motion(),
             "autostart": {k: v for k, v in auto.items() if k != "enabled"} | {"enabled": bool(auto.get("enabled"))},
         })
         return snap
@@ -506,7 +535,13 @@ class HealthEngine:
         coordinator is waiting for. The pages and the vehicle (0x05) then never disagree."""
         state, lines, step = shown, list(self._product_reasons), self._step
         why = "; ".join(r["reasons"])
-        if r["state"] == "DEGRADED" and shown in (READY, INITIALIZING):
+        auto = r.get("autostart") or {}
+        automatic = auto.get("enabled") and not auto.get("hold")
+        if automatic and r["state"] == "FAULT" and r["requested_action"] in ("SAFE_STOP", "HOLD_STILL"):
+            # being restarted automatically: say what happens, not "press Start"
+            state, lines, step = PRODUCT_FAULT, [r["reasons"][0] if r["reasons"] else "AIO NAV failed",
+                                                 "; ".join(r["reasons"][1:]) or r["action_text"]], None
+        elif r["state"] == "DEGRADED" and shown in (READY, INITIALIZING):
             state, lines, step = DEGRADED, ["Navigation degraded: " + why, r["action_text"]], None
         elif r["state"] == "REFINING" and shown == READY:          # aligned, a required condition is missing
             state, lines, step = INITIALIZING, ["Waiting for: " + why, r["action_text"]], None
@@ -519,7 +554,8 @@ class HealthEngine:
         elif r["state"] == "CHECKING" and shown in (STOPPED, PRODUCT_FAULT, PRODUCT_UNKNOWN):
             state, lines, step = STARTING, ["Starting automatically", why], None
         elif r["state"] == "MAINTENANCE" and "MAINTENANCE_HOLD" in r["inhibit"]:
-            lines = ["Stopped by an operator", "Press Start to resume."]
+            lines = ["Stopped by an operator",
+                     "Press Start to resume" + (", or switch the system off and on." if auto.get("enabled") else ".")]
         return {"state": state, "since_s": self._clock() - self.product.since,
                 "title": lines[0] if lines else "", "detail": lines[1] if len(lines) > 1 else "",
                 "reasons": [x for x in lines if x], "step": step,
@@ -622,15 +658,27 @@ class HealthEngine:
                                      "link": "ros"})
                     continue
                 level = {"healthy": HEALTHY, "low_rate": WARNING}.get(t["state"], FAULT)
+                bad_time = t["state"] == "healthy" and t.get("time_ok") is False
+                if bad_time:
+                    level = WARNING                  # data flows, but its time stamps are unusable
                 group = t.get("group", "")
                 link = group if group in ("camera", "lidar") else "ros"
                 dataflow.append({"name": t["label"], "topic": t["name"], "rate_hz": t["rate_hz"],
                                  "expected_hz": t.get("expected_hz"), "age_s": t["age_s"],
-                                 "level": level, "state": t["state"], "link": link})
+                                 "level": level, "state": t["state"], "link": link,
+                                 **({"detail": t.get("time_why")} if bad_time else {})})
+                self._track(f"topic-time:{t['name']}", "bad" if bad_time else "ok",
+                            "warning" if bad_time else "info", "ros",
+                            f"Topic {t['name']} time stamps {'not valid' if bad_time else 'valid'}",
+                            t.get("time_why") or "")
                 self._track(f"topic:{t['name']}", t["state"],
                             "info" if t["state"] == "healthy" else "warning", "ros",
                             f"Topic {t['name']} {t['state'].replace('_', ' ')}")
-                if level != HEALTHY:
+                if bad_time:
+                    issue("dataflow", WARNING, f"{t['name']}: {t.get('time_why')}",
+                          "AIO NAV cannot use data without a valid time; the GNSS receiver gets its "
+                          "time from the satellites (it needs open sky)", link)
+                elif level != HEALTHY:
                     issue("dataflow", WARNING, f"{t['name']} {t['state'].replace('_', ' ')}",
                           f"{t['rate_hz']:.1f} Hz", link)
             for n in ros.get("nodes", []):

@@ -1,16 +1,21 @@
-"""Start-up coordinator: start AIO NAV (and DSO, the nav.control_group) after power-on, so the
-operator only has to switch the system on and follow the prompts.
+"""Start-up coordinator: run AIO NAV (and DSO, the nav.control_group) without an operator. It
+starts them after power-on, restarts them after a failure once the conditions allow it, and
+says at every moment what it is doing (readiness reasons, the 0x05 status, events).
 
 Rules, in order:
 * Off unless ``autostart.enabled`` and ``nav.allow_control`` (the dashboard owns AIO NAV).
-* An operator Stop is a *hold*: nothing starts automatically until someone presses Start. The
-  hold is kept on disk, so it survives a reboot.
-* Once READY was reached in this boot, AIO NAV is never started or restarted automatically
-  again: the vehicle may be moving. This is kept on disk with the kernel boot id, so a dashboard
-  restart (systemd Restart=always) cannot undo it, while the next power-on starts afresh.
-* Before READY: wait until the configured prerequisites (readiness conditions such as imu, gnss)
-  have held for ``prerequisite_stable_s``, start, and if AIO NAV dies or sends nothing in time,
-  stop it and try again after ``retry_backoff_s``, at most ``max_attempts`` times.
+* An operator Stop is a *hold*: nothing starts automatically until someone presses Start or the
+  computer is switched on again (kept with the kernel boot id, so a dashboard restart keeps it).
+* It never gives up (``max_attempts: 0``): after a failure it waits ``retry_backoff_s`` (the last
+  value repeats) and tries again. The count is kept for this power-on, so a dashboard that keeps
+  restarting does not shorten the waits; it starts again from the first wait once READY is reached.
+* Before a start, the ``prerequisites`` (readiness conditions such as imu) must hold for
+  ``prerequisite_stable_s``. After READY was reached in this power-on the vehicle may be moving,
+  and AIO NAV's first alignment step needs it still: a restart then also waits until the IMU shows
+  the vehicle still for ``still_stable_s`` (the vehicle is told SAFE_STOP meanwhile).
+* AIO NAV running but without output: if a prerequisite is missing (no IMU data, no valid time) the
+  cause is upstream, so it is left running and may resume by itself; with the inputs fine it gets
+  ``stale_grace_s`` to recover, then it is stopped and started again.
 * A program already running (dashboard restart, desktop app) is adopted, never started twice:
   process_control.start_one checks for it under a lock.
 
@@ -26,6 +31,7 @@ from pathlib import Path
 from typing import Callable, Dict, Optional
 
 from . import process_control
+from .registry import ActionError
 from ..state.readiness import Condition
 
 logger = logging.getLogger(__name__)
@@ -34,6 +40,10 @@ BOOT_ID_FILE = "/proc/sys/kernel/random/boot_id"
 # After its own stop, the services / readiness snapshots still show the old run for a poll or two
 # (services every 2 s): judging that run again would schedule the retry and stop it again.
 STOP_SETTLE_S = 10.0
+# Where the state goes when state/ cannot be written (disk full, file system read-only): in memory
+# (tmpfs), so an operator Stop still holds across a dashboard restart; gone at power-off.
+FALLBACK_FILE = Path("/dev/shm/aio-dashboard-autostart.json")
+BUSY_RETRY_S = 2.0         # another start/stop holds the process slot: try again this soon
 
 
 def read_boot_id() -> str:
@@ -52,15 +62,30 @@ class StartupCoordinator:
         a = cfg["autostart"]
         self.enabled = bool(a["enabled"] and cfg["nav"]["allow_control"])
         self.prereq = {n: Condition(float(a["prerequisite_stable_s"]), 0.0) for n in a["prerequisites"]}
+        self.still = Condition(float(a["still_stable_s"]), 0.0)
+        self.still_after_ready = bool(a["still_after_ready"])
+        self.stale_grace_s = float(a["stale_grace_s"])
         self.backoff = [float(x) for x in a["retry_backoff_s"]] or [5.0]
-        self.max_attempts = int(a["max_attempts"])
+        self.max_attempts = int(a["max_attempts"] or 0)         # 0: never give up
         self._file = cfg.state_file("autostart.json")
-        saved = self._load()
-        self.hold = bool(saved.get("hold"))
-        self.ready_this_boot = bool(self._boot_id) and saved.get("ready_boot_id") == self._boot_id
+        self._fallback = FALLBACK_FILE
+        self._save_failed = False
+        saved, spare = self._load(self._file), self._load(self._fallback)
+        boot = self._boot_id
+
+        def this_boot(key):            # a record from either place, made in this power-on
+            return bool(boot) and boot in (saved.get(key), spare.get(key))
+        # An operator Stop or READY recorded in either place counts (fail towards holding). Both
+        # end with the power-on: switching the computer on again is a fully automatic start.
+        self.hold = bool(saved.get("hold") or spare.get("hold")) and this_boot("hold_boot_id")
+        self.ready_this_boot = this_boot("ready_boot_id")
         self.state, self.detail = ("disabled", "") if not self.enabled else ("waiting", "")
-        self.attempts = 0
+        self.attempts = int((saved if saved.get("boot_id") == boot else spare).get("attempts") or 0) \
+            if this_boot("boot_id") else 0
         self.next_at: Optional[float] = None
+        if self.attempts:                      # restarted while retrying: keep the wait
+            self.next_at = self._clock() + self._wait_s()
+        self._failed_since: Optional[float] = None
         self._launching = False
         self._was_running = False
         self._stopped_at: Optional[float] = None    # end of its own stop, until the snapshots show it
@@ -69,28 +94,52 @@ class StartupCoordinator:
         self._thread: Optional[threading.Thread] = None
 
     # ------------------------------------------------------------- persistence
-    def _load(self) -> Dict:
+    @staticmethod
+    def _load(path: Path) -> Dict:
         try:
-            return json.loads(self._file.read_text(encoding="utf-8"))
+            data = json.loads(path.read_text(encoding="utf-8"))
+            return data if isinstance(data, dict) else {}
         except (OSError, ValueError):
             return {}
 
+    @staticmethod
+    def _write(path: Path, data: Dict) -> None:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        tmp = path.with_name(path.name + ".tmp")
+        tmp.write_text(json.dumps(data) + "\n", encoding="utf-8")
+        tmp.replace(path)
+
     def _save(self) -> None:
+        data = {"hold": self.hold, "boot_id": self._boot_id, "attempts": self.attempts}
+        if self.hold:
+            data["hold_boot_id"] = self._boot_id
+        if self.ready_this_boot:
+            data["ready_boot_id"] = self._boot_id
         try:
-            self._file.parent.mkdir(parents=True, exist_ok=True)
-            data = {"hold": self.hold}
-            if self.ready_this_boot:
-                data["ready_boot_id"] = self._boot_id
-            tmp = self._file.with_name(self._file.name + ".tmp")
-            tmp.write_text(json.dumps(data) + "\n", encoding="utf-8")
-            tmp.replace(self._file)
+            self._write(self._file, data)
         except OSError as e:
             logger.warning("cannot save the start-up state: %s", e)
+            try:
+                self._write(self._fallback, data)
+                where = "kept in memory until the next power-off"
+            except OSError as e2:
+                logger.warning("cannot save the start-up state in memory either: %s", e2)
+                where = "kept only until the dashboard restarts"
+            if not self._save_failed:
+                self._save_failed = True
+                self.events.add("warning", "autostart", "Cannot save the start-up state",
+                                f"{e}; an operator Stop is {where}")
+            return
+        self._save_failed = False
+        try:
+            self._fallback.unlink()                 # saved properly again: the spare copy is stale
+        except OSError:
+            pass
 
     # ----------------------------------------------------------- operator input
     def on_action(self, action_id: str, target: str) -> None:
         """Called after every maintenance / Overview action. An operator Stop of AIO NAV holds the
-        automatic start; an operator Start or Restart releases it and allows new attempts."""
+        automatic start; an operator Start or Restart releases it and starts the waits afresh."""
         nav = (process_control.GROUP, self.cfg["nav"]["service"])
         if target not in nav or self._launching:
             return
@@ -101,7 +150,7 @@ class StartupCoordinator:
                     self._save()
                     self.events.add("info", "autostart", "Automatic start on hold", "AIO NAV stopped by an operator")
             elif action_id in ("start_process", "restart_process"):
-                changed = self.hold
+                changed = self.hold or self.attempts
                 self.hold, self.attempts, self.next_at = False, 0, None
                 if self.state == "gave_up":
                     self.state = "waiting"
@@ -152,19 +201,18 @@ class StartupCoordinator:
         running = bool((services.get(self.cfg["nav"]["service"]) or {}).get("pids"))
         r = self.store.get("readiness", {}) or {}
         with self._lock:
-            if r.get("state") == "READY" and not self.ready_this_boot:
-                self.ready_this_boot = True        # from now on: never an automatic (re)start this boot
+            if r.get("state") == "READY" and (not self.ready_this_boot or self.attempts):
+                if not self.ready_this_boot:
+                    self.ready_this_boot = True    # from now on a restart waits for the vehicle to be still
+                    self.events.add("info", "autostart", "Ready reached",
+                                    "after a failure AIO NAV is restarted once the vehicle is still")
+                self.attempts, self.next_at = 0, None          # a good run: the waits start afresh
                 self._save()
-                self.events.add("info", "autostart", "Ready reached; no automatic restart until the next power-on")
             if self._launching:
                 return
             if self.hold:
-                self._set("held", "Stopped by an operator; press Start to resume")
-                return
-            if self.ready_this_boot:
-                self._set("done" if running else "ready_this_boot",
-                          "" if running else "AIO NAV stopped after it was ready; it is not restarted automatically")
-                self._was_running = running
+                self._set("held", "Stopped by an operator; automatic start resumes after Start "
+                                  "or the next power-on")
                 return
             if not running:
                 self._stopped_at = None
@@ -173,23 +221,14 @@ class StartupCoordinator:
             if running:
                 self._stopped_at = None
                 self._was_running = True
-                inhibit = set(r.get("inhibit") or [])
-                failed = r.get("state") == "FAULT" and inhibit & {"STARTUP_TIMEOUT", "NAV_OUTPUT_STALE"}
-                if failed:
-                    why = "no navigation output" if "STARTUP_TIMEOUT" in inhibit else "navigation output stopped"
-                    if self.attempts < self.max_attempts:
-                        self._retry_later(now, f"AIO NAV started but {why}")
-                        self._launch("stop", now)
-                    else:                          # left running so the logs can be read
-                        self._set("gave_up", f"AIO NAV started {self.attempts} times; still {why}")
-                    return
-                self._set("running", "")
+                self._check_running(r, now)
                 return
-            if self._was_running:                 # it was running and stopped by itself before READY
+            self._failed_since = None
+            if self._was_running:                 # it stopped by itself (crash, killed)
                 self._was_running = False
                 if self.attempts:
-                    self._retry_later(now, "AIO NAV stopped before it was ready")
-            if self.attempts >= self.max_attempts:
+                    self._retry_later(now, "AIO NAV stopped")
+            if self.max_attempts and self.attempts >= self.max_attempts:
                 self._set("gave_up", f"AIO NAV did not become ready after {self.attempts} attempts")
                 return
             if self.next_at is not None and now < self.next_at:
@@ -200,19 +239,57 @@ class StartupCoordinator:
                 self._set("waiting", "Waiting for " + ", ".join(missing))
                 return
             self.attempts += 1
+            self._save()
             self._launch("start", now)
 
-    def _missing_prerequisites(self, r: Dict, now: float):
+    def _check_running(self, r: Dict, now: float) -> None:
+        """AIO NAV runs: restart it only when its own output stopped and its inputs are fine."""
+        inhibit = set(r.get("inhibit") or [])
+        failed = r.get("state") in ("FAULT", "DEGRADED") and inhibit & {"STARTUP_TIMEOUT", "NAV_OUTPUT_STALE"}
+        if not failed:
+            self._failed_since = None
+            self._set("running", "")
+            return
+        why = "sends no navigation output" if "STARTUP_TIMEOUT" in inhibit else "navigation output stopped"
+        missing = self._missing_prerequisites(r, now, still=False)
+        if missing:                                # upstream: a restart would not help
+            self._failed_since = None
+            self._set("waiting_inputs", f"Waiting for {', '.join(missing)}; AIO NAV may resume by itself")
+            return
+        if self._failed_since is None:
+            self._failed_since = now
+        grace = 0.0 if "STARTUP_TIMEOUT" in inhibit else self.stale_grace_s
+        left = grace - (now - self._failed_since)
+        if left > 0:
+            self._set("recovering", f"Restarting AIO NAV in {left:.0f} s if it does not resume")
+            return
+        if self.max_attempts and self.attempts >= self.max_attempts:   # left running for the logs
+            self._set("gave_up", f"AIO NAV started {self.attempts} times; still {why}")
+            return
+        self._failed_since = None
+        self._retry_later(now, f"AIO NAV {why}; restarting it")
+        self._launch("stop", now)
+
+    def _missing_prerequisites(self, r: Dict, now: float, still: bool = True):
         conds = {c["name"]: c for c in (r.get("conditions") or [])}
         missing = []
         for name, cond in self.prereq.items():
             c = conds.get(name) or {}
             if not cond.update(c.get("ok"), now):
-                missing.append(c.get("label") or name)
+                label = c.get("label") or name
+                why = c.get("reason") if c.get("ok") is False else ""   # e.g. an IMU without valid time
+                missing.append(f"{label}: {why}" if why else label)
+        if still and self.ready_this_boot and self.still_after_ready:
+            m = r.get("motion") or {}
+            if not self.still.update(m.get("still"), now):
+                missing.append("the vehicle to be still" + (f" ({m['reason']})" if m.get("reason") else ""))
         return missing
 
+    def _wait_s(self) -> float:
+        return self.backoff[min(max(self.attempts - 1, 0), len(self.backoff) - 1)]
+
     def _retry_later(self, now: float, why: str) -> None:
-        wait = self.backoff[min(max(self.attempts - 1, 0), len(self.backoff) - 1)]
+        wait = self._wait_s()
         self.next_at = now + wait
         self._set("retry_wait", f"{why}; next try in {wait:.0f} s")
         self.events.add("warning", "autostart", "Automatic start: retry scheduled", f"{why}; in {wait:.0f} s")
@@ -221,7 +298,8 @@ class StartupCoordinator:
         """Start or stop the control group on a worker thread (it takes seconds)."""
         self._launching = True
         if verb == "start":
-            self._set("starting", f"Starting AIO NAV (attempt {self.attempts} of {self.max_attempts})")
+            of = f" of {self.max_attempts}" if self.max_attempts else ""
+            self._set("starting", f"Starting AIO NAV (attempt {self.attempts}{of})")
 
         def work():
             try:
@@ -232,6 +310,15 @@ class StartupCoordinator:
                 if verb == "start" and not res.get("success"):
                     with self._lock:
                         self._retry_later(self._clock(), res.get("summary") or "AIO NAV did not start")
+            except ActionError as e:
+                with self._lock:
+                    if e.status == 409:                # busy (e.g. the DSO watchdog): not a failure
+                        if verb == "start":
+                            self.attempts = max(0, self.attempts - 1)
+                        self.next_at = self._clock() + BUSY_RETRY_S
+                        self._set("retry_wait", f"Waiting for another start or stop to finish ({e})")
+                    else:
+                        self._retry_later(self._clock(), f"automatic {verb} refused: {e}")
             except Exception as e:                     # never leave the coordinator stuck
                 logger.exception("automatic %s failed", verb)
                 with self._lock:

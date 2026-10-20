@@ -35,6 +35,13 @@ class ActionError(Exception):
         self.status = status
 
 
+# Starting, stopping and restarting programs share one busy slot, whatever the target: a Start
+# and a Stop of AIO NAV run at the same time left "should run" set with nothing running, and a
+# DSO restart during a group Stop started DSO again on its own (found by pressing Start/Stop
+# 20 times at once on the device).
+PROCESS_ACTIONS = ("start_process", "stop_process", "restart_process")
+
+
 class ActionRegistry:
     def __init__(self, cfg, store, events, network_probe, fake=None):
         self.after_run = None    # optional hook(action_id, target, result), set by the app
@@ -100,10 +107,11 @@ class ActionRegistry:
             raise ActionError(f"unknown action {action_id!r}", 404)
         if target not in action.targets:
             raise ActionError(f"target {target!r} not allowed for {action_id}", 400)
-        key = (action_id, target)
+        key = ("process",) if action_id in PROCESS_ACTIONS else (action_id, target)
         with self._lock:
             if key in self._busy:
-                raise ActionError("action already running", 409)
+                raise ActionError("another start or stop is still running" if key == ("process",)
+                                  else "action already running", 409)
             self._busy.add(key)
         title = f"{action.targets[target]} {action.noun}"
         started = time.time()

@@ -204,6 +204,40 @@ class VehicleGateTest(unittest.TestCase):
         self.assertTrue(g.allowed(3.0)[0])
         self.assertGreater(g.lost, 0)
 
+    def test_forged_ready_ahead_in_the_real_session_is_never_stable(self):
+        """Seen on the device: a forged READY with the real session id and a sequence 60 ahead was
+        USABLE for 13 s while the real status said REFINING, and afterwards the real packets were
+        ignored as old for minutes. Now two senders in one session clear the authorisation."""
+        g = VehicleGate()
+        seq, t, forged, usable = 1, 0.0, 61, False
+        while t < 15.0:
+            g.feed(nav_pkt(t), t)                           # forged aligned 0x04 at 100 Hz
+            if abs(t * 20 - round(t * 20)) < 1e-9:          # forged READY at 20 Hz
+                g.feed(status_pkt(forged), t)
+                forged += 1
+            if abs(t * 2 - round(t * 2)) < 1e-9:            # the real dashboard: not ready, 2 Hz
+                g.feed(status_pkt(seq, state=5, inhibit=1 << 9), t)
+                seq += 1
+            usable |= g.allowed(t)[0]
+            t = round(t + 0.01, 2)
+        self.assertFalse(usable)
+        self.assertGreater(g.conflicts, 0)
+        g.feed(status_pkt(seq, state=5, inhibit=1 << 9), 15.5)   # the forger stopped
+        self.assertEqual(g.status["state"], 5)              # the real stream counts again at once
+
+    def test_a_few_late_packets_are_only_ignored(self):
+        g = VehicleGate()
+        seq = self.stream(g, 0.0, 3.0)
+        g.feed(status_pkt(seq - 3), 3.0)                    # late, within the window
+        self.assertTrue(g.allowed(3.0)[0])
+        self.assertEqual((g.reordered, g.conflicts), (1, 0))
+
+    def test_other_senders_can_be_refused(self):
+        g = VehicleGate(allowed_from="192.0.2.10")
+        self.assertIsNone(g.feed(status_pkt(1), 0.0, "192.0.2.66"))
+        self.assertEqual(g.feed(status_pkt(1), 0.0, "192.0.2.10"), "status")
+        self.assertEqual(g.foreign, 1)
+
     def test_status_and_nav_on_the_same_port_are_told_apart(self):
         g = VehicleGate()
         self.assertEqual(g.feed(status_pkt(1), 0.0), "status")

@@ -217,6 +217,15 @@ class MemoryGuardTest(unittest.TestCase):
         r.dog.tick()
         self.assertEqual(r.restarts, [])
 
+    def test_no_restart_once_dso_was_stopped_meanwhile(self):
+        """A memory restart decided just before a group Stop must not start DSO again alone."""
+        r = Rig(self)
+        r.wanted = False                                           # the Stop came in between
+        r.dog._do("restart_memory")
+        self.assertEqual((r.restarts, r.starts), ([], []))
+        self.assertFalse(any("restarting DSO" in t for _, t in r.events.items))
+        self.assertIn("skipped", r.dog.status()["last_result"])
+
     def test_not_running_is_not_measured(self):
         r = Rig(self, running=False, wanted=False)
         r.mem = 99999

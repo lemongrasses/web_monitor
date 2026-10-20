@@ -78,6 +78,43 @@ class EvaluateTest(unittest.TestCase):
         r = ev(product_state="STOPPED", nav_running=False, autostart={"enabled": True, "state": "gave_up"})
         self.assertIn("STARTUP_TIMEOUT", r["inhibit"])
 
+    def test_automatic_failures_say_what_happens_instead_of_asking_for_service(self):
+        auto = {"enabled": True, "state": "recovering",
+                "detail": "AIO NAV navigation output stopped; restarting it in 6 s if it does not resume"}
+        r = ev(product_state="FAULT", nav_fresh=False, product_reasons=["Navigation output stopped", "x"],
+               autostart=auto)
+        self.assertEqual((r["state"], r["requested_action"]), ("FAULT", "HOLD_STILL"))
+        self.assertEqual(r["reasons"], ["Navigation output stopped", auto["detail"]])
+        r = ev(product_state="FAULT", nav_fresh=False, product_reasons=["Navigation output stopped"],
+               autostart=auto, ever_ready=True)
+        self.assertEqual(r["requested_action"], "SAFE_STOP")          # after READY: stop first
+        r = ev(product_state="FAULT", nav_running=False, nav_fresh=False, needs_service=True,
+               product_reasons=["AIO NAV is not installed on this device"], autostart=auto)
+        self.assertEqual(r["requested_action"], "SERVICE_REQUIRED")   # a person is needed
+        r = ev(product_state="FAULT", nav_fresh=False, product_reasons=["Navigation output stopped"],
+               autostart={"enabled": False})
+        self.assertEqual(r["requested_action"], "SERVICE_REQUIRED")   # manual mode as before
+
+    def test_crash_after_ready_in_automatic_mode_says_how_it_recovers(self):
+        auto = {"enabled": True, "state": "waiting",
+                "detail": "Waiting for the vehicle to be still (moving: rotation 0.40 rad/s)"}
+        r = ev(product_state="FAULT", nav_running=False, nav_fresh=False, ever_ready=True, wanted=False,
+               autostart=auto)
+        self.assertEqual((r["state"], r["requested_action"]), ("FAULT", "SAFE_STOP"))
+        self.assertEqual(r["reasons"], ["AIO NAV stopped after it was ready", auto["detail"]])
+
+    def test_coordinator_starting_is_nav_starting(self):
+        auto = {"enabled": True, "state": "starting", "detail": "Starting AIO NAV (attempt 1)"}
+        r = ev(product_state="FAULT", nav_running=False, nav_fresh=False,
+               product_reasons=["AIO NAV stopped unexpectedly"], autostart=auto)
+        self.assertEqual((r["state"], r["requested_action"], r["reasons"]),
+                         ("CHECKING", "HOLD_STILL", ["Starting AIO NAV (attempt 1)"]))
+        # the process is there, the (debounced) product state still says it stopped
+        r = ev(product_state="FAULT", nav_running=True, nav_fresh=False, ever_output=False,
+               product_reasons=["AIO NAV stopped unexpectedly"], autostart=auto)
+        self.assertEqual((r["state"], r["requested_action"], r["reasons"]),
+                         ("NAV_STARTING", "HOLD_STILL", ["Starting AIO NAV (attempt 1)"]))
+
     def test_not_ready_always_has_an_inhibit_bit(self):
         """The vehicle may check only inhibit_flags == 0, so every other state must set a bit,
         whatever combination of inputs (the product state is debounced and can lag)."""
@@ -303,6 +340,51 @@ class EngineTest(unittest.TestCase):
         self.new_process()                                           # an operator Start: a new run
         self.nav.latest, self.nav.age = {"alignment": False}, 0.01
         r = self.run_for(eng, 4)
+        self.assertEqual((r["state"], r["requested_action"]), ("KEEP_STILL", "HOLD_STILL"))
+
+    def test_imu_without_valid_time_is_not_ready(self):
+        """The receiver had no GNSS time indoors: IMU data arrived at 100 Hz with a frozen 1980
+        stamp. The imu condition (an automatic-start prerequisite) must not hold."""
+        eng = self.engine()
+        imu = {"name": "/openrtk330/imu/data_raw", "label": "INS IMU", "group": "nav", "state": "healthy",
+               "rate_hz": 100.0, "age_s": 0.01, "time_ok": True}
+        self.store.set("ros", {"available": True, "watched": [imu]})
+        r = self.run_for(eng, 1)
+        self.assertTrue(next(c for c in r["conditions"] if c["name"] == "imu")["ok"])
+        imu.update(time_ok=False, time_why="time stamps say 1980-01-05 23:59:42 UTC, not a real time")
+        r = self.run_for(eng, 1)
+        c = next(c for c in r["conditions"] if c["name"] == "imu")
+        self.assertFalse(c["ok"])
+        self.assertIn("1980-01-05", c["reason"])
+        self.assertIn("no time yet", c["reason"])
+        imu.update(time_ok=None)                                     # unknown: the rate decides
+        r = self.run_for(eng, 1)
+        self.assertTrue(next(c for c in r["conditions"] if c["name"] == "imu")["ok"])
+
+    def test_vehicle_still_from_imu_motion(self):
+        eng = self.engine()
+        imu = {"name": "/openrtk330/imu/data_raw", "label": "INS IMU", "group": "nav", "state": "healthy",
+               "rate_hz": 100.0, "age_s": 0.01, "motion": {"gyro_max": 0.01, "accel_std": 0.03}}
+        self.store.set("ros", {"available": True, "watched": [imu]})
+        self.assertTrue(self.run_for(eng, 1)["motion"]["still"])            # parked
+        imu["motion"] = {"gyro_max": 0.4, "accel_std": 2.1}                 # driving
+        m = self.run_for(eng, 1)["motion"]
+        self.assertEqual((m["still"], m["reason"]), (False, "moving: rotation 0.40 rad/s"))
+        imu["motion"] = {"gyro_max": 0.01, "accel_std": 0.3}                # rough idle / bumps
+        self.assertFalse(self.run_for(eng, 1)["motion"]["still"])
+        imu.pop("motion")
+        self.assertIsNone(self.run_for(eng, 1)["motion"]["still"])          # unknown is not still
+
+    def test_new_run_is_not_degraded_while_the_process_list_lags(self):
+        """Seen on the device: right after an automatic restart (READY earlier in this power-on) the
+        first packets arrived before the process list showed AIO NAV, and the vehicle was told
+        DEGRADED / "alignment lost after it was ready" for a second."""
+        eng = self.engine()
+        eng.autostart_status = lambda: {"enabled": True, "state": "running", "hold": False,
+                                        "ready_this_boot": True}
+        self.stop_process()                                  # list not updated yet ...
+        self.nav.latest, self.nav.age = {"alignment": False}, 0.01   # ... but the new run sends
+        r = self.run_for(eng, 3)
         self.assertEqual((r["state"], r["requested_action"]), ("KEEP_STILL", "HOLD_STILL"))
 
     def test_operator_stop_after_ready_is_maintenance(self):

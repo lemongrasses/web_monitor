@@ -84,16 +84,23 @@ DEFAULTS: Dict[str, Any] = {
                   "gnss_min_quality": "float",   # for gnss_quality: spp, float or fixed
                   "gnss_stable_s": 3.0,
                   "imu_topic": "auto",           # a ros.topics name; auto: the first one in group nav
-                  "dso_stale_s": 1.0},           # DSO odometry older than this is not ready
-    # Start AIO NAV (+ DSO, the nav.control_group) by itself after boot; needs nav.allow_control.
-    # It never restarts AIO NAV once READY was reached in this boot (the vehicle may be moving).
-    "autostart": {"enabled": False,
-                  "prerequisites": [],           # readiness conditions to wait for: imu, gnss
+                  "dso_stale_s": 1.0,            # DSO odometry older than this is not ready
+                  # "Vehicle still" from the IMU (2 s of samples): largest rotation rate and the
+                  # spread of the acceleration magnitude. Parked with the engine on: < 0.035 rad/s,
+                  # < 0.16 m/s2; driving: > 0.17 rad/s, > 0.6 m/s2 (recorded drive, 2026-09-23).
+                  "still_gyro_rad_s": 0.05, "still_accel_std": 0.15},
+    # Run AIO NAV (+ DSO, the nav.control_group) without an operator: start after power-on, restart
+    # after failures, never give up (actions/autostart.py). Needs nav.allow_control.
+    "autostart": {"enabled": True,
+                  "prerequisites": ["imu"],      # readiness conditions to wait for: imu, gnss
                   "prerequisite_stable_s": 2.0,
-                  "retry_backoff_s": [5, 15, 30, 60],   # waits before attempts 2, 3, ...
-                  "max_attempts": 5},
+                  "retry_backoff_s": [5, 15, 30, 60],   # waits between attempts; the last repeats
+                  "max_attempts": 0,             # 0 = never give up
+                  "stale_grace_s": 10.0,         # output stopped, inputs fine: restart after this
+                  "still_after_ready": True,     # after READY, restart only with the vehicle still
+                  "still_stable_s": 5.0},
     # 0x05 status packet (docs/OPERATION.md): readiness for the vehicle, next to the 0x04 data.
-    "status_udp": {"enabled": False,
+    "status_udp": {"enabled": True,
                    "destination": "auto",       # host:port; auto: output_udp of aio_nav.yaml
                    "message_id": 5, "rate_hz": 2.0},
     "events": {"log_file": "logs/events.jsonl", "max_memory": 500},

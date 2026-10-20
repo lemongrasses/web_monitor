@@ -176,7 +176,7 @@ NAV_OWNER=$(PYTHONPATH="$PREFIX/lib" python3 - "$PREFIX/config/dashboard.yaml" <
 import sys, yaml
 cfg = yaml.safe_load(open(sys.argv[1])) or {}
 control = bool((cfg.get("nav") or {}).get("allow_control"))
-auto = bool((cfg.get("autostart") or {}).get("enabled"))
+auto = bool((cfg.get("autostart") or {}).get("enabled", True))   # on by default
 print("autostart" if control and auto else "control" if control else "no")
 EOF2
 )

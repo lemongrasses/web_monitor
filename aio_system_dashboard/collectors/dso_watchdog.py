@@ -172,6 +172,14 @@ class DsoWatchdog:
         return "start"
 
     def _do(self, action: str) -> None:
+        if not self._wanted():
+            # Stopped on purpose (an operator, or the group with AIO NAV) since the decision: a
+            # restart now would start DSO again on its own.
+            with self._lock:
+                self._busy = False
+                self.last_result = f"{action} skipped: DSO was stopped meanwhile"
+            self._publish()
+            return
         if action == "restart":
             self.events.add("warning", "watchdog", "DSO odometry is NaN: restarting DSO",
                             "AIO NAV is not restarted")
