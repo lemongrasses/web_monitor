@@ -50,6 +50,7 @@ systemctl reset-failed 2>/dev/null || true
 
 rm -f /etc/sudoers.d/aio-dashboard
 rm -f /etc/sysctl.d/90-aio-unattended.conf     # kernel.panic returns to the default at the next boot
+if [[ -f /etc/chrony/conf.d/aio-gnss.conf ]]; then rm -f /etc/chrony/conf.d/aio-gnss.conf; systemctl restart chrony 2>/dev/null || true; fi
 [[ -L /usr/local/bin/aio-dashboard ]] && rm -f /usr/local/bin/aio-dashboard
 [[ -L /usr/local/bin/aio-sysmon ]] && rm -f /usr/local/bin/aio-sysmon
 if [[ -d "$PREFIX" ]]; then

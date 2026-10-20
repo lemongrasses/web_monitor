@@ -15,6 +15,7 @@ import time
 
 from .actions.autostart import StartupCoordinator
 from .actions.driver_watchdog import DriverWatchdog
+from .collectors.gnss_time import ChronyShm, GnssClockFeeder
 from . import sdnotify
 from .actions.registry import ActionRegistry
 from .collectors.fake import FakeState
@@ -70,6 +71,9 @@ class DashboardContext:
             memory_mb=lambda: process_control.memory_mb(cfg, dso),
             total_memory_mb=process_control.total_memory_mb())
         self.gnss = GnssMonitor(cfg, self.store)
+        gt = cfg["gnss_time"]
+        self.gnss_clock = (GnssClockFeeder(float(gt["latency_ms"]) / 1000.0, ChronyShm(int(gt["shm_unit"])))
+                           if gt["enabled"] and not cfg.fake else None)
         drivers = next((k for k, s in cfg["services"].items() if s.get("user_unit")), None)
         self.guard = RosIsolationGuard(
             cfg, self.events,
@@ -77,7 +81,7 @@ class DashboardContext:
             restart=self.request_restart, state_file=cfg.state_file("ros_self_restart.json"))
         self.ros = Ros2Collector(self.store, cfg, self.fake, self.preview,
                                  watchers=[self.dso_watchdog, self.gnss] if not cfg.fake else [],
-                                 guard=None if cfg.fake else self.guard)
+                                 guard=None if cfg.fake else self.guard, clock_feeder=self.gnss_clock)
         self.health = HealthEngine(cfg, self.store, self.nav, self.events)
         self.actions = ActionRegistry(cfg, self.store, self.events, self.network.check_device,
                                       self.fake)
@@ -88,6 +92,7 @@ class DashboardContext:
         self.autostart = StartupCoordinator(cfg, self.store, self.actions, self.events,
                                             on_start=lambda: self.nav.clear("AIO NAV automatic start"))
         self.health.autostart_status = self.autostart.status
+        self.health.clock_status = self.gnss_clock.status if self.gnss_clock else None
         self.driver_watchdog = DriverWatchdog(cfg, self.store, self.actions, self.events)
         self.status_udp = StatusUdpPublisher(cfg, self.store)
         self.health.status_publisher = self.status_udp

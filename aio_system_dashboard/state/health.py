@@ -184,6 +184,7 @@ class HealthEngine:
         self._rd_state: Optional[str] = None
         self._rd_since = clock()
         self.autostart_status = None                   # callable -> dict, set by the app
+        self.clock_status = None                       # callable -> dict: GNSS time vs the system clock
         self.last_step: Optional[float] = None         # monotonic time of the last step (watchdog)
         self.status_publisher = None                   # 0x05 sender, set by the app
         self._stop = threading.Event()
@@ -399,6 +400,15 @@ class HealthEngine:
             return next((t for t in watched if t.get("group") == "nav"), None)
         return next((t for t in watched if t.get("name") == name), None)
 
+    def _clock_view(self) -> Dict:
+        """The system clock against GNSS time (collectors/gnss_time.py), for the start-up order."""
+        st = (self.clock_status() if self.clock_status else None) or {}
+        off, age = st.get("offset_s"), st.get("age_s")
+        tol = float(self.cfg["gnss_time"]["clock_tolerance_s"])
+        known = off is not None and age is not None and age < 30.0
+        return {"gnss_source": bool(st.get("chrony")), "offset_s": off if known else None,
+                "matches": (abs(off) <= tol) if known else None, "reason": st.get("reason", "")}
+
     def _motion(self) -> Dict:
         """Is the vehicle still? From the IMU topic's samples (collectors/ros2.py)."""
         ros = self.store.get("ros", {}) or {}
@@ -530,6 +540,7 @@ class HealthEngine:
                     "rate_hz": round(nav.get("rate_hz") or 0.0, 1),
                     "flags_c": int(latest.get("flags_c", 0)) if fresh and latest else 0},
             "required": sorted(required), "conditions": listing, "motion": self._motion(),
+            "clock": self._clock_view(),
             "autostart": {k: v for k, v in auto.items() if k != "enabled"} | {"enabled": bool(auto.get("enabled"))},
         })
         return snap

@@ -145,7 +145,7 @@ def in_sampling_window(now: float, t0: float, period_s: float, window_s: float) 
 
 
 class _TopicStats:
-    def __init__(self, window_s: float, stamped: bool = False, imu: bool = False):
+    def __init__(self, window_s: float, stamped: bool = False, imu: bool = False, clock_feeder=None):
         self.window_s = window_s
         self.times: deque = deque()
         self.last: Optional[float] = None
@@ -162,10 +162,13 @@ class _TopicStats:
         # IMU only: (time, |gyro|, |accel|) of the newest MOTION_WINDOW_S, kept between windows.
         self.imu = imu
         self._motion: deque = deque()
+        self.clock_feeder = clock_feeder               # GNSS time for the system clock (IMU only)
 
     def tick(self, raw=None) -> None:
-        now = time.monotonic()
+        now, wall = time.monotonic(), time.time()
         stamp = header_stamp(raw) if self.stamped and raw is not None else None
+        if self.clock_feeder is not None and stamp is not None:
+            self.clock_feeder.add(wall, stamp)
         motion = imu_motion(raw) if self.imu and raw is not None else None
         with self.lock:
             self.last = now
@@ -259,8 +262,9 @@ class Ros2Collector:
     name = "ros2"
     section = "ros"
 
-    def __init__(self, store, cfg, fake=None, preview=None, watchers=(), guard=None):
+    def __init__(self, store, cfg, fake=None, preview=None, watchers=(), guard=None, clock_feeder=None):
         self.store = store
+        self.clock_feeder = clock_feeder
         self.preview = preview  # PreviewTap: on-demand camera/LiDAR subscriptions
         self.guard = guard  # RosIsolationGuard: restarts the dashboard if its ROS connection is stuck
         self.watchers = list(watchers)  # e.g. DsoWatchdog.attach(node, qos)
@@ -393,7 +397,8 @@ class Ros2Collector:
             self._subs[name] = None
             return
         stats = self._stats.setdefault(name, _TopicStats(float(self.rcfg["rate_window_s"]),
-                                                         type_name in HEADER_FIRST_TYPES, type_name == IMU_TYPE))
+                                                         type_name in HEADER_FIRST_TYPES, type_name == IMU_TYPE,
+                                                         self.clock_feeder if type_name == IMU_TYPE else None))
         self._subs[name] = self._node.create_subscription(
             msg_cls, name, lambda msg, s=stats: s.tick(msg), self._qos, raw=True)
 
@@ -415,7 +420,8 @@ class Ros2Collector:
         if info["cls"] is False:
             return
         stats = self._stats.setdefault(name, _TopicStats(float(self.rcfg["rate_window_s"]),
-                                                         info["type"] in HEADER_FIRST_TYPES, info["type"] == IMU_TYPE))
+                                                         info["type"] in HEADER_FIRST_TYPES, info["type"] == IMU_TYPE,
+                                                         self.clock_feeder if info["type"] == IMU_TYPE else None))
         stats.start_window()
         info["sub"] = self._node.create_subscription(
             info["cls"], name, lambda msg, s=stats: s.tick(msg), self._qos, raw=True)

@@ -67,6 +67,10 @@ class StartupCoordinator:
         self.prereq = {n: Condition(float(a["prerequisite_stable_s"]), 0.0) for n in a["prerequisites"]}
         self.still = Condition(float(a["still_stable_s"]), 0.0)
         self.require_still = bool(a["require_still"])
+        g = cfg["gnss_time"]
+        self.clock_wait_s = float(g["clock_wait_s"]) if g["enabled"] else 0.0
+        self._clock_wait_since: Optional[float] = None
+        self._clock_gave_up = False
         self.stale_grace_s = float(a["stale_grace_s"])
         self.backoff = [float(x) for x in a["retry_backoff_s"]] or [5.0]
         self.max_attempts = int(a["max_attempts"] or 0)         # 0: never give up
@@ -308,6 +312,22 @@ class StartupCoordinator:
                 label = c.get("label") or name
                 why = c.get("reason") if c.get("ok") is False else ""   # e.g. an IMU without valid time
                 missing.append(f"{label}: {why}" if why else label)
+        if still and self.clock_wait_s:
+            clk = r.get("clock") or {}
+            if clk.get("gnss_source") and clk.get("matches") is False and not self._clock_gave_up:
+                # chrony steps the clock to GNSS time within seconds; start AIO NAV afterwards so
+                # its time does not jump while it runs. Never wait for ever for it.
+                if self._clock_wait_since is None:
+                    self._clock_wait_since = now
+                if now - self._clock_wait_since < self.clock_wait_s:
+                    missing.append(f"the system clock to match GNSS time (off by {clk['offset_s']:+.1f} s)")
+                else:
+                    self._clock_gave_up = True
+                    self.events.add("warning", "autostart", "System clock not corrected",
+                                    f"still {clk['offset_s']:+.1f} s off GNSS time after "
+                                    f"{self.clock_wait_s:.0f} s; starting AIO NAV anyway")
+            else:
+                self._clock_wait_since = None
         if still and self.require_still:
             if self._still_seen is None or now - self._still_seen > COND_GAP_S:
                 self.still.update(False, now)

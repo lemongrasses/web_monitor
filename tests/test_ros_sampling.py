@@ -175,3 +175,14 @@ class MotionTest(unittest.TestCase):
         self.assertAlmostEqual(m["accel_std"], 0.5, places=2)
         self.now += 10.0
         self.assertIsNone(s.motion_status())             # too old: unknown, not "still"
+
+
+class ClockFeedTest(unittest.TestCase):
+    def test_imu_stamps_reach_the_gnss_clock_feeder(self):
+        got = []
+        feeder = type("F", (), {"add": lambda self, wall, stamp: got.append((wall, stamp))})()
+        s = _TopicStats(2.0, stamped=True, imu=True, clock_feeder=feeder)
+        s.tick(imu_full(sec=1792481513))
+        s.tick(b"\x00\x01")                                   # unreadable: not passed on
+        self.assertEqual(len(got), 1)
+        self.assertEqual(got[0][1], 1792481513.0)

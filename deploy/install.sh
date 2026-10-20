@@ -155,6 +155,21 @@ kernel.panic = 10
 EOF_SYSCTL
 sysctl -q -p /etc/sysctl.d/90-aio-unattended.conf || true
 
+if command -v chronyd >/dev/null 2>&1 && [[ -d /etc/chrony ]]; then
+  echo "==> GNSS time for the system clock (chrony time source; used when there is no NTP)"
+  # The dashboard writes the GNSS time of the IMU stamps to this shared-memory segment
+  # (collectors/gnss_time.py); chrony uses it, prefers NTP when it can, steps a clock that is far
+  # off and keeps the hardware clock (rtcsync). perm=0666: the dashboard user may write it.
+  mkdir -p /etc/chrony/conf.d
+  cat > /etc/chrony/conf.d/aio-gnss.conf <<'EOF_CHRONY'
+# AIO dashboard (deploy/install.sh): GNSS time from the IMU stamps, SHM segment 2.
+refclock SHM 2:perm=0666 refid GNSS poll 4 precision 1e-2
+EOF_CHRONY
+  systemctl restart chrony 2>/dev/null || systemctl restart chronyd 2>/dev/null || true
+else
+  echo "    (no chrony: the system clock is not set from GNSS time on this machine)"
+fi
+
 echo "==> sudoers rule for whitelisted driver restarts"
 UNITS=$(PYTHONPATH="$PREFIX/lib:$PREFIX" python3 - "$PREFIX/config/dashboard.yaml" <<'EOF'
 import re, sys, yaml

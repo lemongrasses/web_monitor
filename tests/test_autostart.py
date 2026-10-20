@@ -380,6 +380,46 @@ class AutostartTest(unittest.TestCase):
         self.actions.run("stop_process", process_control.GROUP)      # an operator Stop still holds
         self.assertTrue(c.hold)
 
+    def test_waits_for_the_clock_to_match_gnss_time_but_not_for_ever(self):
+        self.data["autostart"]["prerequisites"] = []
+        self.data["gnss_time"]["clock_wait_s"] = 30.0
+        c = self.make()
+        r = dict(self.store.get("readiness"))
+        r["clock"] = {"gnss_source": True, "offset_s": 3600.0, "matches": False}
+        self.store.set("readiness", r)
+        for _ in range(10):
+            self.tick(c)
+        self.assertEqual(self.actions.calls, [])
+        self.assertIn("the system clock to match GNSS time (off by +3600.0 s)", c.detail)
+        r["clock"] = {"gnss_source": True, "offset_s": 0.002, "matches": True}   # chrony stepped it
+        self.store.set("readiness", r)
+        self.tick(c)
+        self.assertEqual(self.actions.calls, ["start_process"])
+
+    def test_a_clock_chrony_cannot_correct_does_not_block_for_ever(self):
+        self.data["autostart"]["prerequisites"] = []
+        self.data["gnss_time"]["clock_wait_s"] = 30.0
+        c = self.make()
+        r = dict(self.store.get("readiness"))
+        r["clock"] = {"gnss_source": True, "offset_s": -42.0, "matches": False}
+        self.store.set("readiness", r)
+        for _ in range(29):
+            self.tick(c)
+        self.assertEqual(self.actions.calls, [])
+        for _ in range(3):
+            self.tick(c)
+        self.assertEqual(self.actions.calls, ["start_process"])
+        self.assertIn("System clock not corrected", self.events.items)
+
+    def test_no_gnss_time_source_no_waiting(self):
+        self.data["autostart"]["prerequisites"] = []
+        c = self.make()
+        r = dict(self.store.get("readiness"))
+        r["clock"] = {"gnss_source": False, "offset_s": 3600.0, "matches": False}   # chrony not set up
+        self.store.set("readiness", r)
+        self.tick(c)
+        self.assertEqual(self.actions.calls, ["start_process"])
+
     def test_disabled_without_allow_control(self):
         self.data["nav"]["allow_control"] = False
         c = self.make()
