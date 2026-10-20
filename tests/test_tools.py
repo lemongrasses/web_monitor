@@ -257,6 +257,17 @@ class GuardWebTest(unittest.TestCase):
         r = self.post("/api/maint/auth/unlock", {"password": "right-password"})
         self.assertEqual(r.status_code, 429)
 
+    def test_simultaneous_wrong_passwords_are_checked_one_by_one(self):
+        """40 attempts at once were checked 14 times in parallel (CPU); now at most 5 are."""
+        from concurrent.futures import ThreadPoolExecutor
+        def attempt(i):
+            with self.app.test_client() as c:
+                return c.post("/api/maint/auth/unlock", json={"password": f"wrong-{i}"},
+                              headers={"X-Requested-With": "aio-dashboard"}).status_code
+        with ThreadPoolExecutor(20) as ex:
+            codes = list(ex.map(attempt, range(20)))
+        self.assertEqual((codes.count(403), codes.count(429)), (5, 15))
+
     def test_no_password_file_means_locked(self):
         os.unlink(self.ctx.guard.password_file)
         self.assertFalse(self.c.get("/api/maint/auth").get_json()["configured"])
@@ -276,6 +287,39 @@ class GuardWebTest(unittest.TestCase):
                        environ_base={"REMOTE_ADDR": "10.0.0.9"})
         self.assertEqual(r.status_code, 401)                 # no session there at all
         self.assertTrue(self.post(f"/api/maint/term/{sid}/input", {"data": "exit\r"}).get_json()["success"])
+
+
+class MalformedInputTest(GuardWebTest):
+    """Found by the adversarial run: malformed input made these routes fail with a server error."""
+
+    def unlock(self):
+        self.post("/api/maint/auth/unlock", {"password": "right-password"})
+
+    def raw(self, url, data):
+        return self.c.post(url, data=data, headers=dict(self.h, **{"Content-Type": "application/json"}))
+
+    def test_terminal_sizes_that_are_not_numbers(self):
+        self.unlock()
+        r = self.post("/api/maint/term", {"cols": "abc", "rows": [1]})
+        self.assertEqual(r.status_code, 200)
+        sid = r.get_json()["id"]
+        self.assertEqual(self.post(f"/api/maint/term/{sid}/resize", {"cols": "abc"}).status_code, 200)
+        r = self.post(f"/api/maint/term/{sid}/input", {"data": "x" * 70000})
+        self.assertEqual(r.status_code, 400)
+        self.assertIn("64 KB", r.get_json()["summary"])
+        self.assertEqual(self.raw("/api/maint/term", b'["cols"]').status_code, 200)   # not an object: defaults
+
+    def test_deeply_nested_yaml_is_an_error_not_a_crash(self):
+        self.unlock()
+        text = "a: " + "[" * 5000 + "]" * 5000 + "\n"
+        r = self.post("/api/maint/aionav/live/preview", {"text": text})
+        self.assertEqual(r.status_code, 200)
+        self.assertIn("nested too deeply", " ".join(r.get_json()["errors"]))
+
+    def test_too_large_body_is_refused(self):
+        self.unlock()
+        r = self.raw("/api/maint/aionav/live/preview", b'{"text": "' + b"x" * (2 * 1024 * 1024) + b'"}')
+        self.assertEqual(r.status_code, 413)
 
 
 class WholeSiteLockTest(GuardWebTest):

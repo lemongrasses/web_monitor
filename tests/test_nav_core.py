@@ -333,6 +333,27 @@ class StartResetsOverviewTest(unittest.TestCase):
         cleared, _ = self.run_control("restart", [42])
         self.assertEqual(cleared, ["AIO NAV restart requested"])
 
+    def test_malformed_bodies_are_refused_not_a_server_error(self):
+        """Found by the adversarial run: a body that is a string, or an action that is a list,
+        failed with a server error."""
+        from types import SimpleNamespace
+        try:
+            from aio_system_dashboard.web.product import create_product_app
+        except ImportError as e:
+            self.skipTest(str(e))
+        ran = []
+        ctx = SimpleNamespace(
+            cfg={"nav": {"allow_control": True, "service": "aio_nav"}, "services": {},
+                 "access": {"allowed_clients": []}},
+            store=SimpleNamespace(get=lambda k, d=None: d), nav=SimpleNamespace(clear=lambda r: None),
+            actions=SimpleNamespace(run=lambda a, t: ran.append(a) or {"success": True}))
+        c = create_product_app(ctx).test_client()
+        h = {"X-Requested-With": "aio-dashboard", "Content-Type": "application/json"}
+        for raw in (b'"start"', b'{"action": ["start"]}', b'[1]', b'{"action": 5}', b'{'):
+            self.assertEqual(c.post("/api/nav/control", data=raw, headers=h).status_code, 400, raw)
+        self.assertEqual(ran, [])
+        self.assertEqual(c.post("/api/nav/control", data=b"x" * (2 * 1024 * 1024), headers=h).status_code, 413)
+
 
 class FrozenTimeTest(unittest.TestCase):
     """AIO NAV stuck while still sending: the vehicle refuses packets whose time does not advance,

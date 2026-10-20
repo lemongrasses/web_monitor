@@ -9,7 +9,7 @@ from flask import Response, abort, jsonify, redirect, render_template, request
 from ..actions import process_control
 from ..actions.registry import ActionError
 from ..media.tap import PreviewError, meta_header
-from .common import create_base_app
+from .common import json_body, create_base_app
 from .tools import register_tools
 
 logger = logging.getLogger(__name__)
@@ -107,7 +107,7 @@ def create_maintenance_app(ctx):
         # Requiring a JSON body plus a custom header blocks plain cross-site form posts.
         if request.headers.get("X-Requested-With") != "aio-dashboard" or not request.is_json:
             return jsonify({"success": False, "summary": "bad request"}), 400
-        body = request.get_json(silent=True) or {}
+        body = json_body()
         target = body.get("target")
         if not isinstance(target, str):
             return jsonify({"success": False, "summary": "target required"}), 400

@@ -42,9 +42,10 @@ def create_product_app(ctx):
             return jsonify({"success": False, "summary": "bad request"}), 400
         if not ctx.cfg["nav"]["allow_control"]:
             return jsonify({"success": False, "summary": "control is disabled"}), 403
-        verb = (request.get_json(silent=True) or {}).get("action")
+        b = request.get_json(silent=True)
+        verb = b.get("action") if isinstance(b, dict) else None
         action_id = {"start": "start_process", "stop": "stop_process",
-                     "restart": "restart_process"}.get(verb)
+                     "restart": "restart_process"}.get(verb) if isinstance(verb, str) else None
         if action_id is None:
             return jsonify({"success": False, "summary": "action must be start, stop or restart"}), 400
         nav_svc = (ctx.store.get("services", {}) or {}).get(ctx.cfg["nav"]["service"]) or {}

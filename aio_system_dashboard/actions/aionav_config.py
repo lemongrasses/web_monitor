@@ -103,8 +103,24 @@ def get_path(params: Dict, path: List[str]) -> Tuple[bool, Any]:
     return True, cur
 
 
+def load_yaml(text: str) -> Tuple[Any, Optional[str]]:
+    """(document, None) or (None, why). Never raises: very deep nesting (RecursionError) or text
+    that is not proper UTF-8 is an error message, not a crash of the request."""
+    try:
+        return yaml.safe_load(text), None
+    except yaml.YAMLError as e:
+        mark = getattr(e, "problem_mark", None)
+        where = f" (line {mark.line + 1}, column {mark.column + 1})" if mark else ""
+        return None, f"not valid YAML{where}: {getattr(e, 'problem', None) or e}"
+    except RecursionError:
+        return None, "not usable: nested too deeply"
+    except (ValueError, TypeError) as e:
+        return None, f"not usable text: {e}"
+
+
 def form_values(text: str) -> Dict[str, Any]:
-    _, params = params_of(yaml.safe_load(text) or {})
+    doc, _ = load_yaml(text)
+    _, params = params_of(doc or {})
     out = {}
     for f in FIELDS:
         found, value = get_path(params or {}, f["path"])
@@ -211,12 +227,9 @@ def check_field(f: Dict, value: Any) -> Any:
 
 def validate(text: str) -> Tuple[List[str], List[str]]:
     """(errors, warnings) for a whole file."""
-    try:
-        doc = yaml.safe_load(text)
-    except yaml.YAMLError as e:
-        mark = getattr(e, "problem_mark", None)
-        where = f" (line {mark.line + 1}, column {mark.column + 1})" if mark else ""
-        return [f"not valid YAML{where}: {getattr(e, 'problem', None) or e}"], []
+    doc, problem = load_yaml(text)
+    if problem:
+        return [problem], []
     node, params = params_of(doc)
     if params is None:
         return ["no '<node>: ros__parameters:' section; AIO NAV would start without settings"], []

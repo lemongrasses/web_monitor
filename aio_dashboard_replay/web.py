@@ -8,6 +8,7 @@ from aio_system_dashboard import modules
 from aio_system_dashboard.actions import process_control
 from aio_system_dashboard.actions.registry import ActionError
 from aio_system_dashboard.config import resolve_path
+from aio_system_dashboard.web.common import json_body
 
 from . import DEFAULTS, NAME, TITLE
 from . import mode as ros_mode
@@ -84,7 +85,7 @@ def register(ctx, app) -> None:
 
     @bp.route("/api/replay/preview", methods=["POST"])
     def api_preview():
-        body = request.get_json(silent=True) or {}
+        body = json_body()
         bag, err = bag_or_404(body.get("bag"))
         if err:
             return err
@@ -105,7 +106,7 @@ def register(ctx, app) -> None:
     def api_play():
         if bad_request():
             return jsonify({"success": False, "summary": "bad request"}), 400
-        body = request.get_json(silent=True) or {}
+        body = json_body()
         bag, err = bag_or_404(body.get("bag"))
         if err:
             return err
@@ -135,7 +136,7 @@ def register(ctx, app) -> None:
     def api_control():
         if bad_request():
             return jsonify({"success": False, "summary": "bad request"}), 400
-        body = request.get_json(silent=True) or {}
+        body = json_body()
         rate = body.get("rate")
         try:
             rate = float(rate) if rate is not None else None
@@ -149,7 +150,7 @@ def register(ctx, app) -> None:
             return jsonify(player.presets()["presets"])
         if bad_request():
             return jsonify({"success": False, "summary": "bad request"}), 400
-        body = request.get_json(silent=True) or {}
+        body = json_body()
         if request.method == "DELETE":
             return jsonify(player.delete_preset(str(body.get("name", ""))))
         bag, err = bag_or_404(body.get("bag"))
@@ -166,7 +167,7 @@ def register(ctx, app) -> None:
         """Live / Bag replay switch (moved here from the core: a product machine runs Live only)."""
         if bad_request():
             return jsonify({"success": False, "summary": "bad request"}), 400
-        mode = (request.get_json(silent=True) or {}).get("mode")
+        mode = json_body().get("mode")
         if not isinstance(mode, str):
             return jsonify({"success": False, "summary": "mode required"}), 400
 

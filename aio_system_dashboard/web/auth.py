@@ -49,6 +49,9 @@ class Guard:
         self.clock = clock
         self._lock = threading.Lock()
         self._sessions: Dict[str, Tuple[str, float]] = {}       # token -> (client ip, expires)
+        # One password check at a time (each costs ~0.1 s of CPU): simultaneous attempts then all
+        # see the lock-out after the fifth failure instead of being checked in parallel.
+        self._checking = threading.Lock()
         self._failures: Dict[str, list] = {}                     # ip -> failure times
 
     # ------------------------------------------------------------------ password
@@ -94,6 +97,10 @@ class Guard:
             self.events.add(level, "security", title, f"from {request.remote_addr}")
 
     def unlock(self, password: str):
+        with self._checking:
+            return self._unlock(password)
+
+    def _unlock(self, password: str):
         ip, now = request.remote_addr, self.clock()
         with self._lock:
             recent = [t for t in self._failures.get(ip, []) if now - t < FAILURE_WINDOW_S]

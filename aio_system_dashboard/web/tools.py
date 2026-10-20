@@ -30,7 +30,14 @@ def register_tools(ctx, app, page_context) -> None:
         return request.headers.get("X-Requested-With") != "aio-dashboard" or not request.is_json
 
     def body():
-        return request.get_json(silent=True) or {}
+        b = request.get_json(silent=True)
+        return b if isinstance(b, dict) else {}          # a list or a string is no request body
+
+    def number(value, default: int) -> int:
+        try:
+            return int(value)
+        except (TypeError, ValueError):
+            return default
 
     # ------------------------------------------------------------------ password lock
     @app.route("/api/maint/auth")
@@ -176,7 +183,7 @@ def register_tools(ctx, app, page_context) -> None:
         if bad_request():
             return jsonify({"success": False, "summary": "bad request"}), 400
         b = body()
-        return jsonify(terms.open(request.remote_addr, int(b.get("cols") or 120), int(b.get("rows") or 32)))
+        return jsonify(terms.open(request.remote_addr, number(b.get("cols"), 120), number(b.get("rows"), 32)))
 
     @app.route("/api/maint/term/<sid>/stream")
     @guard.required
@@ -212,8 +219,10 @@ def register_tools(ctx, app, page_context) -> None:
             return jsonify({"success": False, "summary": "bad request"}), 400
         s = own(sid)
         data = body().get("data")
-        if s is None or not isinstance(data, str) or len(data) > 65536:
+        if s is None:
             return jsonify({"success": False, "summary": "no such terminal"}), 404
+        if not isinstance(data, str) or len(data) > 65536:
+            return jsonify({"success": False, "summary": "input must be text of at most 64 KB"}), 400
         return jsonify({"success": terms.write(sid, data)})
 
     @app.route("/api/maint/term/<sid>/resize", methods=["POST"])
@@ -224,7 +233,7 @@ def register_tools(ctx, app, page_context) -> None:
         if own(sid) is None:
             return jsonify({"success": False, "summary": "no such terminal"}), 404
         b = body()
-        return jsonify({"success": terms.resize(sid, int(b.get("cols") or 80), int(b.get("rows") or 24))})
+        return jsonify({"success": terms.resize(sid, number(b.get("cols"), 80), number(b.get("rows"), 24))})
 
     @app.route("/api/maint/term/<sid>", methods=["DELETE"])
     @guard.required

@@ -6,13 +6,22 @@ import math
 import os
 from pathlib import Path
 
-from flask import Flask, abort, request
+from flask import Flask, abort, jsonify, request
 from flask.json.provider import DefaultJSONProvider
 
 from .access import client_allowed, parse_allowed_clients
 
 PKG_DIR = Path(__file__).resolve().parent.parent
 logger = logging.getLogger(__name__)
+
+
+MAX_REQUEST_BYTES = 1024 * 1024
+
+
+def json_body() -> dict:
+    """The request's JSON object, or {} for no body, bad JSON, a list or a plain value."""
+    b = request.get_json(silent=True)
+    return b if isinstance(b, dict) else {}
 
 
 def _sanitize(obj):
@@ -38,6 +47,17 @@ def create_base_app(name: str, ctx) -> Flask:
                 static_folder=str(PKG_DIR / "static"))
     app.json = SafeJSONProvider(app)
     app.config["SEND_FILE_MAX_AGE_DEFAULT"] = 3600
+    # Request bodies are small (a config file is ~4 KB): a larger one is refused (413) before it is
+    # read, so a client cannot make the dashboard hold an unlimited body in memory.
+    app.config["MAX_CONTENT_LENGTH"] = MAX_REQUEST_BYTES
+
+    @app.errorhandler(500)
+    def _internal_error(e):
+        # A bug must not hand the page an HTML error: the API answers with a short JSON reason
+        # (the traceback is in the log).
+        if request.path.startswith("/api/"):
+            return jsonify({"success": False, "summary": "internal error (see the dashboard log)"}), 500
+        return e
     app.extensions["dashboard"] = ctx
 
     # Static files may be cached for an hour, so every link carries the file's modification time
