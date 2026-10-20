@@ -460,6 +460,10 @@ class HealthEngine:
 
         auto = (self.autostart_status() if self.autostart_status else None) or {"enabled": False}
         ever_ready = self._ready_run
+        if not nav_svc.get("pids") and auto.get("ready_this_boot"):
+            # A dashboard restart loses the per-process latch; the start-up coordinator keeps
+            # "READY in this boot" on disk, so a crash after READY still asks for a safe stop.
+            ever_ready = True
         inp = {
             "product_state": shown, "product_reasons": self._product_reasons, "step": self._step,
             "nav_running": bool(nav_svc.get("pids")), "nav_fresh": fresh, "nav_flags": latest,

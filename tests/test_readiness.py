@@ -284,6 +284,27 @@ class EngineTest(unittest.TestCase):
         r = self.run_for(eng, 4)
         self.assertEqual((r["state"], r["requested_action"]), ("KEEP_STILL", "HOLD_STILL"))
 
+    def test_crash_after_ready_survives_a_dashboard_restart(self):
+        """Seen on the device: after a dashboard restart the per-process latch was gone and the
+        vehicle was told SERVICE_REQUIRED ("press Start") instead of SAFE_STOP."""
+        from aio_system_dashboard.actions import process_control
+        eng = self.engine()
+        process_control.set_wanted(self.cfg, "aio_nav", True)
+        self.stop_process()                                          # crashed before this restart
+        auto = {"enabled": True, "state": "ready_this_boot", "hold": False, "ready_this_boot": True}
+        eng.autostart_status = lambda: auto
+        self.clock.t += 100
+        r = self.run_for(eng, 4)
+        self.assertEqual((r["state"], r["requested_action"]), ("FAULT", "SAFE_STOP"))
+        auto["ready_this_boot"] = False                              # the next power-on
+        r = self.run_for(eng, 4)
+        self.assertNotEqual(r["requested_action"], "SAFE_STOP")
+        auto["ready_this_boot"] = True
+        self.new_process()                                           # an operator Start: a new run
+        self.nav.latest, self.nav.age = {"alignment": False}, 0.01
+        r = self.run_for(eng, 4)
+        self.assertEqual((r["state"], r["requested_action"]), ("KEEP_STILL", "HOLD_STILL"))
+
     def test_operator_stop_after_ready_is_maintenance(self):
         from aio_system_dashboard.actions import process_control
         eng = self.engine()
