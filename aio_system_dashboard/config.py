@@ -272,6 +272,21 @@ class Config:
         self._roots_auto = data["data"].get("roots") in ("auto", None)
         if self._roots_auto:
             data["data"]["roots"] = self.auto_data_roots()
+        else:
+            data["data"]["roots"] = self._normalise_roots(data["data"].get("roots"))
+
+    def _normalise_roots(self, roots) -> List[Dict[str, Any]]:
+        """data.roots: a list of folders, each a path or {path, name, id}. A plain path is the
+        natural way to write it (it used to crash the dashboard); anything else is skipped."""
+        out = []
+        for r in roots if isinstance(roots, list) else [roots]:
+            if isinstance(r, str) and r:
+                out.append({"path": r})
+            elif isinstance(r, dict) and isinstance(r.get("path"), str) and r["path"]:
+                out.append(r)
+            else:
+                self.problems = self.problems + [f"data.roots: {r!r} is not a folder; skipped"]
+        return out
 
     @property
     def aio_nav(self) -> Dict[str, Any]:
@@ -489,7 +504,7 @@ def load_config(path: Optional[str], force_fake: bool = False) -> Config:
     if force_fake:
         data["fake"]["enabled"] = True
     cfg = Config(data, source)
-    cfg.problems = problems
+    cfg.problems = problems + cfg.problems
     if cfg.aio_nav.get("loaded"):
         logger.info("aio_nav config: %s%s", cfg.aio_nav["path"], " (found automatically)" if cfg.aio_nav["auto"] else "")
     else:

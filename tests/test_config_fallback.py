@@ -63,7 +63,16 @@ class ValueKindTest(unittest.TestCase):
         self.assertTrue(any("autostart.stale_grace_s: 'soon'" in p for p in cfg.problems))
         # free values ("auto" defaults) and good values are kept
         self.assertEqual((cfg["dso_watchdog"]["max_memory_mb"], cfg["data"]["roots"], cfg["product"]["port"]),
-                         (2500, ["/data"], 18080))
+                         (2500, [{"path": "/data"}], 18080))
+
+    def test_data_roots_as_plain_paths(self):
+        """roots: [/data] crashed the dashboard at start (it expected {path: ...} entries)."""
+        with tempfile.TemporaryDirectory() as d:
+            f = Path(d) / "dashboard.yaml"
+            f.write_text("data: {roots: [/data, {path: /logs, name: Logs}, 7]}\n", encoding="utf-8")
+            cfg = C.load_config(str(f))
+        self.assertEqual(cfg["data"]["roots"], [{"path": "/data"}, {"path": "/logs", "name": "Logs"}])
+        self.assertEqual(cfg.problems, ["data.roots: 7 is not a folder; skipped"])
 
     def test_the_shipped_settings_are_clean(self):
         root = Path(__file__).resolve().parent.parent
