@@ -181,6 +181,7 @@ class HealthEngine:
         self._rd_state: Optional[str] = None
         self._rd_since = clock()
         self.autostart_status = None                   # callable -> dict, set by the app
+        self.last_step: Optional[float] = None         # monotonic time of the last step (watchdog)
         self.status_publisher = None                   # 0x05 sender, set by the app
         self._stop = threading.Event()
         self._thread: Optional[threading.Thread] = None
@@ -235,6 +236,7 @@ class HealthEngine:
         self._last_nav_pids = pids or None
 
     def step(self) -> None:
+        self.last_step = time.monotonic()
         now = self._clock()
         ncfg = self.cfg["nav"]
         in_grace = now - self.started < ncfg["startup_grace_s"]

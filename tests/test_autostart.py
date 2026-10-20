@@ -69,7 +69,8 @@ class AutostartTest(unittest.TestCase):
         self.data = copy.deepcopy(DEFAULTS)
         self.data["nav"]["allow_control"] = True
         self.data["autostart"].update(enabled=True, prerequisites=["imu"], prerequisite_stable_s=2.0,
-                                      retry_backoff_s=[5, 15], max_attempts=3)
+                                      retry_backoff_s=[5, 15], max_attempts=3,
+                                      require_still=False)      # the still tests switch it on
         self.data["services"] = {"aio_nav": {"label": "AIO NAV", "launch": "aio-nav"}}
         self.boot = "boot-1"
 
@@ -241,9 +242,9 @@ class AutostartTest(unittest.TestCase):
         self.assertFalse(self.make().hold)
 
     def test_after_ready_restarts_once_the_vehicle_is_still(self):
-        self.data["autostart"]["prerequisites"] = ["imu"]
+        self.data["autostart"].update(prerequisites=["imu"], require_still=True)
         c = self.make()
-        for _ in range(3):
+        for _ in range(6):
             self.tick(c)
         self.assertEqual(self.actions.calls, ["start_process"])
         readiness(self.store, "READY")
@@ -266,6 +267,25 @@ class AutostartTest(unittest.TestCase):
         self.assertEqual(self.actions.calls, [])           # still for 4 s: not yet 5 s
         self.tick(c2, 2)
         self.tick(c2, 1)
+        self.assertEqual(self.actions.calls, ["start_process"])
+
+    def test_first_start_also_waits_for_the_vehicle_to_be_still(self):
+        """A watchdog reboot or a power glitch can happen while driving: no start while moving."""
+        self.data["autostart"].update(prerequisites=["imu"], require_still=True)
+        readiness_moving = lambda: readiness(self.store, "CHECKING", still=False)
+        c = self.make()
+        readiness_moving()
+        for _ in range(20):
+            self.tick(c)
+        self.assertEqual(self.actions.calls, [])
+        self.assertIn("the vehicle to be still", c.detail)
+        readiness(self.store, "CHECKING", still=None)         # IMU motion unknown: not still
+        for _ in range(10):
+            self.tick(c)
+        self.assertEqual(self.actions.calls, [])
+        readiness(self.store, "CHECKING", still=True)
+        for _ in range(7):
+            self.tick(c)
         self.assertEqual(self.actions.calls, ["start_process"])
 
     def test_no_output_with_missing_inputs_is_left_running(self):

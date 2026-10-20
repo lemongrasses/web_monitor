@@ -97,8 +97,14 @@ DEFAULTS: Dict[str, Any] = {
                   "retry_backoff_s": [5, 15, 30, 60],   # waits between attempts; the last repeats
                   "max_attempts": 0,             # 0 = never give up
                   "stale_grace_s": 10.0,         # output stopped, inputs fine: restart after this
-                  "still_after_ready": True,     # after READY, restart only with the vehicle still
+                  "require_still": True,         # start only with the vehicle still (a reboot or
+                                                 # a crash may happen while driving)
                   "still_stable_s": 5.0},
+    # Restart the sensor driver unit when it runs but its IMU sends nothing (Live mode only).
+    "driver_watchdog": {"enabled": True,
+                        "service": "auto",       # a services key with user_unit; auto: the first
+                        "stale_s": 45.0,         # IMU missing/stale this long, unit active: restart
+                        "retry_backoff_s": [60, 120, 300]},   # between restarts; the last repeats
     # 0x05 status packet (docs/OPERATION.md): readiness for the vehicle, next to the 0x04 data.
     "status_udp": {"enabled": True,
                    "destination": "auto",       # host:port; auto: output_udp of aio_nav.yaml

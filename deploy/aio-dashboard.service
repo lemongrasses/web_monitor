@@ -19,6 +19,10 @@ Environment=ROS_LOCALHOST_ONLY=1
 ExecStart=@PREFIX@/bin/aio-dashboard run
 Restart=always
 RestartSec=3
+# The dashboard reports "alive" while its health and start-up loops run (sdnotify.py); hung for
+# this long, systemd restarts it like a crash. AIO NAV / DSO keep running (KillMode=process).
+WatchdogSec=60
+NotifyAccess=main
 KillSignal=SIGTERM
 KillMode=process
 TimeoutStopSec=10

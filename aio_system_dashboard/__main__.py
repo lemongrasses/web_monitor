@@ -10,10 +10,13 @@ import logging
 import signal
 import os
 import threading
+import time
 
 from werkzeug.serving import make_server
 
 from .actions.autostart import StartupCoordinator
+from .actions.driver_watchdog import DriverWatchdog
+from . import sdnotify
 from .actions.registry import ActionRegistry
 from .collectors.fake import FakeState
 from .actions import process_control
@@ -85,18 +88,27 @@ class DashboardContext:
         self.autostart = StartupCoordinator(cfg, self.store, self.actions, self.events,
                                             on_start=lambda: self.nav.clear("AIO NAV automatic start"))
         self.health.autostart_status = self.autostart.status
+        self.driver_watchdog = DriverWatchdog(cfg, self.store, self.actions, self.events)
         self.status_udp = StatusUdpPublisher(cfg, self.store)
         self.health.status_publisher = self.status_udp
         self.modules = modules.load(cfg)      # optional modules (installed with --with-<name>)
         self.maint_pages = []                 # sidebar of the Maintenance app, filled when it is built
         self._workers = [self.nav, self.system, self.services, self.network, self.ros, self.health,
-                         self.autostart]
+                         self.autostart, self.driver_watchdog]
+
+    def alive(self, max_age_s: float = 20.0) -> bool:
+        """The health loop (readiness, 0x05) and the start-up coordinator have run recently."""
+        loops = [self.health.last_step] + ([self.autostart.last_tick] if self.autostart.enabled else [])
+        return sdnotify.loops_alive(loops, time.monotonic(), max_age_s)
 
     def _after_action(self, action_id: str, target: str, result: dict) -> None:
         """After AIO NAV was started with a freshly read config file: follow what changed in it."""
         coordinator = getattr(self, "autostart", None)
         if coordinator is not None:
             coordinator.on_action(action_id, target)    # an operator Stop holds the automatic start
+        drivers = getattr(self, "driver_watchdog", None)
+        if drivers is not None:
+            drivers.on_action(action_id, target)        # an operator Stop of the drivers is kept
         if action_id not in ("start_process", "restart_process") or \
                 target not in (process_control.GROUP, self.cfg["nav"]["service"]):
             return
@@ -176,7 +188,13 @@ def main(argv=None) -> int:
     stop = threading.Event()
     for sig in (signal.SIGINT, signal.SIGTERM):
         signal.signal(sig, lambda *_: stop.set())
-    stop.wait()
+    # systemd watchdog (WatchdogSec in the unit): "alive" only while the loops that keep the
+    # vehicle informed and AIO NAV running still turn; a hung dashboard is then restarted.
+    ping = sdnotify.watchdog_interval_s()
+    sdnotify.notify("READY=1")
+    while not stop.wait(ping or 3600):
+        if ping and ctx.alive():
+            sdnotify.notify("WATCHDOG=1")
 
     logger.info("shutting down")
     for srv in servers:

@@ -10,9 +10,9 @@ Rules, in order:
   value repeats) and tries again. The count is kept for this power-on, so a dashboard that keeps
   restarting does not shorten the waits; it starts again from the first wait once READY is reached.
 * Before a start, the ``prerequisites`` (readiness conditions such as imu) must hold for
-  ``prerequisite_stable_s``. After READY was reached in this power-on the vehicle may be moving,
-  and AIO NAV's first alignment step needs it still: a restart then also waits until the IMU shows
-  the vehicle still for ``still_stable_s`` (the vehicle is told SAFE_STOP meanwhile).
+  ``prerequisite_stable_s``, and (``require_still``) the IMU must show the vehicle still for
+  ``still_stable_s``: AIO NAV's first alignment step needs it, and a start may follow a crash or a
+  watchdog reboot while driving. After READY the vehicle is told SAFE_STOP meanwhile.
 * AIO NAV running but without output: if a prerequisite is missing (no IMU data, no valid time) the
   cause is upstream, so it is left running and may resume by itself; with the inputs fine it gets
   ``stale_grace_s`` to recover, then it is stopped and started again.
@@ -63,7 +63,7 @@ class StartupCoordinator:
         self.enabled = bool(a["enabled"] and cfg["nav"]["allow_control"])
         self.prereq = {n: Condition(float(a["prerequisite_stable_s"]), 0.0) for n in a["prerequisites"]}
         self.still = Condition(float(a["still_stable_s"]), 0.0)
-        self.still_after_ready = bool(a["still_after_ready"])
+        self.require_still = bool(a["require_still"])
         self.stale_grace_s = float(a["stale_grace_s"])
         self.backoff = [float(x) for x in a["retry_backoff_s"]] or [5.0]
         self.max_attempts = int(a["max_attempts"] or 0)         # 0: never give up
@@ -86,6 +86,7 @@ class StartupCoordinator:
         if self.attempts:                      # restarted while retrying: keep the wait
             self.next_at = self._clock() + self._wait_s()
         self._failed_since: Optional[float] = None
+        self.last_tick: Optional[float] = None       # monotonic time of the last tick (watchdog)
         self._launching = False
         self._was_running = False
         self._stopped_at: Optional[float] = None    # end of its own stop, until the snapshots show it
@@ -194,6 +195,7 @@ class StartupCoordinator:
         self.state, self.detail = state, detail
 
     def tick(self) -> None:
+        self.last_tick = time.monotonic()
         if not self.enabled:
             return
         now = self._clock()
@@ -203,7 +205,7 @@ class StartupCoordinator:
         with self._lock:
             if r.get("state") == "READY" and (not self.ready_this_boot or self.attempts):
                 if not self.ready_this_boot:
-                    self.ready_this_boot = True    # from now on a restart waits for the vehicle to be still
+                    self.ready_this_boot = True    # a later stop asks the vehicle for a safe stop
                     self.events.add("info", "autostart", "Ready reached",
                                     "after a failure AIO NAV is restarted once the vehicle is still")
                 self.attempts, self.next_at = 0, None          # a good run: the waits start afresh
@@ -279,7 +281,7 @@ class StartupCoordinator:
                 label = c.get("label") or name
                 why = c.get("reason") if c.get("ok") is False else ""   # e.g. an IMU without valid time
                 missing.append(f"{label}: {why}" if why else label)
-        if still and self.ready_this_boot and self.still_after_ready:
+        if still and self.require_still:
             m = r.get("motion") or {}
             if not self.still.update(m.get("still"), now):
                 missing.append("the vehicle to be still" + (f" ({m['reason']})" if m.get("reason") else ""))
