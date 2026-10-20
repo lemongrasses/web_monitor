@@ -24,6 +24,8 @@ RestartSec=3
 # this long, systemd restarts it like a crash. AIO NAV / DSO keep running (KillMode=process).
 WatchdogSec=60
 NotifyAccess=main
+# File descriptors for the core even when the web ports are busy (web/server.py caps connections).
+LimitNOFILE=8192
 KillSignal=SIGTERM
 KillMode=process
 TimeoutStopSec=10

@@ -12,7 +12,6 @@ import os
 import threading
 import time
 
-from werkzeug.serving import make_server
 
 from .actions.autostart import StartupCoordinator
 from .actions.driver_watchdog import DriverWatchdog
@@ -35,6 +34,7 @@ from .data_access.files import DataRoots
 from .media.tap import PreviewTap
 from .state.health import HealthEngine
 from .state.store import EventLog, StateStore
+from .web.server import BoundedWSGIServer
 from .web.maintenance import create_maintenance_app
 from .web.product import create_product_app
 
@@ -188,7 +188,7 @@ def main(argv=None) -> int:
     for key, factory in (("product", create_product_app), ("maintenance", create_maintenance_app)):
         host, port = cfg[key]["host"], int(cfg[key]["port"])
         try:
-            srv = make_server(host, port, factory(ctx), threaded=True)
+            srv = BoundedWSGIServer(host, port, factory(ctx))   # bounded: idle timeout, connection caps
         except (OSError, SystemExit) as e:  # werkzeug exits on "address in use"
             logger.error("cannot start %s UI on %s:%d: %s", key, host, port, e)
             for s in servers:
