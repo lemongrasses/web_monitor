@@ -204,7 +204,8 @@ class DsoWatchdog:
         elif not self._outage_logged:
             self._outage_logged = True
             self.events.add("warning", "watchdog", "DSO is not running: starting it again",
-                            f"trying every {float(self.w['retry_s']):.0f} s until it stays up")
+                            f"after {float(self.w['retry_s']):.0f} s; if it keeps exiting right after "
+                            f"starting, the waits grow to {float(self.w['retry_max_s']):.0f} s (never given up)")
         busy = False
         try:
             result = (self._start if action == "start" else self._restart)()
