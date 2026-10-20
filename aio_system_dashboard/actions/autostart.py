@@ -31,6 +31,9 @@ from ..state.readiness import Condition
 logger = logging.getLogger(__name__)
 
 BOOT_ID_FILE = "/proc/sys/kernel/random/boot_id"
+# After its own stop, the services / readiness snapshots still show the old run for a poll or two
+# (services every 2 s): judging that run again would schedule the retry and stop it again.
+STOP_SETTLE_S = 10.0
 
 
 def read_boot_id() -> str:
@@ -60,6 +63,7 @@ class StartupCoordinator:
         self.next_at: Optional[float] = None
         self._launching = False
         self._was_running = False
+        self._stopped_at: Optional[float] = None    # end of its own stop, until the snapshots show it
         self._lock = threading.Lock()
         self._stop = threading.Event()
         self._thread: Optional[threading.Thread] = None
@@ -162,7 +166,12 @@ class StartupCoordinator:
                           "" if running else "AIO NAV stopped after it was ready; it is not restarted automatically")
                 self._was_running = running
                 return
+            if not running:
+                self._stopped_at = None
+            elif self._stopped_at is not None and now - self._stopped_at < STOP_SETTLE_S:
+                return                             # its own stop is not in the snapshots yet
             if running:
+                self._stopped_at = None
                 self._was_running = True
                 inhibit = set(r.get("inhibit") or [])
                 failed = r.get("state") == "FAULT" and inhibit & {"STARTUP_TIMEOUT", "NAV_OUTPUT_STALE"}
@@ -232,5 +241,6 @@ class StartupCoordinator:
                     self._launching = False
                     if verb == "stop":
                         self._was_running = False
+                        self._stopped_at = self._clock()
 
         threading.Thread(target=work, name=f"autostart-{verb}", daemon=True).start()

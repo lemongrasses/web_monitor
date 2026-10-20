@@ -130,6 +130,26 @@ class AutostartTest(unittest.TestCase):
         self.tick(c, 6.0)
         self.assertEqual(self.actions.calls[-1], "start_process")
 
+    def test_own_stop_is_not_judged_again_while_the_snapshots_lag(self):
+        # On the device the services snapshot showed the stopped run for a few seconds more: the
+        # retry was scheduled and AIO NAV stopped three times. Here the store keeps the old run.
+        self.data["autostart"]["prerequisites"] = []
+        c = self.make()
+        self.tick(c)
+        readiness(self.store, "FAULT", inhibit=["STARTUP_TIMEOUT"])
+        self.actions.run = lambda action_id, target: (self.actions.calls.append(action_id),
+                                                      {"success": True, "summary": "fake"})[1]
+        self.tick(c)
+        for _ in range(3):
+            self.tick(c, 1.0)
+        self.assertEqual(self.actions.calls, ["start_process", "stop_process"])
+        self.assertEqual(self.events.items.count("Automatic start: retry scheduled"), 1)
+        set_running(self.store, False)                    # the snapshots catch up
+        readiness(self.store, "CHECKING")
+        self.tick(c, 3.0)
+        self.assertEqual(self.actions.calls[-1], "start_process")
+        self.assertEqual(c.attempts, 2)
+
     def test_operator_stop_holds_across_a_restart(self):
         self.data["autostart"]["prerequisites"] = []
         c = self.make()
