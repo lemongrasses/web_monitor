@@ -250,11 +250,15 @@ class ModulePlumbingTest(unittest.TestCase):
     def test_without_the_module_the_machine_runs_live(self):
         with tempfile.TemporaryDirectory() as tmp:
             state = Path(tmp) / "ros_mode.json"
-            state.write_text(json.dumps({"mode": "bag"}))
+            from aio_system_dashboard import config as config_mod
+            state.write_text(json.dumps({"mode": "bag", "boot_id": config_mod._boot_id()}))
             data = copy.deepcopy(DEFAULTS)
             data["ros"]["mode"] = "live"
             with mock.patch.object(Config, "ros_mode_file", lambda _s: state):
                 self.assertEqual(Config(copy.deepcopy(data), None).ros_mode(), "bag")
+                with mock.patch.object(config_mod, "_boot_id", lambda: "the-next-power-on"):
+                    # Bag replay chosen before this power-on: back to the configured Live mode
+                    self.assertEqual(Config(copy.deepcopy(data), None).ros_mode(), "live")
                 with mock.patch.object(modules, "installed", lambda name: False):
                     self.assertEqual(Config(copy.deepcopy(data), None).ros_mode(), "live")
                 data["modules"] = {"replay": {"enabled": False}}
@@ -294,3 +298,57 @@ class ModulePlumbingTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class ModeSwitchKeepsAutomaticStartTest(unittest.TestCase):
+    """The Live / Bag switch stops AIO NAV as part of a change: that must not be an operator Stop
+    (hold), or a fully automatic machine stays stopped after every switch."""
+
+    def test_switch_does_not_hold_and_says_it_restarts_by_itself(self):
+        try:
+            from flask import Flask
+        except ImportError:
+            self.skipTest("flask not installed")
+        import types
+        from aio_dashboard_replay import web as replay_web
+        from aio_system_dashboard.actions import autostart, process_control
+        from aio_system_dashboard.actions.autostart import StartupCoordinator
+        from aio_system_dashboard.state.store import StateStore
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp = Path(tmp)
+            yaml_live, yaml_bag = tmp / "aio_nav.yaml", tmp / "aio_nav_bag.yaml"
+            for f in (yaml_live, yaml_bag):
+                f.write_text("aio_nav_node:\n  ros__parameters:\n    output_rate: 100.0\n")
+            data = copy.deepcopy(DEFAULTS)
+            data["nav"].update(allow_control=True, aio_nav_config=str(yaml_live))
+            data["ros"]["modes"]["live"]["config"] = str(yaml_live)
+            data["ros"]["modes"]["bag"]["config"] = str(yaml_bag)
+            data["ros"]["mode"] = "live"
+            data["services"] = {"aio_nav": {"label": "AIO NAV", "launch": "aio-nav"}}
+            with mock.patch.object(Config, "state_file", lambda _s, n: tmp / n), \
+                    mock.patch.object(Config, "ros_mode_file", lambda _s: tmp / "ros_mode.json"), \
+                    mock.patch.object(autostart, "FALLBACK_FILE", tmp / "shm.json"), \
+                    mock.patch.object(Config, "mode_config_path", lambda _s, m=None: str(yaml_bag if m == "bag" else yaml_live)):
+                cfg = Config(data, None)
+                events = types.SimpleNamespace(add=lambda *a, **k: None, recent=lambda *a, **k: [])
+                calls = []
+
+                class Actions:
+                    def run(self, action_id, target):
+                        calls.append(action_id)
+                        ctx.autostart.on_action(action_id, target)     # like ActionRegistry.after_run
+                        return {"success": True, "summary": "stopped"}
+                ctx = types.SimpleNamespace(cfg=cfg, store=StateStore(), events=events, actions=Actions(),
+                                            request_restart=lambda: calls.append("restart_dashboard"),
+                                            maint_pages=[], maint_page_context=lambda: {})
+                ctx.autostart = StartupCoordinator(cfg, ctx.store, ctx.actions, events, boot_id=lambda: "b1")
+                app = Flask(__name__)
+                with mock.patch.object(process_control, "members", lambda _c: ["aio_nav"]):
+                    replay_web.register(ctx, app)
+                    r = app.test_client().post("/api/replay/mode", json={"mode": "bag"},
+                                               headers={"X-Requested-With": "aio-dashboard"})
+                body = r.get_json()
+                self.assertEqual(r.status_code, 200, body)
+                self.assertEqual(calls, ["stop_process", "restart_dashboard"])
+                self.assertFalse(ctx.autostart.hold)
+                self.assertIn("starts again by itself", body["summary"])

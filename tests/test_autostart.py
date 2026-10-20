@@ -332,6 +332,54 @@ class AutostartTest(unittest.TestCase):
         self.tick(c, 2.5)
         self.assertEqual((self.actions.calls, c.attempts), (["start_process"], 1))
 
+    def test_no_second_start_while_the_process_list_lags(self):
+        self.data["autostart"]["prerequisites"] = []
+        c = self.make()
+        self.actions.run = lambda a, t: (self.actions.calls.append(a), {"success": True, "summary": ""})[1]
+        self.tick(c)                                         # started; the list still says stopped
+        for _ in range(8):
+            self.tick(c)
+        self.assertEqual((self.actions.calls, c.attempts), (["start_process"], 1))
+
+    def test_stable_time_starts_again_after_a_gap(self):
+        """An hour of driving, then a pause of a moment: not "still for an hour"."""
+        self.data["autostart"].update(prerequisites=["imu"], require_still=True)
+        c = self.make()
+        for _ in range(8):
+            self.tick(c)                                    # still at power-on: started
+        self.assertEqual(self.actions.calls, ["start_process"])
+        readiness(self.store, "READY")
+        self.tick(c, 3600)                                  # an hour of driving, conditions not looked at
+        set_running(self.store, False)
+        readiness(self.store, "FAULT", inhibit=["NAV_NOT_RUNNING"], still=True)   # paused right now
+        self.tick(c)
+        self.tick(c)
+        self.assertEqual(self.actions.calls, ["start_process"])   # not at once: 5 s still first
+        for _ in range(5):
+            self.tick(c)
+        self.assertEqual(self.actions.calls, ["start_process", "start_process"])
+
+    def test_alive_only_after_a_tick_that_worked(self):
+        c = self.make()
+        c.interval_s = 0.01
+        c.tick = lambda: 1 / 0
+        t = threading.Thread(target=c._run)
+        t.start()
+        time.sleep(0.05)
+        c.stop()
+        t.join(1)
+        self.assertIsNone(c.last_tick)
+
+    def test_mode_switch_stop_is_not_an_operator_hold(self):
+        self.data["autostart"]["prerequisites"] = []
+        c = self.make()
+        self.tick(c)
+        with c.stop_without_hold():
+            self.actions.run("stop_process", process_control.GROUP)
+        self.assertFalse(c.hold)
+        self.actions.run("stop_process", process_control.GROUP)      # an operator Stop still holds
+        self.assertTrue(c.hold)
+
     def test_disabled_without_allow_control(self):
         self.data["nav"]["allow_control"] = False
         c = self.make()

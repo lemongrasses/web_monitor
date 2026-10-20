@@ -30,7 +30,7 @@ from .collectors.services import ServicesCollector
 from .collectors.status_udp import StatusUdpPublisher
 from .collectors.system import SystemCollector
 from . import modules
-from .config import load_config, resolve_path
+from .config import fallback_config, load_config_safely, remember_good, resolve_path
 from .data_access.files import DataRoots
 from .media.tap import PreviewTap
 from .state.health import HealthEngine
@@ -158,15 +158,30 @@ def main(argv=None) -> int:
                         format="%(asctime)s %(levelname)s %(name)s: %(message)s")
     logging.getLogger("werkzeug").setLevel(logging.WARNING)
 
-    cfg = load_config(args.config, force_fake=args.fake)
+    # A settings file with an error must not stop the fully automatic system: fall back to the
+    # settings that last started the dashboard (or the defaults) and say so.
+    cfg, problem = load_config_safely(args.config, force_fake=args.fake)
+    try:
+        ctx = DashboardContext(cfg)
+    except Exception as e:                           # a value of the wrong type, say
+        if problem:
+            raise
+        logger.exception("cannot start with %s", args.config)
+        cfg, which = fallback_config(force_fake=args.fake)
+        problem = f"settings file {args.config} unusable ({e}); running with {which}"
+        ctx = DashboardContext(cfg)
     for key, value in cfg.ros_env().items():  # before rclpy starts
         os.environ[key] = value
     if cfg.ros_env():
         logger.info("ROS environment from config: %s", cfg.ros_env())
-    ctx = DashboardContext(cfg)
     info = cfg.ros_mode_info()
     ros_text = f"ROS {info['label']}" + (f" (domain {info['domain_id']})" if info["domain_id"] is not None else "")
     ctx.events.add("info", "system", "Dashboard started", "fake mode" if cfg.fake else ros_text)
+    if problem:
+        ctx.events.add("fault", "system", "Settings file has an error", problem)
+    if cfg.problems:
+        ctx.events.add("fault", "system", "Settings with an invalid value: defaults used",
+                       "; ".join(cfg.problems))
     ctx.start()
 
     servers = []
@@ -184,6 +199,8 @@ def main(argv=None) -> int:
         t.start()
         servers.append(srv)
         logger.info("%s UI on http://%s:%d", key.capitalize(), host, port)
+    if not problem:
+        remember_good(cfg)                    # these settings started the dashboard
 
     stop = threading.Event()
     for sig in (signal.SIGINT, signal.SIGTERM):

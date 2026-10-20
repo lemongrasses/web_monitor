@@ -36,6 +36,7 @@ BAD = "bad"              # NaN seen, waiting for the minimum gap before restarti
 SETTLING = "settling"    # just restarted
 RESTARTING = "restarting"
 RETRYING = "retrying"    # should be running, is not: waiting for the next try
+BUSY_RETRY_S = 2.0        # another start/stop held the process slot: try again this soon
 IDLE = "idle"            # not running and not wanted
 WAITING = "waiting"      # running, no odometry yet
 DISABLED = "disabled"
@@ -69,6 +70,10 @@ class DsoWatchdog:
         self._down_since: Optional[float] = None
         self._last_try: Optional[float] = None
         self._history: Deque[float] = deque()
+        # Starts that did not stay up (DSO aborting at initialisation, e.g. on a dark, featureless
+        # image: seen at night, every 30 s for hours, each crash disturbing the other programs).
+        self.quick_exits = 0
+        self._run_seen_at: Optional[float] = None
         self._busy = False
         self._outage_logged = False
         self.state = DISABLED if not self.w["enabled"] else WAITING
@@ -114,10 +119,15 @@ class DsoWatchdog:
             elif running:
                 self._adopt()                      # a running DSO is a wanted DSO
                 self._down_since = None
+                if self._run_seen_at is None:
+                    self._run_seen_at = now
+                elif now - self._run_seen_at >= float(self.w["stay_up_s"]):
+                    self.quick_exits = 0           # it stays up: back to the short wait
                 self._outage_logged = False
                 action = self._check_memory() or self._check_odometry(now)
             else:
                 self._bad = 0
+                self._run_seen_at = None
                 action = self._check_down(now)
         if action:
             threading.Thread(target=self._do, args=(action,), name="dso-watchdog", daemon=True).start()
@@ -163,10 +173,14 @@ class DsoWatchdog:
         if self._down_since is None:
             self._down_since = now
         since = max(self._down_since, self._last_try or 0.0)
-        wait = float(self.w["retry_s"]) - (now - since)
+        gap = min(float(self.w["retry_s"]) * 2 ** max(self.quick_exits - 1, 0), float(self.w["retry_max_s"]))
+        wait = gap - (now - since)
         if wait > 0:
-            self.state, self.detail = RETRYING, f"DSO is not running, trying again in {wait:.0f} s"
+            self.state, self.detail = RETRYING, (f"DSO is not running, trying again in {wait:.0f} s"
+                                                 + (f" (it exited {self.quick_exits} times right after "
+                                                    "starting)" if self.quick_exits > 1 else ""))
             return None
+        self.quick_exits += 1                      # reset once this start stays up
         self._busy = True
         self.state, self.detail = RESTARTING, "DSO is not running, starting it"
         return "start"
@@ -191,16 +205,29 @@ class DsoWatchdog:
             self._outage_logged = True
             self.events.add("warning", "watchdog", "DSO is not running: starting it again",
                             f"trying every {float(self.w['retry_s']):.0f} s until it stays up")
+        busy = False
         try:
             result = (self._start if action == "start" else self._restart)()
         except Exception as e:  # keep the watchdog alive whatever the action does
-            logger.exception("DSO %s failed", action)
-            result = {"success": False, "summary": f"error: {e}"}
+            busy = getattr(e, "status", None) == 409       # another start/stop runs: not a failure
+            if busy:
+                logger.info("DSO %s postponed: %s", action, e)
+            else:
+                logger.exception("DSO %s failed", action)
+            result = {"success": False, "summary": f"{'postponed' if busy else 'error'}: {e}"}
         now = self._clock()
         with self._lock:
             self._busy = False
-            self._bad = 0
-            self._last_try = now
+            if busy:                                   # try again on a coming tick, nothing counted
+                self._last_try = now - float(self.w["retry_s"]) + BUSY_RETRY_S
+                self.last_result = f"{action} {result['summary']}"
+            else:
+                self._bad = 0
+                self._last_try = now
+        if busy:
+            self._publish()
+            return
+        with self._lock:
             if action in ("restart", "restart_memory"):
                 self._last_restart = now
                 self._history.append(now)

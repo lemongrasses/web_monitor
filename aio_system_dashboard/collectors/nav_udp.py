@@ -21,6 +21,10 @@ logger = logging.getLogger(__name__)
 RATE_WINDOW_S = 3.0  # long enough that a short gap does not read as "low rate"
 TIME_BACKWARD_RESET_S = 1.0
 STREAM_GAP_RESET_S = 1.0
+# Packets keep coming but their time stamp no longer advances (after it did): AIO NAV is stuck
+# while still sending. The vehicle's receiver refuses such data, so the output counts as stale here
+# too (and is restarted like stopped output). Before the first advance (alignment) it is left alone.
+TIME_STALL_S = 2.0
 
 
 class NavUdpCollector:
@@ -45,7 +49,10 @@ class NavUdpCollector:
         self._packets = 0
         self._bad = 0
         self._last_bad_log = 0.0
-        self._session_started: Optional[float] = None    # set by the first packet
+        self._session_started: Optional[float] = None    # set by the first packet (wall clock, shown)
+        self._session_started_mono: Optional[float] = None   # the same on the monotonic clock (uptime)
+        self._time_max: Optional[float] = None       # largest packet time stamp of this run
+        self._time_advanced_at: Optional[float] = None   # when it last grew (monotonic); None: never
 
     # ------------------------------------------------------------------ thread
     def start(self) -> None:
@@ -116,11 +123,15 @@ class NavUdpCollector:
             if prev is not None and decoded["time_s"] < prev["time_s"] - TIME_BACKWARD_RESET_S:
                 reset = True
             self._latest = decoded
+            if self._time_max is None or reset:
+                self._time_max, self._time_advanced_at = decoded["time_s"], None   # a new run
+            elif decoded["time_s"] > self._time_max:
+                self._time_max, self._time_advanced_at = decoded["time_s"], now
             if self._last_rx is not None and now - self._last_rx > STREAM_GAP_RESET_S:
                 self._rx_times.clear()  # rate after a dropout reflects only the resumed stream
             self._last_rx = now
             if self._session_started is None:          # first packet after a stop: the session starts now
-                self._session_started = time.time()
+                self._session_started, self._session_started_mono = time.time(), time.monotonic()
             self._packets += 1
             self._rx_times.append(now)
             for name in FLAG_NAMES:
@@ -133,7 +144,8 @@ class NavUdpCollector:
     def new_session(self, reason: str) -> None:
         with self._lock:
             self._flag_last_seen.clear()
-            self._session_started = time.time()
+            self._session_started, self._session_started_mono = time.time(), time.monotonic()
+            self._time_max = self._time_advanced_at = None
         session = self.trajectory.reset()
         logger.info("new NAV session %d (%s)", session, reason)
         if self._on_session_reset:
@@ -145,9 +157,10 @@ class NavUdpCollector:
         with self._lock:
             self._latest = None
             self._last_rx = None
+            self._time_max = self._time_advanced_at = None
             self._rx_times.clear()
             self._flag_last_seen.clear()
-            self._session_started = None
+            self._session_started = self._session_started_mono = None
         session = self.trajectory.reset()
         logger.info("NAV state cleared, session %d (%s)", session, reason)
         if self._on_session_reset:
@@ -169,6 +182,10 @@ class NavUdpCollector:
             rate = len(self._rx_times) / max(span, 0.5)
             latest = dict(self._latest) if self._latest else None
             age = (now - self._last_rx) if self._last_rx is not None else None
+            stalled = (age is not None and self._time_advanced_at is not None
+                       and now - self._time_advanced_at > TIME_STALL_S)
+            if stalled:
+                age = now - self._time_advanced_at    # the last packet that carried new data
             flag_age = {k: now - t for k, t in self._flag_last_seen.items()}
             out = {
                 "listening": self.bind_error is None and self._sock is not None,
@@ -178,8 +195,10 @@ class NavUdpCollector:
                 "bad_packets": self._bad,
                 "rate_hz": rate,
                 "age_s": age,
+                "time_stalled": stalled,
                 "session": self.trajectory.session,
                 "session_started": self._session_started,
+                "session_started_mono": self._session_started_mono,
             }
         if latest:
             latest["speed"] = math.hypot(latest["velocity_north"], latest["velocity_east"])

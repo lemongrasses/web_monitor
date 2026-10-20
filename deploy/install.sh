@@ -146,6 +146,15 @@ echo "==> systemd unit aio-dashboard.service"
 sed -e "s|@USER@|$RUN_USER|g" -e "s|@PREFIX@|$PREFIX|g" "$SRC/deploy/aio-dashboard.service" \
   > /etc/systemd/system/aio-dashboard.service
 
+echo "==> unattended operation: reboot 10 s after a kernel panic"
+# The device runs without an operator: a kernel panic must not leave it hanging (the L4T hardware
+# watchdog would reset it only after 120 s). Removed by deploy/uninstall.sh.
+cat > /etc/sysctl.d/90-aio-unattended.conf <<'EOF_SYSCTL'
+# AIO dashboard (deploy/install.sh): reboot 10 s after a kernel panic instead of hanging.
+kernel.panic = 10
+EOF_SYSCTL
+sysctl -q -p /etc/sysctl.d/90-aio-unattended.conf || true
+
 echo "==> sudoers rule for whitelisted driver restarts"
 UNITS=$(PYTHONPATH="$PREFIX/lib:$PREFIX" python3 - "$PREFIX/config/dashboard.yaml" <<'EOF'
 import re, sys, yaml

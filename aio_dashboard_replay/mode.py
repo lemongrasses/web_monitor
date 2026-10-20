@@ -10,7 +10,7 @@ from typing import Callable, Dict
 
 
 def apply_mode(cfg, mode: str, stop_nav: Callable[[], Dict], schedule_restart: Callable[[], None],
-               events=None) -> Dict:
+               events=None, automatic: bool = False) -> Dict:
     modes = cfg["ros"]["modes"]
     if mode not in modes:
         return {"success": False, "status": 400, "summary": f"unknown mode {mode!r}"}
@@ -37,4 +37,6 @@ def apply_mode(cfg, mode: str, stop_nav: Callable[[], Dict], schedule_restart: C
         events.add("warning", "action", f"ROS environment set to {label}", detail + "; dashboard restarting")
     schedule_restart()
     return {"success": True, "changed": True, "restarting": True,
-            "summary": f"{label} ({detail}). Dashboard restarting; start AIO NAV again afterwards."}
+            "summary": f"{label} ({detail}). Dashboard restarting; " +
+                       ("AIO NAV starts again by itself in this mode." if automatic
+                        else "start AIO NAV again afterwards.")}

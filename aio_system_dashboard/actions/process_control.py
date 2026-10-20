@@ -142,6 +142,29 @@ def wanted_since(cfg, key: str) -> Optional[float]:
         return None
 
 
+def _boot_id() -> str:
+    try:
+        return Path("/proc/sys/kernel/random/boot_id").read_text().strip()
+    except OSError:
+        return ""
+
+
+def wanted_age_s(cfg, key: str) -> Optional[float]:
+    """Seconds since the program was last asked to start, if it should be running. Measured on the
+    monotonic clock of this boot: the wall clock can step (NTP, GNSS time) and then said "hours"
+    or "in the future". A request from an earlier boot is simply old."""
+    try:
+        data = json.loads(_wanted_file(cfg).read_text(encoding="utf-8"))
+        if not data.get(key):
+            return None
+        mono = data.get(f"{key}@mono")
+        if mono is not None and data.get("boot_id") == _boot_id():
+            return max(0.0, time.monotonic() - float(mono))
+        return float("inf") if data.get(f"{key}@") else None
+    except (OSError, ValueError, AttributeError, TypeError, KeyError):
+        return None
+
+
 _WANTED_LOCK = threading.Lock()
 
 
@@ -159,8 +182,11 @@ def set_wanted(cfg, key: str, value: bool, restamp: bool = True) -> None:
             data[key] = value
             if value:
                 data[f"{key}@"] = time.time()       # every start request: tells a crash from "still starting"
+                data[f"{key}@mono"] = time.monotonic()
+                data["boot_id"] = _boot_id()
             else:
                 data.pop(f"{key}@", None)
+                data.pop(f"{key}@mono", None)
             f.parent.mkdir(parents=True, exist_ok=True)
             tmp = f.with_name(f.name + ".tmp")      # never a half-written file after a power cut
             tmp.write_text(json.dumps(data) + "\n", encoding="utf-8")

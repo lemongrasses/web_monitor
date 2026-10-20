@@ -78,6 +78,20 @@ class ControlActionsTest(unittest.TestCase):
         t.join()
         self.assertTrue(reg.run("start_process", "nav_core")["success"])   # free again
 
+    def test_start_request_age_survives_a_clock_step(self):
+        """The wall clock steps when NTP or GNSS time arrives (an RTC 8 h ahead was seen): the age of
+        a start request must not become hours, or negative ("starting" for ever)."""
+        cfg = make()
+        process_control.set_wanted(cfg, "aio_nav", True)
+        real = time.time
+        for step in (-8 * 3600, 8 * 3600):
+            with mock.patch.object(process_control.time, "time", lambda: real() + step):
+                self.assertLess(process_control.wanted_age_s(cfg, "aio_nav"), 5)
+        with mock.patch.object(process_control, "_boot_id", lambda: "another-boot"):
+            self.assertEqual(process_control.wanted_age_s(cfg, "aio_nav"), float("inf"))
+        process_control.set_wanted(cfg, "aio_nav", False)
+        self.assertIsNone(process_control.wanted_age_s(cfg, "aio_nav"))
+
     def test_unlisted_target_rejected(self):
         reg = ActionRegistry(make(), {}, FakeEvents(), lambda d: {})
         with self.assertRaises(ActionError):

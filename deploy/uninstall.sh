@@ -49,6 +49,7 @@ systemctl daemon-reload
 systemctl reset-failed 2>/dev/null || true
 
 rm -f /etc/sudoers.d/aio-dashboard
+rm -f /etc/sysctl.d/90-aio-unattended.conf     # kernel.panic returns to the default at the next boot
 [[ -L /usr/local/bin/aio-dashboard ]] && rm -f /usr/local/bin/aio-dashboard
 [[ -L /usr/local/bin/aio-sysmon ]] && rm -f /usr/local/bin/aio-sysmon
 if [[ -d "$PREFIX" ]]; then

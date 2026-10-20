@@ -173,10 +173,13 @@ def register(ctx, app) -> None:
         def stop_nav():
             if not process_control.members(ctx.cfg):
                 return {"success": True}
-            return ctx.actions.run("stop_process", process_control.GROUP)
+            with ctx.autostart.stop_without_hold():     # a mode change, not an operator Stop
+                return ctx.actions.run("stop_process", process_control.GROUP)
 
         try:
-            result = ros_mode.apply_mode(ctx.cfg, mode, stop_nav, ctx.request_restart, ctx.events)
+            auto = ctx.autostart.status()
+            result = ros_mode.apply_mode(ctx.cfg, mode, stop_nav, ctx.request_restart, ctx.events,
+                                         automatic=bool(auto.get("enabled") and not auto.get("hold")))
         except ActionError as e:
             return jsonify({"success": False, "summary": str(e)}), e.status
         status = result.pop("status", 200)

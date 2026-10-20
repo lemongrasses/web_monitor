@@ -7,7 +7,8 @@ alone, and the automatic start then waited for IMU data for ever. Rules:
 * Live mode only: in Bag replay the IMU comes from the bag (another ROS domain), so a missing IMU
   says nothing about the drivers.
 * The driver unit must be active, and the IMU topic missing or stale for ``stale_s`` without a
-  break. An IMU that publishes without a valid time (no GNSS time yet) is not a driver fault.
+  break, or the unit failed (systemd gave up on it) for that long. An IMU that publishes without a
+  valid time (no GNSS time yet) is not a driver fault.
 * Restart the unit (``systemctl --user restart``), then wait ``retry_backoff_s`` before the next
   restart (the last value repeats); a healthy IMU starts the waits afresh.
 * An operator Stop of the drivers (Maintenance) is respected until they are started again.
@@ -104,7 +105,8 @@ class DriverWatchdog:
         now = self._clock()
         mode = self.cfg.ros_mode()
         svc = (self.store.get("services", {}) or {}).get(self.service) or {}
-        active = (svc.get("unit_state") or {}).get("active") == "active"
+        unit = (svc.get("unit_state") or {}).get("active")
+        active, failed = unit == "active", unit == "failed"   # failed: systemd gave up on it
         imu = self._imu()
         with self._lock:
             if self._busy:
@@ -116,35 +118,35 @@ class DriverWatchdog:
             if self.held:
                 self._set("held", "Drivers stopped by an operator")
                 return
-            if imu is None or not active:
-                self._bad_since = None          # no ROS view, or systemd handles a failed unit
+            if not failed and (imu is None or not active):
+                self._bad_since = None          # no ROS view, or the unit is (re)starting / stopped
                 self._set("idle", "" if active else "driver unit not active")
                 return
-            if imu.get("state") not in BAD_STATES:
+            if not failed and imu.get("state") not in BAD_STATES:
                 self._bad_since, self.restarts = None, 0
                 self._set("ok", "")
                 return
             if self._bad_since is None:
                 self._bad_since = now
             bad_for = now - self._bad_since
+            what = "driver unit failed" if failed else f"IMU {imu['state']}"
             if bad_for < self.stale_s:
-                self._set("watching", f"IMU {imu['state']} for {bad_for:.0f} s")
+                self._set("watching", f"{what} for {bad_for:.0f} s")
                 return
             if self._last_restart is not None and self.restarts:
                 wait = self.backoff[min(self.restarts - 1, len(self.backoff) - 1)]
                 left = wait - (now - self._last_restart)
                 if left > 0:
-                    self._set("retry_wait", f"IMU still {imu['state']}; restarting the drivers again "
-                                            f"in {left:.0f} s")
+                    self._set("retry_wait", f"{what}; restarting the drivers again in {left:.0f} s")
                     return
             self._busy = True
             self.restarts += 1
             self.restarts_total += 1
             self._last_restart = now
-            self._set("restarting", f"IMU {imu['state']} for {bad_for:.0f} s while the drivers run")
+            self._set("restarting", f"{what} for {bad_for:.0f} s")
         self.events.add("warning", "drivers", "Sensor drivers restarted",
-                        f"IMU {imu['state']} for {bad_for:.0f} s while {svc.get('label') or self.service} "
-                        f"was running (restart {self.restarts} in a row)")
+                        f"{what} for {bad_for:.0f} s ({svc.get('label') or self.service}; "
+                        f"restart {self.restarts} in a row)")
         threading.Thread(target=self._restart, name="driver-restart", daemon=True).start()
 
     def _restart(self) -> None:

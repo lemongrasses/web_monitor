@@ -26,8 +26,10 @@ def loops_alive(last_times, now: float, max_age_s: float = 20.0) -> bool:
 
 
 def watchdog_interval_s() -> float:
-    """Half of WatchdogSec as systemd passes it (WATCHDOG_USEC), or 0 when there is none."""
+    """How often to tell systemd "alive": a sixth of WatchdogSec (WATCHDOG_USEC), at most 10 s, so
+    a loop that stalled briefly and recovered pings well before the deadline; 0 = no watchdog."""
     try:
-        return int(os.environ.get("WATCHDOG_USEC", "0")) / 2e6
+        usec = int(os.environ.get("WATCHDOG_USEC", "0"))
     except ValueError:
         return 0.0
+    return min(usec / 6e6, 10.0) if usec > 0 else 0.0

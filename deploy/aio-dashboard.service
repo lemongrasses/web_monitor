@@ -4,8 +4,9 @@
 # AIO Nav desktop app); KillMode=process keeps them running when the dashboard restarts.
 [Unit]
 Description=AIO System Dashboard
-After=network-online.target
-Wants=network-online.target
+# Not network-online.target: the dashboard needs no network to start, and without any network that
+# target waits up to 30 s. Addresses that come later (the vehicle link) are used when they appear.
+After=network.target
 
 [Service]
 Type=simple

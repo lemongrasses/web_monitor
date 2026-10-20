@@ -175,10 +175,36 @@ class DownTest(unittest.TestCase):
     def test_outage_is_logged_once(self):
         r = Rig(self, running=False, wanted=True, retry_s=30, settle_s=0)
         r.tick()
-        for _ in range(3):
-            r.tick(31)
+        for dt in (31, 31, 61):                                # the waits grow while it keeps failing
+            r.tick(dt)
         self.assertEqual(len(r.starts), 3)
         self.assertEqual(sum(1 for _, t in r.events.items if "not running" in t), 1)
+
+    def test_exits_right_after_starting_wait_longer_up_to_retry_max(self):
+        """Seen at night: DSO aborted at initialisation every 30 s for hours, each crash stalling
+        the IMU messages for up to 1.2 s. It is still tried for ever, but less and less often."""
+        r = Rig(self, running=False, wanted=True, retry_s=30, retry_max_s=300, settle_s=0)
+        r.tick()
+        times, t = [], 0.0
+        while len(r.starts) < 7:
+            r.tick(1.0)
+            t += 1.0
+            if len(r.starts) > len(times):
+                times.append(t)
+        gaps = [round(b - a) for a, b in zip(times, times[1:])]
+        self.assertEqual(gaps, [30, 60, 120, 240, 300, 300])
+
+    def test_staying_up_starts_the_short_waits_again(self):
+        r = Rig(self, running=False, wanted=True, retry_s=30, settle_s=0, stay_up_s=120)
+        r.tick()
+        for dt in (31, 31, 61):
+            r.tick(dt)
+        self.assertEqual(r.dog.quick_exits, 3)
+        r.running = True
+        r.dog.on_message(True)
+        r.tick(1)
+        r.tick(121)                                            # up for 2 minutes
+        self.assertEqual(r.dog.quick_exits, 0)
 
     def test_disabled(self):
         r = Rig(self, running=False, wanted=True, enabled=False)
@@ -225,6 +251,17 @@ class MemoryGuardTest(unittest.TestCase):
         self.assertEqual((r.restarts, r.starts), ([], []))
         self.assertFalse(any("restarting DSO" in t for _, t in r.events.items))
         self.assertIn("skipped", r.dog.status()["last_result"])
+
+    def test_busy_slot_is_postponed_not_counted(self):
+        from aio_system_dashboard.actions.registry import ActionError
+        r = Rig(self)
+        def busy():
+            raise ActionError("another start or stop is still running", 409)
+        r.dog._restart = busy
+        r.dog.memory_mb = 9000.0
+        r.dog._do("restart_memory")
+        self.assertEqual((r.dog.restarts_total, len(r.dog._history)), (0, 0))
+        self.assertIn("postponed", r.dog.status()["last_result"])
 
     def test_not_running_is_not_measured(self):
         r = Rig(self, running=False, wanted=False)

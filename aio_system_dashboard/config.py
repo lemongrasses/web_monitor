@@ -7,7 +7,7 @@ import logging
 import os
 import time
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 import yaml
 
@@ -73,7 +73,9 @@ DEFAULTS: Dict[str, Any] = {
                      "bad_messages": 1,       # NaN messages in a row before restarting (1 = at once)
                      "cooldown_s": 2.0,       # minimum gap between two NaN restarts
                      "settle_s": 3.0,         # ignore messages right after a restart
-                     "retry_s": 30.0,         # DSO should run but does not: try again this often
+                     "retry_s": 30.0,         # DSO should run but does not: try again this often ...
+                     "retry_max_s": 300.0,    # ... doubling while it keeps exiting at once, up to this
+                     "stay_up_s": 120.0,      # running this long: the waits start afresh
                      "fast_restarts": 3,      # this many restarts within window_s ...
                      "window_s": 60.0,        # ... and further restarts wait retry_s too
                      "max_memory_mb": "auto"},  # RAM + swap above this: restart DSO. auto: 20% of RAM; 0: off
@@ -124,6 +126,13 @@ def _deep_merge(base: Dict, override: Dict) -> Dict:
         else:
             out[k] = copy.deepcopy(v)
     return out
+
+
+def _boot_id() -> str:
+    try:
+        return Path("/proc/sys/kernel/random/boot_id").read_text().strip()
+    except OSError:
+        return ""
 
 
 def resolve_path(p: str) -> Path:
@@ -253,6 +262,8 @@ def _read_aio_nav_params(path: str) -> Dict[str, Any]:
 class Config:
     AIO_NAV_MAX_AGE_S = 2.0      # how long a read of aio_nav.yaml is reused (Start / Restart always re-read)
 
+    problems: List[str] = []                         # settings replaced by defaults (load_config)
+
     def __init__(self, data: Dict[str, Any], source: Optional[Path] = None):
         self.data = data
         self.source = source
@@ -332,17 +343,22 @@ class Config:
         """Active preset: the one chosen on the maintenance page, else ros.mode, else None.
 
         Choosing a mode belongs to the optional replay module; without it a choice left on disk is
-        ignored, so a product machine always runs the configured mode (live)."""
+        ignored, so a product machine always runs the configured mode (live). A choice other than the
+        configured mode lasts until the next power-on: a device left in Bag replay would otherwise
+        wait for bag data for ever after being switched on in the field."""
         modes = self.data["ros"]["modes"]
+        configured = self.data["ros"].get("mode")
         chosen = None
         if self.module_on("replay"):
             try:
-                chosen = json.loads(self.ros_mode_file().read_text(encoding="utf-8")).get("mode")
+                saved = json.loads(self.ros_mode_file().read_text(encoding="utf-8"))
+                chosen = saved.get("mode")
+                if chosen != configured and saved.get("boot_id") != _boot_id():
+                    chosen = None                # chosen before this power-on
             except (OSError, ValueError, AttributeError):
                 chosen = None
         if chosen in modes:
             return chosen
-        configured = self.data["ros"].get("mode")
         return configured if configured in modes else None
 
     def save_ros_mode(self, mode: str) -> None:
@@ -350,7 +366,9 @@ class Config:
             raise ValueError(f"unknown ROS mode {mode!r}")
         f = self.ros_mode_file()
         f.parent.mkdir(parents=True, exist_ok=True)
-        f.write_text(json.dumps({"mode": mode}) + "\n", encoding="utf-8")
+        tmp = f.with_name(f.name + ".tmp")
+        tmp.write_text(json.dumps({"mode": mode, "boot_id": _boot_id()}) + "\n", encoding="utf-8")
+        tmp.replace(f)
         self._aio_nav = None                     # the mode decides which config file is read
 
     def _mode_ros(self, mode: str, params: Dict[str, Any]) -> Dict[str, Any]:
@@ -421,19 +439,105 @@ class Config:
         return self.data["services"].get(key, {}).get("label", key)
 
 
+def _kind_ok(value: Any, default: Any) -> bool:
+    if default is None or default == "auto":
+        return True                                  # free: a value, a list, "auto", ...
+    if isinstance(default, bool):
+        return isinstance(value, bool)
+    if isinstance(default, (int, float)):
+        return isinstance(value, (int, float)) and not isinstance(value, bool)
+    if isinstance(default, str):
+        return value is None or isinstance(value, str)
+    if isinstance(default, list):
+        return isinstance(value, list)
+    if isinstance(default, dict):
+        return isinstance(value, dict)
+    return True
+
+
+def _sanitize(data: Dict, defaults: Dict, prefix: str = "") -> List[str]:
+    """Replace values of the wrong kind (text where a number belongs, ...) by the default, in place.
+    A valid YAML file with one wrong value must not stop the fully automatic system: it would fail
+    later, in a loop, and the systemd watchdog would restart the dashboard for ever."""
+    problems = []
+    for key, default in defaults.items():
+        if key not in data:
+            continue
+        name = f"{prefix}{key}"
+        value = data[key]
+        if not _kind_ok(value, default):
+            data[key] = copy.deepcopy(default)
+            problems.append(f"{name}: {value!r} is not a valid value; using the default {default!r}")
+        elif isinstance(default, dict) and default:
+            problems += _sanitize(value, default, name + ".")
+    return problems
+
+
 def load_config(path: Optional[str], force_fake: bool = False) -> Config:
     data = copy.deepcopy(DEFAULTS)
     source = None
     if path:
         source = resolve_path(path)
         with open(source, encoding="utf-8") as f:
-            data = _deep_merge(data, yaml.safe_load(f) or {})
+            loaded = yaml.safe_load(f) or {}
+        if not isinstance(loaded, dict):
+            raise ValueError(f"{source}: the settings must be a YAML mapping (key: value)")
+        data = _deep_merge(data, loaded)
+    problems = _sanitize(data, DEFAULTS)
+    for p in problems:
+        logger.error("settings: %s", p)
     if force_fake:
         data["fake"]["enabled"] = True
     cfg = Config(data, source)
+    cfg.problems = problems
     if cfg.aio_nav.get("loaded"):
         logger.info("aio_nav config: %s%s", cfg.aio_nav["path"], " (found automatically)" if cfg.aio_nav["auto"] else "")
     else:
         logger.warning("aio_nav config not loaded (%s): %s", cfg.aio_nav.get("path"),
                        cfg.aio_nav.get("error", "no path or no ros__parameters"))
     return cfg
+
+
+# The settings that last started the dashboard (state/ is writable by the dashboard's user, the
+# config folder is not). A settings file with an error must not stop the fully automatic system:
+# the dashboard then starts with this copy, or with the built-in defaults, and says so.
+LAST_GOOD = "state/dashboard.lastgood.yaml"
+
+
+def fallback_config(force_fake: bool = False) -> Tuple[Config, str]:
+    """The last good settings, else the built-in defaults; and which of the two."""
+    alt = resolve_path(LAST_GOOD)
+    if alt.exists():
+        try:
+            return load_config(str(alt), force_fake), f"the last good settings ({alt})"
+        except Exception as e:                       # noqa: BLE001 - any error: use the defaults
+            logger.error("last good settings %s unusable: %s", alt, e)
+    return load_config(None, force_fake), "the built-in defaults"
+
+
+def load_config_safely(path: Optional[str], force_fake: bool = False) -> Tuple[Config, str]:
+    """(config, problem): problem is "" when the settings file was used."""
+    try:
+        return load_config(path, force_fake), ""
+    except Exception as e:                           # noqa: BLE001 - YAML, I/O, structure
+        cfg, which = fallback_config(force_fake)
+        problem = f"settings file {path} unusable ({e}); running with {which}"
+        logger.error("%s", problem)
+        return cfg, problem
+
+
+def remember_good(cfg: Config) -> None:
+    """Keep a copy of the settings file that just started the dashboard."""
+    if cfg.source is None:
+        return
+    try:
+        text = Path(cfg.source).read_text(encoding="utf-8")
+        dest = resolve_path(LAST_GOOD)
+        if dest.exists() and dest.read_text(encoding="utf-8") == text:
+            return
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        tmp = dest.with_name(dest.name + ".tmp")
+        tmp.write_text(text, encoding="utf-8")
+        tmp.replace(dest)
+    except OSError as e:
+        logger.warning("cannot keep a copy of the good settings: %s", e)

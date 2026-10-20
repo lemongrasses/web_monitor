@@ -105,6 +105,9 @@ def raw_product_state(nav: Dict, run: Dict, ncfg: Dict) -> Tuple[str, List[str],
         return PRODUCT_FAULT, ["AIO NAV is running but sends no navigation output",
                                f"Nothing received in {run_age:.0f} s. Restart it, or check the Maintenance page."], None
     if not fresh:
+        if nav.get("time_stalled"):
+            return PRODUCT_FAULT, ["Navigation output frozen",
+                                   f"AIO NAV sends, but its time stamp has not advanced for {age:.0f} s."], None
         return PRODUCT_FAULT, ["Navigation output stopped",
                                f"Last output {age:.0f} s ago. Restart AIO NAV if it does not come back."], None
     step = alignment_step(nav.get("latest") or {}, ncfg["ready_requires"])
@@ -202,6 +205,7 @@ class HealthEngine:
         while not self._stop.is_set():
             try:
                 self.step()
+                self.last_step = time.monotonic()      # "alive" only after a step that worked
             except Exception:
                 logger.exception("health evaluation failed")
             self._stop.wait(self.interval_s)
@@ -236,7 +240,6 @@ class HealthEngine:
         self._last_nav_pids = pids or None
 
     def step(self) -> None:
-        self.last_step = time.monotonic()
         now = self._clock()
         ncfg = self.cfg["nav"]
         in_grace = now - self.started < ncfg["startup_grace_s"]
@@ -256,10 +259,9 @@ class HealthEngine:
             self._fresh_since = now
 
         # Product state (debounced); reasons follow the displayed state.
-        since = process_control.wanted_since(self.cfg, ncfg["service"])
         run = {"running": bool(nav_svc.get("pids")), "service_state": service_state,
                "wanted": process_control.wanted(self.cfg, ncfg["service"]),
-               "wanted_age_s": (time.time() - since) if since else None,
+               "wanted_age_s": process_control.wanted_age_s(self.cfg, ncfg["service"]),
                "run_age_s": (now - self._run_since) if self._run_since is not None else None,
                "in_grace": in_grace}
         raw_state, reasons, step = raw_product_state(nav, run, ncfg)
@@ -379,7 +381,8 @@ class HealthEngine:
             "advisories": advisories,
             "storage": storage,
             "uptime_s": system.get("uptime_s"),
-            "session_uptime_s": (time.time() - nav["session_started"]) if nav.get("session_started") else None,
+            "session_uptime_s": (time.monotonic() - nav["session_started_mono"])
+                                if nav.get("session_started_mono") else None,
         })
         self.store.set("readiness", readiness)
         maint = self._maintenance(now, services, network, system, shown, u_shown, nav, expected)

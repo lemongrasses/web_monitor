@@ -111,6 +111,15 @@ class DriverWatchdogTest(unittest.TestCase):
         self.run_for(200)
         self.assertEqual(self.actions.calls, [])
 
+    def test_a_failed_unit_is_started_again(self):
+        self.unit("failed")
+        self.imu("missing")
+        self.run_for(40)
+        self.assertEqual(self.actions.calls, [])
+        self.run_for(8)
+        self.assertEqual(self.actions.calls, [("restart_driver", "drivers")])
+        self.assertEqual((self.dog.state, self.dog.restarts_total), ("restarted", 1))
+
     def test_imu_without_valid_time_is_not_a_driver_fault(self):
         self.imu("healthy")                                       # publishes, time_ok False
         self.store.set("ros", {"available": True, "watched": [
@@ -128,7 +137,7 @@ class SdNotifyTest(unittest.TestCase):
             self.addCleanup(rx.close)
             with mock.patch.dict(os.environ, {"NOTIFY_SOCKET": path, "WATCHDOG_USEC": "60000000"}):
                 self.assertTrue(sdnotify.notify("WATCHDOG=1"))
-                self.assertEqual(sdnotify.watchdog_interval_s(), 30.0)
+                self.assertEqual(sdnotify.watchdog_interval_s(), 10.0)
             self.assertEqual(rx.recv(64), b"WATCHDOG=1")
 
     def test_without_systemd_nothing_is_sent(self):

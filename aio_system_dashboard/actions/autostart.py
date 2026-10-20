@@ -23,6 +23,7 @@ It reads only the snapshots other parts publish (services, readiness) and runs t
 own thread: a start takes several seconds.
 """
 
+import contextlib
 import json
 import logging
 import threading
@@ -44,6 +45,8 @@ STOP_SETTLE_S = 10.0
 # (tmpfs), so an operator Stop still holds across a dashboard restart; gone at power-off.
 FALLBACK_FILE = Path("/dev/shm/aio-dashboard-autostart.json")
 BUSY_RETRY_S = 2.0         # another start/stop holds the process slot: try again this soon
+START_SETTLE_S = 10.0      # after its own start, until the process list shows AIO NAV
+COND_GAP_S = 3.0           # conditions not looked at for this long: their stable time starts again
 
 
 def read_boot_id() -> str:
@@ -88,8 +91,12 @@ class StartupCoordinator:
         self._failed_since: Optional[float] = None
         self.last_tick: Optional[float] = None       # monotonic time of the last tick (watchdog)
         self._launching = False
+        self._no_hold = False                         # a stop that is not an operator's decision
         self._was_running = False
         self._stopped_at: Optional[float] = None    # end of its own stop, until the snapshots show it
+        self._started_at: Optional[float] = None    # end of its own start, until the snapshots show it
+        self._prereq_seen: Optional[float] = None   # last time the prerequisites were evaluated
+        self._still_seen: Optional[float] = None    # ... and the "vehicle still" condition
         self._lock = threading.Lock()
         self._stop = threading.Event()
         self._thread: Optional[threading.Thread] = None
@@ -142,7 +149,7 @@ class StartupCoordinator:
         """Called after every maintenance / Overview action. An operator Stop of AIO NAV holds the
         automatic start; an operator Start or Restart releases it and starts the waits afresh."""
         nav = (process_control.GROUP, self.cfg["nav"]["service"])
-        if target not in nav or self._launching:
+        if target not in nav or self._launching or self._no_hold:
             return
         with self._lock:
             if action_id == "stop_process":
@@ -157,6 +164,16 @@ class StartupCoordinator:
                     self.state = "waiting"
                 if changed:
                     self._save()
+
+    @contextlib.contextmanager
+    def stop_without_hold(self):
+        """For stops that are part of a change, not an operator Stop (the Live / Bag switch): the
+        automatic start stays as it was and starts AIO NAV again afterwards."""
+        self._no_hold = True
+        try:
+            yield
+        finally:
+            self._no_hold = False
 
     # ----------------------------------------------------------------- status
     def status(self) -> Dict:
@@ -185,6 +202,7 @@ class StartupCoordinator:
         while not self._stop.is_set():
             try:
                 self.tick()
+                self.last_tick = time.monotonic()      # "alive" only after a tick that worked
             except Exception:
                 logger.exception("start-up coordinator failed")
             self._stop.wait(self.interval_s)
@@ -195,7 +213,6 @@ class StartupCoordinator:
         self.state, self.detail = state, detail
 
     def tick(self) -> None:
-        self.last_tick = time.monotonic()
         if not self.enabled:
             return
         now = self._clock()
@@ -218,8 +235,11 @@ class StartupCoordinator:
                 return
             if not running:
                 self._stopped_at = None
+                if self._started_at is not None and now - self._started_at < START_SETTLE_S:
+                    return                         # its own start is not in the snapshots yet
             elif self._stopped_at is not None and now - self._stopped_at < STOP_SETTLE_S:
                 return                             # its own stop is not in the snapshots yet
+            self._started_at = None
             if running:
                 self._stopped_at = None
                 self._was_running = True
@@ -275,6 +295,13 @@ class StartupCoordinator:
     def _missing_prerequisites(self, r: Dict, now: float, still: bool = True):
         conds = {c["name"]: c for c in (r.get("conditions") or [])}
         missing = []
+        # A condition is "stable" only if it was watched the whole time: after a gap (AIO NAV ran,
+        # a hold, a start) its stable time starts again. Otherwise a vehicle pausing for a moment
+        # after an hour of driving counted as still since before the drive.
+        if self._prereq_seen is None or now - self._prereq_seen > COND_GAP_S:
+            for cond in self.prereq.values():
+                cond.update(False, now)
+        self._prereq_seen = now
         for name, cond in self.prereq.items():
             c = conds.get(name) or {}
             if not cond.update(c.get("ok"), now):
@@ -282,6 +309,9 @@ class StartupCoordinator:
                 why = c.get("reason") if c.get("ok") is False else ""   # e.g. an IMU without valid time
                 missing.append(f"{label}: {why}" if why else label)
         if still and self.require_still:
+            if self._still_seen is None or now - self._still_seen > COND_GAP_S:
+                self.still.update(False, now)
+            self._still_seen = now
             m = r.get("motion") or {}
             if not self.still.update(m.get("still"), now):
                 missing.append("the vehicle to be still" + (f" ({m['reason']})" if m.get("reason") else ""))
@@ -309,9 +339,12 @@ class StartupCoordinator:
                     self.on_start()
                 action = "start_process" if verb == "start" else "stop_process"
                 res = self.actions.run(action, process_control.GROUP)
-                if verb == "start" and not res.get("success"):
+                if verb == "start":
                     with self._lock:
-                        self._retry_later(self._clock(), res.get("summary") or "AIO NAV did not start")
+                        if res.get("success"):
+                            self._started_at = self._clock()
+                        else:
+                            self._retry_later(self._clock(), res.get("summary") or "AIO NAV did not start")
             except ActionError as e:
                 with self._lock:
                     if e.status == 409:                # busy (e.g. the DSO watchdog): not a failure

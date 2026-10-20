@@ -114,7 +114,7 @@ class ActionRegistry:
                                   else "action already running", 409)
             self._busy.add(key)
         title = f"{action.targets[target]} {action.noun}"
-        started = time.time()
+        started = time.monotonic()
         try:
             future = self._pool.submit(action.run, target)
             try:
@@ -127,7 +127,7 @@ class ActionRegistry:
         finally:
             with self._lock:
                 self._busy.discard(key)
-        result.update({"action": action_id, "target": target, "duration_s": time.time() - started})
+        result.update({"action": action_id, "target": target, "duration_s": time.monotonic() - started})
         is_diag = action_id == "run_diagnostic"
         outcome = ("PASS" if result["success"] else "FAIL") if is_diag else \
                   ("SUCCESS" if result["success"] else "FAILED")

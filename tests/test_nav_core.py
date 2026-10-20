@@ -332,3 +332,40 @@ class StartResetsOverviewTest(unittest.TestCase):
     def test_restart_clears(self):
         cleared, _ = self.run_control("restart", [42])
         self.assertEqual(cleared, ["AIO NAV restart requested"])
+
+
+class FrozenTimeTest(unittest.TestCase):
+    """AIO NAV stuck while still sending: the vehicle refuses packets whose time does not advance,
+    so the dashboard must see the output as stale too (and the start-up coordinator restart it)."""
+
+    def setUp(self):
+        from aio_system_dashboard.collectors.nav_udp import NavUdpCollector
+        self.c = NavUdpCollector("127.0.0.1:59998", {})
+
+    def send(self, t_nav, now):
+        self.c.handle_datagram(encode_nav_packet(time_s=t_nav, latitude=22.99, longitude=120.2), now)
+
+    def test_time_stuck_after_it_advanced_is_stale(self):
+        for i in range(100):
+            self.send(1000.0 + i * 0.01, 100.0 + i * 0.01)       # 1 s of good output
+        self.assertFalse(self.c.status(101.0)["time_stalled"])
+        for i in range(300):
+            self.send(1000.99, 101.0 + i * 0.01)                # 3 s more, time frozen
+        st = self.c.status(104.0)
+        self.assertTrue(st["time_stalled"])
+        self.assertGreater(st["age_s"], 2.5)                    # stale for the health engine
+
+    def test_constant_time_before_alignment_is_left_alone(self):
+        for i in range(500):
+            self.send(0.0, 100.0 + i * 0.01)                    # never advanced: alignment phase
+        st = self.c.status(105.0)
+        self.assertFalse(st["time_stalled"])
+        self.assertLess(st["age_s"], 0.1)
+
+    def test_a_new_run_starts_the_check_afresh(self):
+        for i in range(100):
+            self.send(1000.0 + i * 0.01, 100.0 + i * 0.01)
+        self.c.new_session("aio_nav_node restarted")
+        for i in range(300):
+            self.send(0.0, 101.0 + i * 0.01)                    # the new run, not yet advancing
+        self.assertFalse(self.c.status(104.0)["time_stalled"])

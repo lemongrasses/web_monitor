@@ -60,7 +60,7 @@ class SystemCollector(PeriodicCollector):
         for root in cfg["data"]["roots"]:
             paths.append(str(resolve_path(root["path"])))
         self.disk_paths = paths
-        self.started = time.time()
+        self.started = time.monotonic()
         psutil.cpu_percent(interval=None)  # prime the counter
 
     def poll(self) -> Dict:
@@ -91,7 +91,7 @@ class SystemCollector(PeriodicCollector):
             "disks": disks,
             "temps": temps,
             "max_temp_c": max((z["temp_c"] for z in temps), default=None),
-            "uptime_s": time.time() - psutil.boot_time(),
-            "dashboard_uptime_s": time.time() - self.started,
+            "uptime_s": time.clock_gettime(time.CLOCK_BOOTTIME),    # not affected by clock steps
+            "dashboard_uptime_s": time.monotonic() - self.started,
             "load_avg": list(os.getloadavg()),
         }
