@@ -5,9 +5,11 @@ The OpenRTK330 stamps every IMU message with GNSS time (UTC) once it has time fr
 its time (seen: a boot at 1970-01-01), this is the only source of the real time on the device.
 
 A message arrives a few ms after its stamp. Measured on the device against an NTP-synced clock
-(8 h, with DSO crashing, CPU load and a frozen driver): the *fastest* message of a window arrives
-5.6 ms after its stamp, within +-2 ms (99.9 %) and 3.5 ms at worst; the median message drifts more
-and a burst of delayed messages after a stall once put a median-based estimate 1.2 s off. So:
+(8 h, with DSO crashing at night, full CPU load, a frozen driver, a frozen dashboard): the *fastest*
+message of each second arrived 4.6 ms (median) after its stamp; estimates stayed within 4.5 ms of NTP
+(99.9 %) and 4.9 ms at worst, which is about as good as Internet NTP itself. The median message
+drifted more, and a burst of delayed messages after a stall once put a median-based estimate 1.2 s
+off. So:
 
 * collect (receive time, stamp) of the IMU messages of a short window (WINDOW_S);
 * refuse the window unless the stamps are real (after 2020), advance, and there are enough;

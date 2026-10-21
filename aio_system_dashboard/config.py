@@ -104,9 +104,9 @@ DEFAULTS: Dict[str, Any] = {
                   "still_stable_s": 5.0},
     # System clock from GNSS time (collectors/gnss_time.py): the IMU stamps go to chrony as a time
     # source (refclock SHM, set up by install.sh). latency_ms: delay of the fastest IMU message
-    # after its stamp (measured 5.6 ms). AIO NAV starts only once the clock matches GNSS time
+    # after its stamp (6.2 h against NTP: 4.6 ms median). AIO NAV starts only once the clock matches GNSS time
     # within clock_tolerance_s, waiting at most clock_wait_s (then it starts anyway).
-    "gnss_time": {"enabled": True, "latency_ms": 5.6, "shm_unit": 2,
+    "gnss_time": {"enabled": True, "latency_ms": 4.6, "shm_unit": 2,
                   "clock_tolerance_s": 1.0, "clock_wait_s": 120.0},
     # Restart the sensor driver unit when it runs but its IMU sends nothing (Live mode only).
     "driver_watchdog": {"enabled": True,
