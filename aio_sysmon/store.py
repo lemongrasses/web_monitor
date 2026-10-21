@@ -14,6 +14,8 @@ import shutil
 import time
 from typing import Dict, List, Optional
 
+from .report import MIN_VALID_TS
+
 OK, LOW, CRITICAL = "ok", "low", "critical"
 
 
@@ -136,13 +138,24 @@ class Store:
 
     # ----------------------------------------------------------------------- the budget
     def enforce_budget(self) -> Dict:
-        """Compress yesterday's files, then delete the oldest data until the size cap is met."""
+        """Compress yesterday's files, then delete the oldest data until the size cap is met.
+
+        Nothing while the clock is not set. The Jetson keeps no time over a power-off: each power-on
+        starts at 1970 until GNSS time or NTP sets the clock. "Today" was then 1970-01-01, so the
+        day's file was compressed, the .gz got a 1970 date, and the retention below deleted it as
+        56 years old once the clock was set: every power-off lost that day's samples (2026-10-21)."""
         stats = {"compressed": 0, "deleted": 0}
-        today = self._day(self.clock())
+        now = self.clock()
+        if now < MIN_VALID_TS:
+            return stats
+        self._date_unset_files()
+        today = self._day(now)
         for p in sorted(glob.glob(self.path("samples", "samples-*.jsonl"))):
             if today not in os.path.basename(p):
                 self._close(p)
-                with open(p, "rb") as src, gzip.open(p + ".gz", "wb", compresslevel=6) as dst:
+                # "ab": a day can be compressed twice (the 1970 file of each power-on); a second
+                # gzip member keeps the first, and readers see one stream.
+                with open(p, "rb") as src, gzip.open(p + ".gz", "ab", compresslevel=6) as dst:
                     shutil.copyfileobj(src, dst)
                 os.remove(p)
                 stats["compressed"] += 1
@@ -171,6 +184,17 @@ class Store:
                 os.remove(files[0])
                 stats["deleted"] += 1
         return stats
+
+    def _date_unset_files(self) -> None:
+        """Files last written while the clock was not set carry a 1970 date (the postmortem of each
+        power-on, for one): date them now, so they age and are trimmed from here, not first."""
+        for parts in (("samples", "samples-*"), ("snapshots", "snap-*"), ("events-*",)):
+            for p in glob.glob(self.path(*parts)):
+                try:
+                    if os.path.getmtime(p) < MIN_VALID_TS:
+                        os.utime(p, None)
+                except OSError:
+                    pass
 
     @staticmethod
     def _trim(files: List[str], cap_bytes: float) -> int:

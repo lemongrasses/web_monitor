@@ -117,6 +117,44 @@ class StoreBudgetTest(TmpTest):
         s.enforce_budget()
         self.assertFalse(os.path.exists(p))
 
+    def test_nothing_is_compressed_or_deleted_before_the_clock_is_set(self):
+        """2026-10-21: at each power-on (clock at 1970) the day's file was compressed, its .gz dated
+        1970, and deleted as 56 years old once GNSS time set the clock: the day's samples were lost."""
+        s = self.make(retention_days=30, max_total_mb=500)
+        set_at = 1792570000.0
+        day = os.path.join(self.dir, "samples", f"samples-{time.strftime('%Y%m%d', time.localtime(set_at))}.jsonl")
+        with open(day, "w") as f:
+            f.write('{"t": 1792560000}\n')
+        s.clock = lambda: 40.0                                    # power-on: clock not set
+        self.assertEqual(s.enforce_budget(), {"compressed": 0, "deleted": 0})
+        self.assertTrue(os.path.exists(day))
+        s.clock = lambda: set_at                                  # set: the same day
+        s.enforce_budget()
+        self.assertTrue(os.path.exists(day))
+
+    def test_files_dated_1970_age_from_when_the_clock_is_set(self):
+        s = self.make(retention_days=30, max_total_mb=500)
+        files = [os.path.join(self.dir, "snapshots", "snap-19700101-080041-postmortem.json.gz"),
+                 os.path.join(self.dir, "samples", "samples-20200102.jsonl.gz")]
+        for p in files:
+            with gzip.open(p, "wt") as f:
+                f.write("{}\n")
+            os.utime(p, (41.0, 41.0))                             # written before the clock was set
+        s.enforce_budget()
+        for p in files:
+            self.assertTrue(os.path.exists(p), p)
+            self.assertGreater(os.path.getmtime(p), time.time() - 60)
+
+    def test_compressing_a_day_twice_keeps_both(self):
+        s = self.make(max_total_mb=500)
+        p = os.path.join(self.dir, "samples", "samples-19700101.jsonl")
+        for t in (40, 47):                                        # two power-ons before the clock was set
+            with open(p, "w") as f:
+                f.write(json.dumps({"t": t}) + "\n")
+            s.enforce_budget()
+        with gzip.open(p + ".gz", "rt") as f:
+            self.assertEqual([json.loads(line)["t"] for line in f], [40, 47])
+
     def test_last_known_is_replaced_atomically(self):
         s = self.make()
         s.write_last_known({"t": 1, "b": 5})
