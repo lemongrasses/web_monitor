@@ -85,6 +85,7 @@ Besides `/opt/aio-dashboard` and its service, `install.sh` makes the device run 
 | Lingering for the service user | `loginctl enable-linger` | The sensor drivers (a user unit) can start at power-on with nobody logged in (`autostart.start_services`). |
 | Restart permission | `/etc/sudoers.d/aio-dashboard` | Only `systemctl restart` of the `restartable` units. |
 | Wi-Fi / hotspot permission (parts `wifi`, `hotspot`) | polkit rule `50-aio-dashboard-wifi` | The service user may manage NetworkManager (section 4.5a). |
+| Closed hotspot (part `hotspot`) | `/etc/NetworkManager/dispatcher.d/50-aio-hotspot` | Nothing is forwarded to or from the hotspot (section 4.5a). |
 
 `sudo deploy/uninstall.sh` removes all of these except lingering (the kernel-panic setting returns
 to the default at the next boot).
@@ -443,7 +444,12 @@ until it is stopped there. Phones open `http://10.42.0.1:8080`.
   hotspot cannot switch it off). The user Settings page shows the hotspot but cannot change it.
 - The packet copies are unicast to each device that is associated now, found every 2 s (the
   vehicle's output is unchanged). 0x05 copies need `status_udp` on with a vehicle destination.
-  The device count and the copies need the `iw` tool.
+- **A closed network:** NetworkManager's hotspot mode turns IP forwarding on, so the installer adds
+  a dispatcher script (`/etc/NetworkManager/dispatcher.d/50-aio-hotspot`) that drops everything
+  forwarded to or from the hotspot while it runs (nftables, or iptables where there is no nft).
+  Devices on it reach this computer only, never the vehicle's network.
+- The installer leaves the hotspot out, and says why, on a system without `dnsmasq` (package
+  `dnsmasq-base`; NetworkManager hands out the hotspot's addresses with it) or without nft/iptables.
 
 ### 4.6 `system`: Jetson health
 

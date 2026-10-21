@@ -156,7 +156,7 @@ type their numbers to switch them on or off, Enter to continue, `q` to quit with
 | `sysmon` | Black-box recorder (aio-sysmon) | `aio-sysmon.service`, `/var/log/aio-sysmon`, a persistent journal (300 MB), the `aio-sysmon` command ([docs/SYSMON.md](docs/SYSMON.md)) |
 | `replay` | Replay: Live / Bag switch and bag player | Maintenance > Replay ([operation 4.6](docs/OPERATION.md)) |
 | `wifi` | Wi-Fi from the pages | a polkit rule so the service user can manage NetworkManager (Settings page and Maintenance > Network) |
-| `hotspot` | Wi-Fi hotspot (Maintenance > Network) | the right to share the Wi-Fi as a hotspot; needs `wifi` (choosing it switches `wifi` on) |
+| `hotspot` | Wi-Fi hotspot (Maintenance > Network) | the right to share the Wi-Fi as a hotspot, and a dispatcher script that keeps it a closed network (nothing forwarded); needs `wifi` (choosing it switches `wifi` on), `dnsmasq` and nft or iptables |
 
 The choice is saved in `/opt/aio-dashboard/config/installed-options`, and later runs install the
 same parts without asking. A part switched off is removed (the sysmon records in

@@ -68,6 +68,7 @@ cd ~/web_monitor && sudo deploy/install.sh --user jetson
 | 服務使用者的 lingering | `loginctl enable-linger` | 感測器驅動（user unit）在沒有人登入時也能於上電時啟動（`autostart.start_services`）。 |
 | 重新啟動的權限 | `/etc/sudoers.d/aio-dashboard` | 只允許 `restartable` 服務的 `systemctl restart`。 |
 | Wi-Fi／熱點權限（`wifi`、`hotspot` 部分） | polkit 規則 `50-aio-dashboard-wifi` | 服務使用者可以管理 NetworkManager（第 4.5a 節）。 |
+| 封閉的熱點（`hotspot` 部分） | `/etc/NetworkManager/dispatcher.d/50-aio-hotspot` | 不轉送任何進出熱點的封包（第 4.5a 節）。 |
 
 `sudo deploy/uninstall.sh` 會移除以上全部，lingering 除外（核心 panic 的設定在下次開機時回到預設）。
 
@@ -357,7 +358,9 @@ ros2 param get /ouster/os_driver sensor_hostname   # Ouster IP（節點名稱可
 - 熱點名稱在頁面上輸入（預設 `AIO-NAV`），密碼（8–63 個字元）也在每次啟動時輸入。密碼只存在 NetworkManager 設定中，不會出現在儀表板的檔案、日誌或頁面。
 - **Start** 時若 Wi-Fi 正連在某個網路上會先詢問（會離開該網路）；熱點啟動失敗時會恢復原本的網路。**Stop** 時若有裝置連線會先詢問，之後 Wi-Fi 會自動加入範圍內已儲存的網路；停止後上電也不會再啟動。
 - 啟動與停止需要維護密碼，且瀏覽器必須透過網路線連線（連在熱點上的手機無法關閉它）。使用者的設定頁會顯示熱點，但不能變更。
-- 封包副本以 unicast 送給目前連線中的每台裝置，每 2 秒更新一次清單（車端的輸出不變）。0x05 副本需要開啟 `status_udp` 並有車端目的地。裝置數量與副本需要 `iw` 工具。
+- 封包副本以 unicast 送給目前連線中的每台裝置，每 2 秒更新一次清單（車端的輸出不變）。0x05 副本需要開啟 `status_udp` 並有車端目的地。
+- **封閉的網路：** NetworkManager 的熱點模式會開啟 IP 轉送，因此安裝程式會加入一個 dispatcher 腳本（`/etc/NetworkManager/dispatcher.d/50-aio-hotspot`），在熱點執行期間丟棄所有進出熱點的轉送封包（nftables，沒有 nft 時用 iptables）。熱點上的裝置只能連到本機，無法連到車端網路。
+- 系統沒有 `dnsmasq`（套件 `dnsmasq-base`；NetworkManager 用它分配熱點的位址）或沒有 nft／iptables 時，安裝程式不會安裝熱點，並說明原因。
 
 ### 4.6 `system`：Jetson 系統狀態
 
