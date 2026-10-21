@@ -136,7 +136,12 @@ DEFAULTS: Dict[str, Any] = {
     # Wi-Fi on the user Settings page and Maintenance > Network (actions/wifi.py). Changes need a
     # browser connected by cable (plus the password on Maintenance), and once:
     # sudo deploy/install.sh --with-wifi (no root afterwards).
-    "wifi": {"enabled": True, "interface": "auto", "connect_timeout_s": 30, "ip_timeout_s": 30},
+    "wifi": {"enabled": True, "interface": "auto", "connect_timeout_s": 30, "ip_timeout_s": 30,
+             # Hotspot (Maintenance > Network): the Wi-Fi becomes an access point for phones and
+             # tablets instead of joining a network (one radio: it cannot do both). enabled "auto":
+             # when the installer's "hotspot" option is installed. Phones get addresses in the /24 of
+             # `address` and may open the pages (allow_clients); band "bg" = 2.4 GHz.
+             "hotspot": {"enabled": "auto", "address": "10.42.0.1/24", "band": "bg", "allow_clients": True}},
     "events": {"log_file": "logs/events.jsonl", "max_memory": 500},
     "actions": {"restart_timeout_s": 30.0, "diagnostic_timeout_s": 15.0,
                 "stop_grace_s": 5.0},  # stop_grace_s: SIGTERM -> SIGKILL delay for AIO NAV / DSO
@@ -165,6 +170,19 @@ def resolve_path(p: str) -> Path:
     """Expand ~ and resolve relative paths against the project root."""
     path = Path(os.path.expanduser(str(p)))
     return path if path.is_absolute() else PROJECT_ROOT / path
+
+
+INSTALLED_OPTIONS = "config/installed-options"
+
+
+def installed_options() -> set:
+    """The optional parts chosen in the installer: deploy/install.sh writes their names to
+    config/installed-options (one line, "#" comments). Empty when run from a source checkout."""
+    try:
+        text = resolve_path(INSTALLED_OPTIONS).read_text(encoding="utf-8")
+    except OSError:
+        return set()
+    return {w for line in text.splitlines() if not line.lstrip().startswith("#") for w in line.split()}
 
 
 def parse_host_port(value: str, default_host: str = "127.0.0.1") -> Optional[tuple]:

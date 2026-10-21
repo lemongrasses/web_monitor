@@ -12,14 +12,22 @@
       <div class="u-item">
         <div class="u-item-main">
           <div class="u-item-title" x-text="wifi ? (wifiNow() || AIO.tr('Not connected')) : AIO.tr('Loading…')"></div>
-          <div class="u-item-sub" x-show="wifi && wifi.ipv4 && wifi.ipv4.length" x-text="wifi && wifi.ipv4 ? wifi.ipv4.join(', ') : ''"></div>
+          <div class="u-item-sub" x-show="wifi && wifi.ipv4 && wifi.ipv4.length" x-text="wifiSub()"></div>
         </div>
-        <span class="u-dot" :class="wifi && wifi.connection ? 'is-healthy' : 'is-idle'"></span>
+        <span class="u-dot" :class="wifi && (wifi.connection || wifi.mode === 'hotspot') ? 'is-healthy' : 'is-idle'"></span>
       </div>
+      <template x-if="wifi && wifi.available && wifi.mode === 'hotspot'">
+        <div class="u-item stack">
+          <div class="u-callout">
+            <strong>{{ _("The Wi-Fi is running as a hotspot for phones and tablets.") }}</strong>
+            {{ _("It is switched on and off on the Maintenance page.") }}
+          </div>
+        </div>
+      </template>
       <template x-if="wifi && !wifi.available">
         <div class="u-item"><span class="u-muted">{{ _("This device has no Wi-Fi that can be set up here.") }}</span></div>
       </template>
-      <template x-if="wifi && wifi.available && !wifi.may_change">
+      <template x-if="wifi && wifi.available && !wifi.may_change && wifi.mode !== 'hotspot'">
         <div class="u-item stack">
           <div class="u-callout">
             <strong>{{ _("Connect with a network cable to change Wi-Fi.") }}</strong>
@@ -27,7 +35,7 @@
           </div>
         </div>
       </template>
-      <template x-if="wifi && wifi.available && wifi.may_change">
+      <template x-if="wifi && wifi.available && wifi.may_change && wifi.mode !== 'hotspot'">
         <form class="u-item stack" @submit.prevent="connect(false)" autocomplete="off">
           <label class="u-field" for="wifi-net"><span class="u-label">{{ _("Network") }}</span></label>
           <div class="u-with-btn">

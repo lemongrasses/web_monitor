@@ -3,8 +3,17 @@
 # Works from a source checkout (deploy/install.sh) or from a compiled release package
 # made by tools/build_release.sh (./install.sh), which contains no Python source.
 #
-#   sudo deploy/install.sh [--user nvidia] [--prefix /opt/aio-dashboard] [--with-aio-nav PATH_TO_aio-nav]
-#                          [--reset-config] [--with-sysmon] [--with-replay] [--with-wifi]
+#   sudo deploy/install.sh              install or update, with the optional parts chosen last time
+#   sudo deploy/install.sh --choose     pick the optional parts from a menu (also the first time)
+#   deploy/install.sh --list            what is installed and chosen (no sudo needed)
+#   deploy/install.sh --dry-run         what an install would add or remove, then stop (no sudo)
+#
+# Optional parts: sysmon (black-box recorder), replay (Live / Bag switch), wifi (Wi-Fi from the
+# pages), hotspot (Wi-Fi hotspot on Maintenance > Network; needs wifi). For scripts, instead of the
+# menu: --with-<part> / --without-<part>, and --yes (never ask). The choice is kept in
+# PREFIX/config/installed-options; a part switched off is removed.
+# Other options: [--user nvidia] [--prefix /opt/aio-dashboard] [--with-aio-nav PATH_TO_aio-nav]
+#                [--reset-config]
 #
 # - copies the app to PREFIX (default /opt/aio-dashboard), keeping an existing config
 #   (--reset-config replaces it with the default; the old one is saved as .bak)
@@ -18,12 +27,10 @@
 #   AIO NAV by itself at boot (autostart.enabled), the unit is installed but NOT enabled, and an
 #   already enabled one is disabled: two boot-time managers for one program fight. Otherwise it
 #   is enabled as before, with a warning if the Overview page can also start/stop it.
-# - optional, off by default: --with-sysmon installs aio-sysmon.service, the computer's black box
-#   (docs/SYSMON.md), and keeps the system journal across reboots. If it is already installed,
-#   re-running the installer updates it even without the flag.
-# - optional, off by default: --with-replay installs the replay module (Live / Bag replay switch and
-#   the bag player on the Maintenance page). Without it the machine always runs Live. Kept and
-#   updated on later runs once installed.
+# - optional parts (see above): sysmon installs aio-sysmon.service, the computer's black box
+#   (docs/SYSMON.md), and keeps the system journal across reboots; replay installs the replay
+#   module (without it the machine always runs Live); wifi lets the dashboard's user manage
+#   NetworkManager (polkit); hotspot adds the right to run a Wi-Fi hotspot.
 set -euo pipefail
 
 HERE="$(cd "$(dirname "$0")" && pwd)"
@@ -33,9 +40,20 @@ PREFIX=/opt/aio-dashboard
 RUN_USER="${SUDO_USER:-nvidia}"
 AIO_NAV_BIN=""
 RESET_CONFIG=0
-WITH_SYSMON=0
-WITH_WIFI=0
-WITH_REPLAY=0
+MODE=install                                     # install | list | dry-run
+CHOOSE=0
+ASSUME_YES=0
+declare -A ASKED=()                              # part -> 1 / 0 from --with-<part> / --without-<part>
+
+PARTS=(sysmon replay wifi hotspot)
+declare -A TITLE=(
+  [sysmon]="Black-box recorder (aio-sysmon)"
+  [replay]="Replay: Live / Bag switch and bag player"
+  [wifi]="Wi-Fi from the pages"
+  [hotspot]="Wi-Fi hotspot (Maintenance > Network)"
+)
+PKLA=/etc/polkit-1/localauthority/50-local.d/50-aio-dashboard-wifi.pkla
+RULES=/etc/polkit-1/rules.d/50-aio-dashboard-wifi.rules
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -43,20 +61,133 @@ while [[ $# -gt 0 ]]; do
     --prefix) PREFIX="$2"; shift 2 ;;
     --with-aio-nav) AIO_NAV_BIN="$2"; shift 2 ;;
     --reset-config) RESET_CONFIG=1; shift ;;
-    --with-sysmon) WITH_SYSMON=1; shift ;;
-    --with-wifi) WITH_WIFI=1; shift ;;
-    --with-replay) WITH_REPLAY=1; shift ;;
-    --no-sysmon) shift ;;                        # old flag: the recorder is off by default now
-    -h|--help) sed -n '2,23p' "$0"; exit 0 ;;
-    *) echo "unknown option: $1" >&2; exit 1 ;;
+    --with-sysmon|--with-replay|--with-wifi|--with-hotspot) ASKED[${1#--with-}]=1; shift ;;
+    --without-sysmon|--without-replay|--without-wifi|--without-hotspot) ASKED[${1#--without-}]=0; shift ;;
+    --no-sysmon) shift ;;                        # old flag: the recorder is off unless chosen
+    --choose) CHOOSE=1; shift ;;
+    --yes|-y) ASSUME_YES=1; shift ;;
+    --list) MODE=list; shift ;;
+    --dry-run) MODE=dry-run; shift ;;
+    -h|--help) awk 'NR > 1 && /^#/ { sub(/^# ?/, ""); print; next } NR > 1 { exit }' "$0"; exit 0 ;;
+    *) echo "unknown option: $1 (see --help)" >&2; exit 1 ;;
   esac
 done
+OPTIONS_FILE="$PREFIX/config/installed-options"
+
+# ------------------------------------------------------------------ optional parts
+chosen_words() {                                 # the parts named in the options file (not its comments)
+  [[ -f "$OPTIONS_FILE" ]] || return 0
+  local w
+  for w in $(sed 's/#.*//' "$OPTIONS_FILE"); do printf ' %s ' "$w"; done
+}
+checkable() {                                    # the polkit folder is readable by root only
+  [[ $1 != wifi ]] || [[ -r "$(dirname "$PKLA")" ]]
+}
+installed_now() {                                # is the part on this machine now?
+  case "$1" in
+    sysmon) [[ -f /etc/systemd/system/aio-sysmon.service ]] ;;
+    replay) [[ -d "$PREFIX/aio_dashboard_replay" ]] || compgen -G "$PREFIX/aio_dashboard_replay*.so" >/dev/null ;;
+    wifi) [[ -f "$PKLA" ]] ;;
+    hotspot) [[ "$(chosen_words)" == *" hotspot "* ]] ;;
+  esac
+}
+available() {                                    # can this package install the part?
+  case "$1" in
+    sysmon) [[ -d "$SRC/aio_sysmon" ]] ;;
+    replay) [[ -d "$SRC/aio_dashboard_replay" ]] || compgen -G "$SRC/aio_dashboard_replay*.so" >/dev/null ;;
+    wifi|hotspot) command -v nmcli >/dev/null 2>&1 ;;
+  esac
+}
+declare -A WANT=()
+if [[ -f "$OPTIONS_FILE" ]]; then                # the choice made last time
+  CHOSEN_BEFORE=1
+  BEFORE="$(chosen_words)"
+  for p in "${PARTS[@]}"; do WANT[$p]=0; [[ "$BEFORE" == *" $p "* ]] && WANT[$p]=1; done
+else                                             # first time with this installer: what is there
+  CHOSEN_BEFORE=0
+  for p in "${PARTS[@]}"; do WANT[$p]=0; installed_now "$p" && WANT[$p]=1; done
+fi
+for p in "${!ASKED[@]}"; do WANT[$p]=${ASKED[$p]}; done
+settle() {                                       # the hotspot needs the Wi-Fi permission
+  if [[ ${WANT[hotspot]} -eq 1 && ${WANT[wifi]} -eq 0 ]]; then
+    if [[ ${ASKED[wifi]:-} == 0 ]]; then WANT[hotspot]=0; else WANT[wifi]=1; fi
+  fi
+  for p in "${PARTS[@]}"; do
+    if [[ ${WANT[$p]} -eq 1 ]] && ! available "$p"; then
+      echo "    note: this package cannot install $p (${TITLE[$p]}); left out" >&2
+      WANT[$p]=0
+    fi
+  done
+}
+settle
+
+show_parts() {
+  local i=1 p mark now
+  for p in "${PARTS[@]}"; do
+    mark=" "; [[ ${WANT[$p]} -eq 1 ]] && mark="x"
+    now=""; installed_now "$p" && now="  * installed now"
+    checkable "$p" || { now="  ? (run with sudo to check)"; [[ $MODE == list && $CHOSEN_BEFORE -eq 0 ]] && mark="?"; }
+    printf '  %d [%s] %-42s%s\n' "$i" "$mark" "${TITLE[$p]}" "$now"
+    i=$((i + 1))
+  done
+}
+menu() {
+  local line n p
+  echo "AIO System Dashboard installer: optional parts"
+  while true; do
+    echo
+    show_parts
+    printf 'Numbers to switch on/off (e.g. 4 or 2 4), Enter to continue, q to quit: '
+    IFS= read -r line || line=""
+    case "$line" in
+      "") return 0 ;;
+      q|Q) echo "nothing changed"; exit 0 ;;
+    esac
+    for n in $line; do
+      if [[ "$n" =~ ^[0-9]+$ && $n -ge 1 && $n -le ${#PARTS[@]} ]]; then
+        p=${PARTS[$((n - 1))]}
+        WANT[$p]=$((1 - WANT[$p]))
+        [[ $p == hotspot && ${WANT[hotspot]} -eq 1 ]] && WANT[wifi]=1     # needs the Wi-Fi permission
+        [[ $p == wifi && ${WANT[wifi]} -eq 0 ]] && WANT[hotspot]=0
+      else
+        echo "  (no part $n)"
+      fi
+    done
+    settle
+  done
+}
+chosen_text() {
+  local p out=()
+  for p in "${PARTS[@]}"; do [[ ${WANT[$p]} -eq 1 ]] && out+=("$p"); done
+  if (( ${#out[@]} )); then echo "${out[*]}"; else echo "none"; fi
+}
+
+if [[ $MODE == list ]]; then
+  echo "Optional parts in $PREFIX ($([[ $CHOSEN_BEFORE -eq 1 ]] && echo "chosen: $OPTIONS_FILE" || echo "not chosen yet: shown as found"))"
+  show_parts
+  echo "Change them: sudo $0 --choose"
+  exit 0
+fi
+if [[ $CHOOSE -eq 1 || ( $CHOSEN_BEFORE -eq 0 && ${#ASKED[@]} -eq 0 && $ASSUME_YES -eq 0 ) ]] && [[ -t 0 ]]; then
+  menu
+fi
+WITH_SYSMON=${WANT[sysmon]}
+WITH_REPLAY=${WANT[replay]}
+WITH_WIFI=${WANT[wifi]}
+WITH_HOTSPOT=${WANT[hotspot]}
+CHANGES=()
+for p in "${PARTS[@]}"; do
+  if ! checkable "$p"; then CHANGES+=("$p: run with sudo to check"); continue; fi
+  if [[ ${WANT[$p]} -eq 1 ]] && ! installed_now "$p"; then CHANGES+=("add $p"); fi
+  if [[ ${WANT[$p]} -eq 0 ]] && installed_now "$p"; then CHANGES+=("remove $p"); fi
+done
+echo "==> optional parts: $(chosen_text)$( (( ${#CHANGES[@]} )) && printf ' (%s)' "$(IFS='|'; echo "${CHANGES[*]}" | sed 's/|/, /g')" )"
+if [[ $MODE == dry-run ]]; then
+  echo "    dry run: nothing installed"
+  exit 0
+fi
 
 [[ $EUID -eq 0 ]] || { echo "run with sudo" >&2; exit 1; }
-if [[ $WITH_SYSMON -eq 0 && -f /etc/systemd/system/aio-sysmon.service && -d "$SRC/aio_sysmon" ]]; then
-  echo "==> the system recorder is already installed: updating it (use deploy/uninstall.sh to remove)"
-  WITH_SYSMON=1
-fi
 id "$RUN_USER" >/dev/null 2>&1 || { echo "user $RUN_USER does not exist" >&2; exit 1; }
 python3 -c 'import sys; assert sys.version_info >= (3, 8)' || { echo "python3 >= 3.8 required" >&2; exit 1; }
 
@@ -79,9 +210,8 @@ else
 fi
 
 # Optional module "replay" (a package next to the app; see aio_system_dashboard/modules.py).
-if [[ $WITH_REPLAY -eq 0 && ( -d "$PREFIX/aio_dashboard_replay" || -n "$(ls "$PREFIX"/aio_dashboard_replay*.so 2>/dev/null)" ) ]]; then
-  echo "==> the replay module is already installed: updating it (remove $PREFIX/aio_dashboard_replay to drop it)"
-  WITH_REPLAY=1
+if [[ $WITH_REPLAY -eq 0 ]] && installed_now replay; then
+  echo "==> removing the replay module (not chosen)"
 fi
 rm -rf "$PREFIX/aio_dashboard_replay" "$PREFIX"/aio_dashboard_replay*.so
 if [[ $WITH_REPLAY -eq 1 ]]; then
@@ -234,39 +364,46 @@ if [[ -n "$AUTOSTART_USER_UNITS" ]]; then
   loginctl enable-linger "$RUN_USER" || echo "    warning: could not enable lingering; the drivers may not start before someone logs in" >&2
 fi
 
-# Wi-Fi from the Maintenance page without root: allow the dashboard's user (only) to manage
-# NetworkManager. polkit 0.105 (Ubuntu 22.04) reads .pkla files; newer polkit reads .rules.
+# Wi-Fi from the pages without root: allow the dashboard's user (only) to manage NetworkManager;
+# the hotspot adds the right to share a Wi-Fi connection (an access point that hands out
+# addresses). polkit 0.105 (Ubuntu 22.04) reads .pkla files; newer polkit reads .rules.
 if [[ $WITH_WIFI -eq 1 ]]; then
-  echo "==> Wi-Fi permission for $RUN_USER (NetworkManager, via polkit)"
-  PKLA_DIR=/etc/polkit-1/localauthority/50-local.d
-  install -d -m 0755 "$PKLA_DIR"
-  cat > "$PKLA_DIR/50-aio-dashboard-wifi.pkla" <<EOF2
-# Installed by aio-dashboard install.sh --with-wifi; removed by uninstall.sh.
+  echo "==> Wi-Fi permission for $RUN_USER (NetworkManager, via polkit)$([[ $WITH_HOTSPOT -eq 1 ]] && echo ", with the hotspot")"
+  NM=org.freedesktop.NetworkManager
+  ACTIONS=("$NM.settings.modify.system" "$NM.network-control" "$NM.wifi.scan" "$NM.enable-disable-wifi")
+  if [[ $WITH_HOTSPOT -eq 1 ]]; then ACTIONS+=("$NM.wifi.share.protected" "$NM.wifi.share.open"); fi
+  install -d -m 0755 "$(dirname "$PKLA")"
+  cat > "$PKLA" <<EOF2
+# Installed by aio-dashboard install.sh (optional part wifi$([[ $WITH_HOTSPOT -eq 1 ]] && echo " + hotspot")); removed by uninstall.sh.
 [aio-dashboard Wi-Fi]
 Identity=unix-user:$RUN_USER
-Action=org.freedesktop.NetworkManager.settings.modify.system;org.freedesktop.NetworkManager.network-control;org.freedesktop.NetworkManager.wifi.scan;org.freedesktop.NetworkManager.enable-disable-wifi
+Action=$(IFS=';'; echo "${ACTIONS[*]}")
 ResultAny=yes
 ResultInactive=yes
 ResultActive=yes
 EOF2
-  chmod 0644 "$PKLA_DIR/50-aio-dashboard-wifi.pkla"
-  if [[ -d /etc/polkit-1/rules.d ]]; then
-    cat > /etc/polkit-1/rules.d/50-aio-dashboard-wifi.rules <<EOF2
-// Installed by aio-dashboard install.sh --with-wifi; removed by uninstall.sh.
+  chmod 0644 "$PKLA"
+  if [[ -d "$(dirname "$RULES")" ]]; then
+    cat > "$RULES" <<EOF2
+// Installed by aio-dashboard install.sh (optional part wifi); removed by uninstall.sh.
 polkit.addRule(function(action, subject) {
   if (subject.user == "$RUN_USER" && [
-      "org.freedesktop.NetworkManager.settings.modify.system",
-      "org.freedesktop.NetworkManager.network-control",
-      "org.freedesktop.NetworkManager.wifi.scan",
-      "org.freedesktop.NetworkManager.enable-disable-wifi"].indexOf(action.id) >= 0) {
+$(printf '      "%s",\n' "${ACTIONS[@]}" | sed '$ s/,$//')].indexOf(action.id) >= 0) {
     return polkit.Result.YES;
   }
 });
 EOF2
-    chmod 0644 /etc/polkit-1/rules.d/50-aio-dashboard-wifi.rules
+    chmod 0644 "$RULES"
   fi
   echo "    note: this also lets $RUN_USER change wired NetworkManager profiles; the dashboard itself"
   echo "    only ever changes Wi-Fi profiles"
+elif [[ -f "$PKLA" || -f "$RULES" ]]; then
+  echo "==> removing the Wi-Fi permission (not chosen)"
+  rm -f "$PKLA" "$RULES"
+fi
+if [[ $WITH_HOTSPOT -eq 0 ]] && installed_now hotspot; then
+  echo "==> removing the hotspot (not chosen): its NetworkManager profile goes, the Wi-Fi joins a saved network"
+  nmcli connection delete aio-hotspot >/dev/null 2>&1 || true
 fi
 
 if systemctl is-enabled --quiet aio-nav.service 2>/dev/null; then
@@ -301,6 +438,13 @@ if [[ $WITH_SYSMON -eq 1 && -d "$SRC/aio_sysmon" ]]; then
   printf '[Journal]\nStorage=persistent\nSystemMaxUse=300M\n' > /etc/systemd/journald.conf.d/aio-persistent.conf
   systemctl restart systemd-journald 2>/dev/null || true
   journalctl --flush 2>/dev/null || true
+elif installed_now sysmon; then
+  # Its records (/var/log/aio-sysmon) and the persistent journal stay: they are the evidence about
+  # past freezes (as deploy/uninstall.sh).
+  echo "==> removing the system recorder (not chosen); its records in /var/log/aio-sysmon are kept"
+  systemctl disable --now aio-sysmon.service 2>/dev/null || true
+  rm -f /etc/systemd/system/aio-sysmon.service /usr/local/bin/aio-sysmon "$PREFIX/bin/aio-sysmon"
+  rm -rf "$PREFIX/aio_sysmon"
 fi
 
 systemctl daemon-reload
@@ -311,8 +455,17 @@ if [[ $WITH_SYSMON -eq 1 && -d "$SRC/aio_sysmon" ]]; then
   systemctl restart aio-sysmon.service
 fi
 
+# The choice, for the next run (and the dashboard reads it: the hotspot is shown when installed).
+{
+  echo "# Optional parts chosen in deploy/install.sh; the next run installs the same ones."
+  echo "# Change them with: sudo deploy/install.sh --choose"
+  chosen_text | sed 's/^none$//'
+} > "$OPTIONS_FILE"
+chmod 0644 "$OPTIONS_FILE"
+
 echo
 echo "Done ($(cat "$PREFIX/VERSION")). Settings are detected automatically."
+echo "  optional parts: $(chosen_text)   (the next run installs the same; change: sudo $0 --choose)"
 echo "  aio-dashboard status    service state and web addresses"
 echo "  aio-dashboard config    edit settings ($PREFIX/config/dashboard.yaml) and restart"
 echo "  aio-dashboard logs      follow the log"
@@ -321,8 +474,9 @@ if [[ $WITH_SYSMON -eq 1 && -d "$SRC/aio_sysmon" ]]; then
 fi
 if [[ $WITH_REPLAY -eq 1 ]]; then
   echo "  Maintenance > Replay    Live / Bag replay switch and the bag player (replay module)"
-else
-  echo "  (runs Live only; add --with-replay for bag replay)"
+fi
+if [[ $WITH_HOTSPOT -eq 1 ]]; then
+  echo "  Maintenance > Network   Wi-Fi hotspot for phones and tablets"
 fi
 "$PREFIX/bin/aio-dashboard" urls
 if [[ ! -s "$PREFIX/config/maint_password" ]]; then

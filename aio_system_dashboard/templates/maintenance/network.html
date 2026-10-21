@@ -76,7 +76,7 @@
 <!-- Wi-Fi: changes only from a browser connected by cable, so a change can never cut off this page -->
 <div class="panel mt-3" x-data="wifiPanel()" x-init="init()">
   <div class="panel-h"><strong>Wi-Fi</strong>
-    <span class="small" x-show="st && st.available" x-text="st && st.connection ? 'Connected to ' + st.connection + (st.ipv4 && st.ipv4.length ? ' (' + st.ipv4.join(', ') + ')' : '') : 'Not connected'"></span></div>
+    <span class="small" x-show="st && st.available" x-text="headText()"></span></div>
   <div class="panel-b">
     <div class="muted" x-show="st && !st.available" x-text="st && st.reason"></div>
     <template x-if="st && st.available">
@@ -84,12 +84,12 @@
         <div class="small mb-2" :class="st.may_change ? 'muted' : 'text-danger'"
              x-text="st.may_change ? 'You are connected through ' + st.client + ': changes are allowed.' : 'Changes not allowed: ' + st.client"></div>
         <div class="small text-warning-emphasis mb-2" x-show="(st.risks || []).length" x-text="'Note: ' + (st.risks || []).join('; ')"></div>
-        <div class="d-flex gap-2 align-items-center mb-2">
+        <div class="d-flex gap-2 align-items-center mb-2" x-show="st.mode !== 'hotspot'">
           <button type="button" class="btn btn-sm btn-outline-secondary" :disabled="!!busy" @click="scan()">
             <span x-text="busy === 'scan' ? 'Scanning…' : 'Scan for networks'"></span></button>
           <span class="small muted" x-text="stageText()"></span>
         </div>
-        <table class="table table-sm mb-3" x-show="networks.length">
+        <table class="table table-sm mb-3" x-show="networks.length && st.mode !== 'hotspot'">
           <thead><tr><th>Network</th><th class="text-end">Signal</th><th>Security</th><th></th></tr></thead>
           <tbody>
             <template x-for="n in networks" :key="n.ssid">
@@ -100,7 +100,7 @@
             </template>
           </tbody>
         </table>
-        <form class="row g-2 align-items-end" @submit.prevent="connect(false)" x-show="st.may_change">
+        <form class="row g-2 align-items-end" @submit.prevent="connect(false)" x-show="st.may_change && st.mode !== 'hotspot'">
           <div class="col-md-4"><label class="form-label small mb-0">Network name (SSID)</label>
             <input class="form-control form-control-sm" x-model="ssid" maxlength="32" autocomplete="off" required></div>
           <div class="col-md-4"><label class="form-label small mb-0">Password</label>
@@ -111,9 +111,36 @@
             <button class="btn btn-sm btn-primary" :disabled="!!busy || !ssid" x-text="busy === 'connect' ? 'Connecting…' : 'Connect'"></button>
           </div>
         </form>
+        <!-- Hotspot (installer option): the Wi-Fi as a network of its own for phones and tablets -->
+        <template x-if="st.hotspot">
+          <div class="border-top pt-3 mt-3">
+            <div class="d-flex align-items-center gap-2 mb-1"><strong>Hotspot</strong>
+              <span class="small" :class="st.hotspot.active ? 'text-success' : 'muted'" x-text="hotspotText()"></span></div>
+            <p class="small muted mb-2">The Wi-Fi becomes a network of its own for phones and tablets
+              (<span x-text="st.hotspot.band"></span>, WPA2) instead of joining one: its one radio cannot do both.
+              It starts again after a power-off, until it is stopped here.</p>
+            <div class="d-flex gap-2 align-items-center" x-show="st.hotspot.active && st.may_change">
+              <button type="button" class="btn btn-sm btn-outline-danger" :disabled="!!busy" @click="stopHotspot(false)"
+                      x-text="busy === 'hotspot' ? 'Stopping…' : 'Stop hotspot'"></button>
+              <span class="small muted">The Wi-Fi then joins a saved network again, if one is in range.</span>
+            </div>
+            <form class="row g-2 align-items-end" x-show="!st.hotspot.active && st.may_change" @submit.prevent="startHotspot(false)">
+              <div class="col-md-4"><label class="form-label small mb-0">Hotspot name</label>
+                <input class="form-control form-control-sm" x-model="hsName" maxlength="32" autocomplete="off" required></div>
+              <div class="col-md-4"><label class="form-label small mb-0">Password (8–63 characters)</label>
+                <input class="form-control form-control-sm" :type="showPw ? 'text' : 'password'" x-model="hsPassword"
+                       minlength="8" maxlength="63" autocomplete="new-password" required></div>
+              <div class="col-md-4 d-flex gap-3 align-items-center">
+                <label class="small"><input type="checkbox" x-model="showPw"> Show</label>
+                <button class="btn btn-sm btn-primary" :disabled="!!busy || !hsName || hsPassword.length < 8"
+                        x-text="busy === 'hotspot' ? 'Starting…' : 'Start hotspot'"></button>
+              </div>
+            </form>
+          </div>
+        </template>
         <div class="alert alert-warning py-2 mt-2 mb-0" x-show="confirmText">
           <span x-text="confirmText"></span>
-          <button type="button" class="btn btn-sm btn-warning ms-2" @click="connect(true)">Change Wi-Fi anyway</button>
+          <button type="button" class="btn btn-sm btn-warning ms-2" @click="confirmed()">Change Wi-Fi anyway</button>
           <button type="button" class="btn btn-sm btn-outline-secondary ms-1" @click="confirmText = ''">Cancel</button>
         </div>
         <div class="small mt-2" :class="msgClass === 'bad' ? 'text-danger' : (msgClass === 'ok' ? 'text-success' : 'muted')" x-text="msg"></div>

@@ -47,6 +47,23 @@ def failure_code(text: str) -> str:
     return "failed"
 
 
+HOTSPOT = "aio-hotspot"                 # the NetworkManager profile (con-name) of the hotspot
+
+
+def hotspot_enabled(cfg) -> bool:
+    """Is the hotspot offered? wifi.hotspot.enabled: true / false, or "auto": when the installer's
+    "hotspot" option is installed (config/installed-options)."""
+    try:
+        h = (cfg["wifi"] or {}).get("hotspot") or {}
+    except KeyError:
+        h = {}
+    v = h.get("enabled", "auto")
+    if v == "auto":
+        from ..config import installed_options
+        return "hotspot" in installed_options()
+    return v is True
+
+
 class WifiError(Exception):
     def __init__(self, message: str, status: int = 400):
         super().__init__(message)
@@ -100,12 +117,16 @@ class WifiManager:
         self.interface = w.get("interface") or "auto"
         self.connect_timeout_s = float(w.get("connect_timeout_s", 30))
         self.ip_timeout_s = float(w.get("ip_timeout_s", 30))
+        h = w.get("hotspot") or {}
+        self.hotspot_address = str(h.get("address") or "10.42.0.1/24")
+        self.hotspot_band = "a" if h.get("band") == "a" else "bg"
         self._run, self._clock, self._sleep = runner, clock, sleep
         self._lock = threading.Lock()
         self.last_result: Optional[Dict] = None
         self._restored, self._kept = "", False
         self.fake = bool(getattr(cfg, "fake", False))
         self._fake_connected = "lab-wifi"
+        self._fake_hotspot: Optional[Dict] = None
 
     # ------------------------------------------------------------------ reading
     def nm(self, *args: str, timeout: float = 10.0, secret: Optional[str] = None) -> Tuple[int, str]:
@@ -114,7 +135,8 @@ class WifiManager:
 
     def device(self) -> Optional[Dict]:
         if self.fake:
-            return {"device": "wlan0", "state": "connected", "connection": self._fake_connected}
+            on = bool(self._fake_hotspot and self._fake_hotspot["autostart"])
+            return {"device": "wlan0", "state": "connected", "connection": HOTSPOT if on else self._fake_connected}
         rc, out = self.nm("-t", "-f", "DEVICE,TYPE,STATE,CONNECTION", "device")
         if rc != 0:
             return None
@@ -137,9 +159,157 @@ class WifiManager:
         if d is None:
             return {"available": False, "reason": "no Wi-Fi adapter managed by NetworkManager"}
         connected = d["state"].startswith("connected")
-        return {"available": True, "device": d["device"], "state": d["state"],
-                "connection": d["connection"] if connected else "",
-                "ipv4": self.ipv4(d["device"]) if connected else [], "last_result": self.last_result}
+        hotspot = connected and d["connection"] == HOTSPOT
+        out = {"available": True, "device": d["device"], "state": d["state"],
+               "connection": d["connection"] if connected and not hotspot else "",
+               "mode": "hotspot" if hotspot else "client",
+               "ipv4": self.ipv4(d["device"]) if connected else [], "last_result": self.last_result}
+        if self.hotspot_offered:
+            out["hotspot"] = self.hotspot_status(d["device"], hotspot)
+        return out
+
+    # ------------------------------------------------------------------ hotspot
+    @property
+    def hotspot_offered(self) -> bool:
+        return hotspot_enabled(self.cfg)
+
+    def _hotspot_profile(self) -> Optional[Dict]:
+        """The hotspot profile's name and power-on setting (never its password), or None."""
+        if self.fake:
+            return dict(self._fake_hotspot) if self._fake_hotspot else None
+        rc, out = self.nm("-g", "802-11-wireless.ssid,connection.autoconnect,connection.uuid",
+                          "connection", "show", HOTSPOT)
+        if rc != 0:
+            return None
+        v = (out.splitlines() + ["", "", ""])[:3]
+        return {"ssid": v[0], "autostart": v[1].strip() == "yes", "uuid": v[2].strip()}
+
+    def _hotspot_clients(self, dev: str) -> int:
+        if self.fake:
+            return 1
+        rc, out = self._run(["iw", "dev", dev, "station", "dump"], 5)
+        return sum(1 for line in out.splitlines() if line.startswith("Station ")) if rc == 0 else 0
+
+    def hotspot_status(self, dev: str, active: bool) -> Dict:
+        p = self._hotspot_profile() or {}
+        return {"active": active, "saved": bool(p), "ssid": p.get("ssid", ""),
+                "autostart": bool(p.get("autostart")),           # comes back after a power-off
+                "address": self.hotspot_address.split("/")[0],
+                "port": int(self.cfg["product"]["port"]),
+                "band": "2.4 GHz" if self.hotspot_band == "bg" else "5 GHz",
+                "clients": self._hotspot_clients(dev) if active else 0}
+
+    def start_hotspot(self, ssid: str, password: str) -> Dict:
+        """Make the Wi-Fi an access point (WPA2) instead of joining a network. It starts again at
+        every power-on until it is stopped. If it does not start, the previous network comes back."""
+        ssid = (ssid or "").strip("\n")
+        if not 1 <= len(ssid.encode("utf-8")) <= 32:
+            raise WifiError("the hotspot name must be 1 to 32 bytes")
+        if not 8 <= len(password or "") <= 63:
+            raise WifiError("the hotspot password must have 8 to 63 characters")
+        if "\x00" in ssid or "\x00" in password:
+            raise WifiError("invalid characters")
+        if not self._lock.acquire(blocking=False):
+            raise WifiError("another Wi-Fi change is in progress", 409)
+        try:
+            result = self._fake_start_hotspot(ssid) if self.fake else self._start_hotspot(ssid, password)
+        finally:
+            self._lock.release()
+        self.last_result = dict(result, ssid=ssid, at=time.time(), hotspot=True)
+        if result["success"]:
+            self.events.add("success", "network", f"Wi-Fi hotspot {ssid} on", result["summary"])
+        else:
+            self.events.add("warning", "network", f"Wi-Fi hotspot {ssid} did not start", result["summary"])
+        return result
+
+    def _start_hotspot(self, ssid: str, password: str) -> Dict:
+        d = self.device()
+        if d is None:
+            raise WifiError("no Wi-Fi adapter managed by NetworkManager", 404)
+        dev = d["device"]
+        existing = self._hotspot_profile()
+        previous = self._active_wifi(dev)
+        if existing and previous == existing.get("uuid"):
+            previous = None                               # the hotspot itself: nothing to go back to
+        settings = ["802-11-wireless.ssid", ssid, "802-11-wireless.mode", "ap",
+                    "802-11-wireless.band", self.hotspot_band,
+                    "ipv4.method", "shared", "ipv4.addresses", self.hotspot_address, "ipv6.method", "ignore",
+                    "wifi-sec.key-mgmt", "wpa-psk", "wifi-sec.proto", "rsn",
+                    "wifi-sec.pairwise", "ccmp", "wifi-sec.group", "ccmp", "wifi-sec.psk", password,
+                    # back at every power-on, ahead of the saved networks, until it is stopped
+                    "connection.autoconnect", "yes", "connection.autoconnect-priority", "100"]
+        if existing:
+            rc, out = self.nm("connection", "modify", HOTSPOT, *settings, secret=password)
+        else:
+            rc, out = self.nm("connection", "add", "type", "wifi", "ifname", dev, "con-name", HOTSPOT,
+                              *settings, secret=password)
+        if rc != 0:
+            if not existing:
+                self.nm("connection", "delete", HOTSPOT)  # nothing half made is left behind
+            return {"success": False, "code": failure_code(out), "device": dev,
+                    "summary": self._why(out, "the hotspot could not be set up")}
+        rc, out = self.nm("--wait", str(int(self.connect_timeout_s)), "connection", "up", HOTSPOT,
+                          timeout=self.connect_timeout_s + 10, secret=password)
+        if rc == 0:
+            addr, port = self.hotspot_address.split("/")[0], int(self.cfg["product"]["port"])
+            return {"success": True, "device": dev, "address": addr,
+                    "summary": f"hotspot {ssid} on; phones join it and open http://{addr}:{port}"}
+        # Not started: it must not come back at power-on, and the previous network returns.
+        self.nm("connection", "modify", HOTSPOT, "connection.autoconnect", "no")
+        restored = self._rollback([], previous, dev) if previous else "the hotspot is off"
+        return {"success": False, "code": failure_code(out), "device": dev, "restored": self._restored if previous else "",
+                "kept": self._kept if previous else False,
+                "summary": f"{self._why(out, 'the hotspot did not start')}; {restored}"}
+
+    def stop_hotspot(self) -> Dict:
+        """Hotspot off, also for the next power-on. NetworkManager joins a saved network in range by
+        itself; the result says which one, or that none was."""
+        if not self._lock.acquire(blocking=False):
+            raise WifiError("another Wi-Fi change is in progress", 409)
+        try:
+            result = self._fake_stop_hotspot() if self.fake else self._stop_hotspot()
+        finally:
+            self._lock.release()
+        self.last_result = dict(result, at=time.time(), hotspot=True)
+        self.events.add("success" if result["success"] else "warning", "network",
+                        "Wi-Fi hotspot off" if result["success"] else "Wi-Fi hotspot not stopped", result["summary"])
+        return result
+
+    def _stop_hotspot(self) -> Dict:
+        d = self.device()
+        if d is None:
+            raise WifiError("no Wi-Fi adapter managed by NetworkManager", 404)
+        dev = d["device"]
+        if self._hotspot_profile() is None:
+            return {"success": True, "device": dev, "summary": "there is no hotspot"}
+        self.nm("connection", "modify", HOTSPOT, "connection.autoconnect", "no")
+        if d["connection"] == HOTSPOT:
+            rc, out = self.nm("--wait", "15", "connection", "down", HOTSPOT, timeout=25)
+            if rc != 0:
+                return {"success": False, "device": dev, "summary": self._why(out, "the hotspot did not stop")}
+        deadline = self._clock() + self.ip_timeout_s
+        while True:
+            d = self.device() or {}
+            if d.get("state", "").startswith("connected") and d.get("connection") not in ("", HOTSPOT):
+                ips = self.ipv4(dev)
+                if ips:
+                    return {"success": True, "device": dev, "connection": d["connection"], "ipv4": ips,
+                            "summary": f"hotspot off; Wi-Fi joined {d['connection']} ({', '.join(ips)})"}
+            if self._clock() >= deadline:
+                return {"success": True, "device": dev,
+                        "summary": "hotspot off; no saved network in range: choose one to join"}
+            self._sleep(1.0)
+
+    def _fake_start_hotspot(self, ssid: str) -> Dict:
+        self._sleep(1.0)
+        self._fake_hotspot = {"ssid": ssid, "autostart": True, "uuid": "fake-hotspot"}
+        return {"success": True, "device": "wlan0", "address": self.hotspot_address.split("/")[0],
+                "summary": f"hotspot {ssid} on (fake mode)"}
+
+    def _fake_stop_hotspot(self) -> Dict:
+        if self._fake_hotspot:
+            self._fake_hotspot["autostart"] = False
+        return {"success": True, "device": "wlan0", "summary": f"hotspot off; Wi-Fi joined {self._fake_connected} (fake mode)"}
 
     def scan(self, rescan="auto") -> List[Dict]:
         """Networks in range, one row per name. rescan: True = scan now, "auto" = only if the
@@ -212,6 +382,9 @@ class WifiManager:
             raise WifiError("a WPA password has 8 to 63 characters")
         if "\x00" in ssid or "\x00" in password:
             raise WifiError("invalid characters")
+        if (self.device() or {}).get("connection") == HOTSPOT:
+            # One radio: joining a network ends the hotspot, which would come back at power-on.
+            raise WifiError("the Wi-Fi is a hotspot now; it is switched off on Maintenance > Network", 409)
         if not self._lock.acquire(blocking=False):
             raise WifiError("another Wi-Fi change is in progress", 409)
         try:

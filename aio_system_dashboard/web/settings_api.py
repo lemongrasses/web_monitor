@@ -4,7 +4,8 @@ The same endpoints are mounted on the user app (no password, /api/...) and on th
 app (password, /api/maint/...). Both use the one WifiManager on ctx, so its lock serialises a
 change made from either page. Wi-Fi may only be changed from a browser whose path to this device
 is a cable (or the device itself), so a change can never cut off the page that made it.
-Turning RTK off needs an explicit confirm, from either page.
+Turning RTK off needs an explicit confirm, from either page. The hotspot (an installer option) is
+switched on Maintenance only; the user page shows it and does not change Wi-Fi while it runs.
 """
 
 from flask import jsonify, request
@@ -93,6 +94,44 @@ def register_settings(ctx, app, prefix: str, rtk_path: str, guard=None, where: s
             return jsonify({"success": False, "summary": str(e)}), e.status
 
     @protect
+    def api_wifi_hotspot():
+        """Start or stop the hotspot (Maintenance only): {"action": "start", "ssid", "password"} or
+        {"action": "stop"}; same cable rule as a Wi-Fi change, and a confirm when it disturbs."""
+        if bad_request():
+            return jsonify({"success": False, "summary": "bad request"}), 400
+        if not wifi.hotspot_offered:
+            return jsonify({"success": False, "summary": "the hotspot is not installed on this device"}), 404
+        b = body()
+        action = b.get("action")
+        if action not in ("start", "stop"):
+            return jsonify({"success": False, "summary": "action must be start or stop"}), 400
+        st = wifi.status()
+        if not st.get("available"):
+            return jsonify({"success": False, "summary": st.get("reason", "no Wi-Fi")}), 404
+        ok, why, risks = wifi_gate(st["device"])
+        if not ok:
+            return jsonify({"success": False, "summary": why}), 403
+        hs = st.get("hotspot") or {}
+        if action == "start" and st.get("connection"):
+            risks.append(f"the Wi-Fi leaves {st['connection']}")
+        if action == "stop" and hs.get("clients"):
+            risks.append(f"{hs['clients']} device(s) on the hotspot lose the connection")
+        if risks and b.get("confirm") is not True:
+            return jsonify({"success": False, "needs_confirm": True, "risks": risks,
+                            "summary": "Changing Wi-Fi now may interrupt: " + "; ".join(risks)}), 409
+        _events(ctx).add("info", "network", f"Wi-Fi hotspot {action} requested",
+                         f"on the {where} from {request.remote_addr} ({why})")
+        try:
+            if action == "stop":
+                return jsonify(wifi.stop_hotspot())
+            ssid, password = b.get("ssid"), b.get("password")
+            if not isinstance(ssid, str) or not isinstance(password, str):
+                return jsonify({"success": False, "summary": "ssid and password must be text"}), 400
+            return jsonify(wifi.start_hotspot(ssid, password))
+        except wifi_mod.WifiError as e:
+            return jsonify({"success": False, "summary": str(e)}), e.status
+
+    @protect
     def api_rtk():
         """Require RTK for READY, or not. A safety setting: confirmed, logged, kept on disk."""
         if bad_request():
@@ -118,6 +157,8 @@ def register_settings(ctx, app, prefix: str, rtk_path: str, guard=None, where: s
     app.add_url_rule(f"{prefix}/wifi", f"{name}_wifi", api_wifi)
     app.add_url_rule(f"{prefix}/wifi/scan", f"{name}_wifi_scan", api_wifi_scan, methods=["POST"])
     app.add_url_rule(f"{prefix}/wifi/connect", f"{name}_wifi_connect", api_wifi_connect, methods=["POST"])
+    if guard is not None:                             # the hotspot is switched on Maintenance only
+        app.add_url_rule(f"{prefix}/wifi/hotspot", f"{name}_wifi_hotspot", api_wifi_hotspot, methods=["POST"])
     app.add_url_rule(rtk_path, f"{name}_rtk", api_rtk, methods=["POST"])
 
 

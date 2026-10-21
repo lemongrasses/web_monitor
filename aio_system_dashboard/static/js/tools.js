@@ -11,11 +11,48 @@
   window.wifiPanel = function () {
     return {
       st: null, networks: [], ssid: "", password: "", hidden: false, showPw: false,
-      busy: "", msg: "", msgClass: "", confirmText: "",
+      busy: "", msg: "", msgClass: "", confirmText: "", pending: "",
+      hsName: "", hsPassword: "",
       async init() { await this.refresh(); },
       async refresh() {
         try { this.st = await (await fetch("/api/maint/wifi", { cache: "no-store" })).json(); }
         catch (e) { this.st = { available: false, reason: "cannot read Wi-Fi state" }; }
+        if (this.st && this.st.hotspot && !this.hsName) this.hsName = this.st.hotspot.ssid || "AIO-NAV";
+      },
+      headText() {
+        const s = this.st;
+        if (!s || !s.available) return "";
+        if (s.mode === "hotspot") return "Hotspot " + (s.hotspot ? s.hotspot.ssid + " (" + s.hotspot.address + ")" : "on");
+        return s.connection ? "Connected to " + s.connection + (s.ipv4 && s.ipv4.length ? " (" + s.ipv4.join(", ") + ")" : "") : "Not connected";
+      },
+      hotspotText() {
+        const h = this.st && this.st.hotspot;
+        if (!h) return "";
+        if (!h.active) return h.saved && h.ssid ? "Off (last used: " + h.ssid + ")" : "Off";
+        return "On: " + h.ssid + " · " + h.clients + " device(s) connected · they open http://" + h.address + ":" + h.port;
+      },
+      confirmed() {
+        const p = this.pending;
+        if (p === "start") this.startHotspot(true); else if (p === "stop") this.stopHotspot(true); else this.connect(true);
+      },
+      async hotspot(body, confirm, doing) {
+        this.busy = "hotspot"; this.confirmText = ""; this.msg = doing; this.msgClass = "";
+        const j = await this.toolFetch("/api/maint/wifi/hotspot", { method: "POST", body: JSON.stringify(Object.assign(body, { confirm: !!confirm })) });
+        this.busy = "";
+        if (j.needs_confirm) { this.confirmText = j.summary; this.msg = ""; return j; }
+        this.msg = j.summary || ""; this.msgClass = j.success ? "ok" : "bad";
+        await this.refresh();
+        return j;
+      },
+      async startHotspot(confirm) {
+        this.pending = "start";
+        const j = await this.hotspot({ action: "start", ssid: this.hsName, password: this.hsPassword }, confirm,
+                                     "Starting the hotspot… (up to a minute; the previous Wi-Fi comes back if it fails)");
+        if (j && j.success) this.hsPassword = "";
+      },
+      async stopHotspot(confirm) {
+        this.pending = "stop";
+        await this.hotspot({ action: "stop" }, confirm, "Stopping the hotspot… (then the Wi-Fi looks for a saved network)");
       },
       async scan() {
         this.busy = "scan"; this.msg = "";
@@ -25,6 +62,7 @@
       },
       pick(n) { this.ssid = n.ssid; this.password = ""; this.hidden = false; this.confirmText = ""; this.msg = ""; },
       async connect(confirm) {
+        this.pending = "connect";
         this.busy = "connect"; this.confirmText = "";
         this.msg = "Connecting to " + this.ssid + "… (up to a minute; the previous Wi-Fi comes back if it fails)";
         this.msgClass = "";

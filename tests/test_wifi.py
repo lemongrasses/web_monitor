@@ -70,6 +70,140 @@ def make_cfg(fake=False):
     return Config(data, None)
 
 
+def hotspot_cfg():
+    cfg = make_cfg()
+    cfg.data["wifi"]["hotspot"]["enabled"] = True
+    return cfg
+
+
+class HotspotNM(FakeNM):
+    """FakeNM with the hotspot profile. up: how starting it goes ("ok" / "fail"); saved: the profile
+    as it is on disk ({"ssid", "autoconnect"}), None when there is none yet."""
+    NAMES = {"u-office": "office", "u-new": "lab", "u-hs": w.HOTSPOT}
+
+    def __init__(self, up="ok", saved=None, **kw):
+        super().__init__(**kw)
+        self.up, self.hotspot = up, saved
+
+    def __call__(self, argv, timeout):
+        a = argv[1:]
+        if argv[0] == "iw":
+            self.calls.append(argv)
+            return 0, "Station 02:00:00:00:00:01 (on wlan0)\n\tinactive time:\t10 ms\n"
+        if a[:4] == ["-t", "-f", "DEVICE,TYPE,STATE,CONNECTION", "device"]:
+            self.calls.append(argv)
+            state = "connected" if self.active else "disconnected"
+            return 0, f"enp6s0:ethernet:connected:Wired connection 1\nwlan0:wifi:{state}:{self.NAMES.get(self.active, '')}\n"
+        if w.HOTSPOT not in a:
+            return super().__call__(argv, timeout)
+        self.calls.append(argv)
+        if a[0] == "-g":
+            if not self.hotspot:
+                return 10, "Error: aio-hotspot - no such connection profile."
+            return 0, f"{self.hotspot['ssid']}\n{self.hotspot['autoconnect']}\nu-hs\n"
+        if "add" in a or "modify" in a:
+            h = self.hotspot or {}
+            for key, field in (("802-11-wireless.ssid", "ssid"), ("connection.autoconnect", "autoconnect")):
+                if key in a:
+                    h[field] = a[a.index(key) + 1]
+            self.hotspot = h
+            return 0, ""
+        if "up" in a:
+            self.active = "u-hs" if self.up == "ok" else None        # the radio leaves the network first
+            return (0, "Connection successfully activated") if self.up == "ok" else \
+                (4, f"Error: Connection activation failed: ({SECRET}) IP configuration could not be reserved")
+        if "down" in a:
+            self.active = "u-office"                                 # NetworkManager joins a saved network
+            return 0, ""
+        if "delete" in a:
+            self.hotspot = None
+            return 0, ""
+        return 1, "unexpected call"
+
+
+class HotspotTest(unittest.TestCase):
+    def mgr(self, nm):
+        self.events, self.clock = Events(), Clock()
+        return w.WifiManager(hotspot_cfg(), self.events, runner=nm, clock=self.clock, sleep=self.clock.sleep)
+
+    def assert_secret_nowhere(self, *results):
+        self.assertNotIn(SECRET, json.dumps(results) + " ".join(self.events.items))
+
+    def test_start_makes_an_access_point_that_comes_back_at_power_on(self):
+        nm = HotspotNM()
+        m = self.mgr(nm)
+        r = m.start_hotspot("AIO-NAV", SECRET)
+        self.assertTrue(r["success"], r)
+        add = next(c for c in nm.calls if "add" in c)
+        for key, value in (("802-11-wireless.mode", "ap"), ("802-11-wireless.band", "bg"), ("ipv4.method", "shared"),
+                           ("ipv4.addresses", "10.42.0.1/24"), ("wifi-sec.key-mgmt", "wpa-psk"),
+                           ("connection.autoconnect", "yes")):
+            self.assertEqual(add[add.index(key) + 1], value, key)
+        self.assertIn("http://10.42.0.1:8080", r["summary"])
+        st = m.status()
+        self.assertEqual((st["mode"], st["connection"]), ("hotspot", ""))
+        h = st["hotspot"]
+        self.assertEqual((h["active"], h["ssid"], h["autostart"], h["clients"]), (True, "AIO-NAV", True, 1))
+        self.assert_secret_nowhere(r, st)
+
+    def test_a_hotspot_that_does_not_start_gives_the_network_back(self):
+        nm = HotspotNM(up="fail")
+        r = self.mgr(nm).start_hotspot("AIO-NAV", SECRET)
+        self.assertFalse(r["success"])
+        self.assertEqual(nm.hotspot["autoconnect"], "no")           # nor at the next power-on
+        self.assertEqual(nm.active, "u-office")
+        self.assertIn("back on office", r["summary"])
+        self.assert_secret_nowhere(r)
+
+    def test_stop_is_for_good_and_a_saved_network_comes_back(self):
+        nm = HotspotNM(saved={"ssid": "AIO-NAV", "autoconnect": "yes"})
+        nm.active = "u-hs"
+        r = self.mgr(nm).stop_hotspot()
+        self.assertTrue(r["success"], r)
+        self.assertEqual(nm.hotspot["autoconnect"], "no")
+        self.assertIn("joined office", r["summary"])
+
+    def test_joining_a_network_is_refused_while_the_hotspot_runs(self):
+        nm = HotspotNM(saved={"ssid": "AIO-NAV", "autoconnect": "yes"})
+        nm.active = "u-hs"
+        with self.assertRaises(w.WifiError) as e:
+            self.mgr(nm).connect("lab", SECRET)
+        self.assertEqual(e.exception.status, 409)
+        self.assertFalse(any("connect" in c for c in nm.calls))
+
+    def test_input_checks(self):
+        m = self.mgr(HotspotNM())
+        for ssid, pw in (("", SECRET), ("x" * 33, SECRET), ("AIO-NAV", "short")):
+            with self.assertRaises(w.WifiError):
+                m.start_hotspot(ssid, pw)
+
+
+class HotspotAccessTest(unittest.TestCase):
+    def test_phones_on_the_hotspot_may_open_the_pages_once_it_is_installed(self):
+        from aio_system_dashboard.web.access import client_allowed, hotspot_clients, parse_allowed_clients
+        data = copy.deepcopy(DEFAULTS)
+        cfg = Config(data, None)
+        nets = parse_allowed_clients(["192.0.2.154"])
+        with mock.patch("aio_system_dashboard.config.installed_options", lambda: set()):
+            self.assertEqual(hotspot_clients(cfg), [])
+        with mock.patch("aio_system_dashboard.config.installed_options", lambda: {"sysmon", "hotspot"}):
+            extra = hotspot_clients(cfg)
+            self.assertTrue(client_allowed("10.42.0.23", nets + extra))
+            self.assertFalse(client_allowed("10.42.1.23", nets + extra))
+            data["wifi"]["hotspot"]["allow_clients"] = False
+            self.assertEqual(hotspot_clients(cfg), [])
+
+    def test_installed_options_file(self):
+        from aio_system_dashboard import config as config_mod
+        with tempfile.TemporaryDirectory() as d:
+            p = Path(d) / "installed-options"
+            p.write_text("# written by install.sh\nsysmon replay\nwifi hotspot\n")
+            with mock.patch.object(config_mod, "INSTALLED_OPTIONS", str(p)):
+                self.assertEqual(config_mod.installed_options(), {"sysmon", "replay", "wifi", "hotspot"})
+            with mock.patch.object(config_mod, "INSTALLED_OPTIONS", str(Path(d) / "none")):
+                self.assertEqual(config_mod.installed_options(), set())
+
+
 class Clock:
     def __init__(self):
         self.t = 0.0
@@ -198,6 +332,7 @@ class WifiWebTest(unittest.TestCase):
         data = copy.deepcopy(DEFAULTS)
         data["maintenance"]["password_file"] = str(base / "pw")
         data["maintenance"]["lock"] = "tools"
+        data["wifi"]["hotspot"]["enabled"] = True
         p = mock.patch.object(Config, "state_file", lambda _s, n: base / "state" / n)
         p.start()
         self.addCleanup(p.stop)
@@ -211,7 +346,7 @@ class WifiWebTest(unittest.TestCase):
                               still_calibration=still.StillCalibration(lambda: (None, None, None), limits))
         app = create_maintenance_app(ctx)
         self.addCleanup(lambda: ctx.terminals.shutdown())
-        self.nm = FakeNM()
+        self.nm = HotspotNM()
         ctx.wifi._run = self.nm
         self.c = app.test_client()
         self.h = {"X-Requested-With": "aio-dashboard"}
@@ -233,6 +368,24 @@ class WifiWebTest(unittest.TestCase):
         st = self.c.get("/api/maint/wifi").get_json()
         self.assertTrue(st["may_change"])                           # the test client is loopback
         self.assertNotIn(SECRET, json.dumps(st))
+
+    def test_hotspot_needs_the_password_a_cable_and_a_confirm(self):
+        body = {"action": "start", "ssid": "AIO-NAV", "password": SECRET}
+        self.assertEqual(self.post("/api/maint/wifi/hotspot", body).status_code, 401)
+        self.post("/api/maint/auth/unlock", {"password": "right-password"})
+        r = self.post("/api/maint/wifi/hotspot", body)
+        self.assertEqual(r.status_code, 409)                           # it would leave "office"
+        self.assertIn("leaves office", r.get_json()["summary"])
+        r = self.post("/api/maint/wifi/hotspot", dict(body, confirm=True)).get_json()
+        self.assertTrue(r["success"], r)
+        st = self.c.get("/api/maint/wifi").get_json()
+        self.assertEqual((st["mode"], st["hotspot"]["ssid"]), ("hotspot", "AIO-NAV"))
+        self.assertNotIn(SECRET, json.dumps(r) + json.dumps(st) + " ".join(self.events.items))
+        with mock.patch.object(w, "client_path", lambda addr, dev: (False, "your computer is connected over Wi-Fi")):
+            self.assertEqual(self.post("/api/maint/wifi/hotspot", {"action": "stop", "confirm": True}).status_code, 403)
+        r = self.post("/api/maint/wifi/hotspot", {"action": "stop"})       # a phone is on it: confirm
+        self.assertEqual(r.status_code, 409)
+        self.assertTrue(self.post("/api/maint/wifi/hotspot", {"action": "stop", "confirm": True}).get_json()["success"])
 
     def test_a_browser_on_wifi_is_refused(self):
         self.post("/api/maint/auth/unlock", {"password": "right-password"})
@@ -288,6 +441,19 @@ class UserPageSettingsTest(unittest.TestCase):
             self.assertEqual(r.status_code, 403)
             self.assertFalse(self.c.get("/api/wifi").get_json()["may_change"])
         self.assertFalse(any("connect" in c for c in self.nm.calls))
+
+    def test_the_hotspot_is_shown_but_switched_on_maintenance_only(self):
+        self.ctx.cfg.data["wifi"]["hotspot"]["enabled"] = True
+        nm = HotspotNM(saved={"ssid": "AIO-NAV", "autoconnect": "yes"})
+        nm.active = "u-hs"
+        self.ctx.wifi._run = nm
+        st = self.c.get("/api/wifi").get_json()
+        self.assertEqual((st["mode"], st["hotspot"]["ssid"]), ("hotspot", "AIO-NAV"))
+        self.assertEqual(self.post("/api/wifi/hotspot", {"action": "stop", "confirm": True}).status_code, 404)
+        r = self.post("/api/wifi/connect", {"ssid": "lab", "password": SECRET})
+        self.assertEqual(r.status_code, 409)
+        self.assertIn("hotspot", r.get_json()["summary"])
+        self.assertEqual(nm.active, "u-hs")
 
     def test_rtk_off_needs_a_confirm(self):
         from aio_system_dashboard.state.health import rtk_setting

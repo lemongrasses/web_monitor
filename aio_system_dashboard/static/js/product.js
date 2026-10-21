@@ -263,7 +263,14 @@
       wifiNow() {
         const w = this.wifi;
         if (!w || !w.available) return "";
+        if (w.mode === "hotspot") return trf("Hotspot: {0}", w.hotspot ? w.hotspot.ssid : "");
         return w.connection ? trf("Connected to {0}", w.connection) : tr("Not connected");
+      },
+      wifiSub() {
+        const w = this.wifi;
+        if (!w || !w.ipv4) return "";
+        if (w.mode === "hotspot" && w.hotspot) return trf("Phones and tablets join it and open http://{0}:{1}", w.hotspot.address, w.hotspot.port);
+        return w.ipv4.join(", ");
       },
       async scan(rescan) {
         this.scanning = true;

@@ -9,7 +9,7 @@ from pathlib import Path
 from flask import Flask, abort, jsonify, request
 from flask.json.provider import DefaultJSONProvider
 
-from .access import client_allowed, parse_allowed_clients
+from .access import client_allowed, hotspot_clients, parse_allowed_clients
 from .i18n import gettext
 
 PKG_DIR = Path(__file__).resolve().parent.parent
@@ -96,6 +96,8 @@ def create_base_app(name: str, ctx) -> Flask:
     if allowed and not nets:
         logger.error("access.allowed_clients has no valid entry; only loopback can connect")
         nets = [ipaddress.ip_network("127.0.0.0/8")]
+    if nets:
+        nets += hotspot_clients(ctx.cfg)
 
     @app.before_request
     def _restrict_clients():
