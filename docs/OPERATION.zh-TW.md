@@ -161,6 +161,9 @@ GNSS、相機、光達與網路的問題也會以**提示**（下方的琥珀色
 
 **安裝**頁面記錄 GNSS 天線與後軸中心（AIO NAV 的車輛參考點）的位置，從 **AIO 單元內的 IMU** 量起。每次移動 AIO 單元或天線後都要重新量測：數值錯誤會使位置與航向變差。
 
+![安裝頁面](images/user/zh/setup.png)
+*安裝：兩組槓桿臂，以及用來檢查數值的比例圖。*
+
 | 欄位 | 意義 |
 |------|------|
 | **前**／**右**／**下** | 從 IMU 沿車身方向的公尺數：向前、向右、向下為正。負值表示向後、向左、向上。每個值最多 20 公尺，精確到公分或更好。 |
@@ -189,8 +192,8 @@ GNSS、相機、光達與網路的問題也會以**提示**（下方的琥珀色
 
 **啟動**（Start）按鈕在總覽與導航頁面最上方的狀態區。
 
-![Stopped：按 Start 之前](images/user/zh/overview-stopped.png)
-*已停止：沒有任何問題，只是 AIO NAV 還沒執行。按啟動即可。*
+![已由操作人員停止](images/user/zh/overview-stopped.png)
+*已由操作人員停止：沒有任何問題，只是 AIO NAV 沒有執行。按鈕顯示為**恢復**（關閉自動啟動時顯示為**啟動**）。*
 
 
 1. 按**啟動**。狀態先變成**啟動中**（藍綠），AIO NAV 一開始輸出就變成**初始化中**（琥珀）；地圖下方的**導航輸出**從「不會送出資料」變成頻率與位址。
@@ -566,7 +569,7 @@ Live view 只在該頁面開啟時才讀取感測器的 ROS topic。刻意停止
 *維護頁面的登入頁。*
 
 ![維護頁面 Overview](images/maintenance/overview.png)
-*Overview：四個層面與目前的問題。側邊欄的燈號指出哪一頁有問題；工具頁（AIO NAV config、Terminal、Replay）沒有燈號。*
+*Overview：四個層面與目前的問題。側邊欄的燈號指出哪一頁有問題；工具頁（Still detection、AIO NAV config、Terminal、Replay）沒有燈號。*
 
 ![System 頁面](images/maintenance/system.png)
 *System：資源、儲存空間、溫度與服務。*
@@ -578,7 +581,10 @@ Live view 只在該頁面開啟時才讀取感測器的 ROS topic。刻意停止
 *Camera：連線狀態、驅動、topic 與 Live view（這裡是模擬畫面）。*
 
 ![Network 頁面](images/maintenance/network.png)
-*Network：網路介面、感測器連線，以及導航輸出送往何處。*
+*Network：網路介面、感測器連線、導航輸出送往何處，以及 Wi-Fi 熱點（圖中為開啟，且開啟了 UDP 副本）。*
+
+![Still detection 頁面](images/maintenance/still.png)
+*Still detection：三個數值與門檻的比較、在車上量測，以及目前使用的門檻（第 8.1 節）。*
 
 ![Diagnostics 頁面](images/maintenance/diagnostics.png)
 *Diagnostics：目前的問題、操作結果與事件紀錄。*

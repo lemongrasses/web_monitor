@@ -205,6 +205,9 @@ Maintenance view too. Wi-Fi needs a one-time setup by the installer (configurati
 point) are, measured from the **IMU in the AIO unit**. Measure them again whenever the AIO unit or
 the antenna is moved: wrong values make the position and heading worse.
 
+![Setup page](images/user/setup.png)
+*Setup: the two lever arms and the to-scale drawing that checks them.*
+
 | Field | Meaning |
 |-------|---------|
 | **Forward** / **Right** / **Down** | Metres from the IMU along the vehicle: + ahead, + right, + below. Negative values: behind, left, above. Up to 20 m each, to the centimetre or better. |
@@ -238,8 +241,9 @@ directions, not your vehicle's size).
 
 The **Start** button is in the status area at the top of the Overview and Navigation pages.
 
-![Stopped, before Start](images/user/overview-stopped.png)
-*Stopped: nothing is wrong, AIO NAV simply is not running. Click Start.*
+![Stopped by an operator](images/user/overview-stopped.png)
+*Stopped by an operator: nothing is wrong, AIO NAV simply is not running. The button reads
+**Resume** (it reads **Start** when automatic start is off).*
 
 1. Click **Start**. The state becomes **Starting** (teal), then **Initializing** (amber) as
    soon as AIO NAV sends output; **Navigation output** under the map changes from *Nothing is sent* to the rate and address.
@@ -710,7 +714,7 @@ driver is not reported as a problem.
 
 ![Maintenance overview](images/maintenance/overview.png)
 *Overview: the four layers and the active issues. The sidebar lamps point to the page with a problem;
-the tool pages (AIO NAV config, Terminal, Replay) have no lamp.*
+the tool pages (Still detection, AIO NAV config, Terminal, Replay) have no lamp.*
 
 ![System page](images/maintenance/system.png)
 *System: resources, storage, temperatures and services.*
@@ -722,7 +726,12 @@ the tool pages (AIO NAV config, Terminal, Replay) have no lamp.*
 *Camera: reachability, driver, topic and the Live view (a simulated picture here).*
 
 ![Network page](images/maintenance/network.png)
-*Network: interfaces, sensor reachability and where the navigation output goes.*
+*Network: interfaces, sensor reachability, where the navigation output goes, and the Wi-Fi hotspot
+(here on, with the UDP copies switched on).*
+
+![Still detection page](images/maintenance/still.png)
+*Still detection: the three values against their limits, measuring on the vehicle, and the limits
+in use (section 8.1).*
 
 ![Diagnostics page](images/maintenance/diagnostics.png)
 *Diagnostics: active issues, action results and the event history.*
