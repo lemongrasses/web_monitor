@@ -203,6 +203,13 @@ ZH = {
     "this computer": "本機", "READY": "就緒", "DEGRADED": "降級", "unknown client address": "無法判斷用戶端位址",
     "cannot tell how your computer is connected": "無法判斷您的電腦如何連線",
 
+    # ------------------------------------------------------------------ unattended operation (actions/autostart.py)
+    "the vehicle to be still": "車輛靜止", "no IMU data": "沒有 IMU 資料", "disabled": "已停用",
+    "sends no navigation output": "沒有送出導航輸出", "navigation output stopped": "導航輸出已停止",
+    "AIO NAV stopped": "AIO NAV 已停止", "AIO NAV failed": "AIO NAV 失敗",
+    "Stopped by an operator; automatic start resumes after Start or the next power-on":
+        "已由操作人員停止；按下「恢復」或下次上電後會恢復自動啟動",
+
     # ------------------------------------------------------------------ Setup: lever arms (web/setup.py)
     "Setup": "安裝", "Mounting: lever arms": "安裝位置：槓桿臂",
     "Where the GNSS antenna and the centre of the rear axle are, measured from the IMU in the AIO unit, in metres along the vehicle.":
@@ -281,6 +288,13 @@ PATTERNS = [
     (r"no GNSS message for (.+) \(the receiver driver sends none\)", "{0} 沒有 GNSS 訊息（接收器驅動程式沒有送出）"),
     (r"the receiver reports no position \(status (.+)\)", "接收器回報沒有位置（狀態 {0}）"),
     # automatic start
+    (r"Waiting for (.+); AIO NAV may resume by itself", "等待 {0}；AIO NAV 可能會自行恢復"),
+    (r"Restarting AIO NAV in (\d+) s if it does not resume", "若 AIO NAV 沒有恢復，{0} 秒後重新啟動"),
+    (r"AIO NAV (.+); restarting it", "AIO NAV {0}；正在重新啟動"),
+    (r"the vehicle to be still \((.+)\)", "車輛靜止（{0}）"),
+    (r"the system clock to match GNSS time \(off by ([-+\d.]+) s\)", "系統時鐘與 GNSS 時間一致（目前相差 {0} 秒）"),
+    (r"Starting AIO NAV \(attempt (\d+)\)", "正在啟動 AIO NAV（第 {0} 次）"),
+    (r"Waiting for another start or stop to finish \((.+)\)", "等待另一個啟動或停止完成（{0}）"),
     (r"Waiting for (.+)", "等待 {0}"),
     (r"(.+) not available after (\d+) s", "{0} 在 {1} 秒後仍無法使用"),
     (r"Starting AIO NAV \(attempt (\d+) of (\d+)\)", "正在啟動 AIO NAV（第 {0} 次，共 {1} 次）"),
