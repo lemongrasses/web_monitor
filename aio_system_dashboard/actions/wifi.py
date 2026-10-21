@@ -25,6 +25,8 @@ import time
 from pathlib import Path
 from typing import Callable, Dict, List, Optional, Tuple
 
+from .. import nl80211
+
 logger = logging.getLogger(__name__)
 
 WIFI_TYPE = "802-11-wireless"
@@ -107,7 +109,7 @@ def _nm_runner(argv: List[str], timeout: float) -> Tuple[int, str]:
 
 class WifiManager:
     def __init__(self, cfg, events, runner: Callable[[List[str], float], Tuple[int, str]] = _nm_runner,
-                 clock=time.monotonic, sleep=time.sleep):
+                 clock=time.monotonic, sleep=time.sleep, stations: Callable[[str], set] = nl80211.stations):
         self.cfg, self.events = cfg, events
         try:
             w = cfg["wifi"] or {}
@@ -121,6 +123,7 @@ class WifiManager:
         self.hotspot_address = str(h.get("address") or "10.42.0.1/24")
         self.hotspot_band = "a" if h.get("band") == "a" else "bg"
         self._run, self._clock, self._sleep = runner, clock, sleep
+        self._stations = stations                         # who is on the hotspot (nl80211: no iw needed)
         self._lock = threading.Lock()
         self.last_result: Optional[Dict] = None
         self._restored, self._kept = "", False
@@ -187,8 +190,10 @@ class WifiManager:
     def _hotspot_clients(self, dev: str) -> int:
         if self.fake:
             return 1
-        rc, out = self._run(["iw", "dev", dev, "station", "dump"], 5)
-        return sum(1 for line in out.splitlines() if line.startswith("Station ")) if rc == 0 else 0
+        try:
+            return len(self._stations(dev))
+        except OSError:
+            return 0
 
     def hotspot_status(self, dev: str, active: bool) -> Dict:
         p = self._hotspot_profile() or {}

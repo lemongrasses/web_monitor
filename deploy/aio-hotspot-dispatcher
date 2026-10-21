@@ -1,0 +1,31 @@
+#!/bin/sh
+# NetworkManager dispatcher script for the Wi-Fi hotspot (aio-dashboard install.sh, optional part
+# hotspot; installed as /etc/NetworkManager/dispatcher.d/50-aio-hotspot, removed by uninstall.sh).
+#
+# The hotspot is a closed network: its phones and laptops reach this computer only (the pages, the
+# UDP copies), never the vehicle's network or the Internet through it. NetworkManager's "shared"
+# mode turns IP forwarding on for it, and its own firewall rules (internet sharing) do not stop
+# that, so while the hotspot is up everything forwarded to or from it is dropped: nftables (its own
+# table), or iptables where there is no nft.
+#   $1 interface, $2 action; CONNECTION_ID from NetworkManager.
+[ "${CONNECTION_ID:-}" = aio-hotspot ] || exit 0
+case "$2" in up|down) ;; *) exit 0 ;; esac
+
+nft delete table inet aio_hotspot 2>/dev/null
+iptables -S FORWARD 2>/dev/null | grep -e '--comment aio-hotspot' | sed 's/^-A FORWARD //' | while read -r rule; do
+  # shellcheck disable=SC2086 # a rule as iptables printed it: no quoted words
+  iptables -D FORWARD $rule
+done
+[ "$2" = up ] || exit 0
+
+nft -f - 2>/dev/null <<EOF && exit 0
+table inet aio_hotspot {
+  chain forward {
+    type filter hook forward priority -10; policy accept;
+    iifname "$1" drop
+    oifname "$1" drop
+  }
+}
+EOF
+iptables -I FORWARD 1 -i "$1" -m comment --comment aio-hotspot -j DROP &&
+  iptables -I FORWARD 1 -o "$1" -m comment --comment aio-hotspot -j DROP

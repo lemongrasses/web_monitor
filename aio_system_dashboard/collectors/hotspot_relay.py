@@ -7,8 +7,8 @@ the dashboard: every NAV packet the dashboard receives and every 0x05 status pac
 unicast frame, and sends a broadcast once at its slowest rate.
 
 The devices are found by themselves every REFRESH_S: the addresses in the hotspot's network in the
-Wi-Fi's neighbour table (ip neigh) whose MAC is associated now (iw station dump); one that left is
-dropped. Only while the Wi-Fi is the hotspot. Switched on Maintenance > Network (kept in
+Wi-Fi's neighbour table (ip neigh) whose MAC is associated now (asked from the kernel, nl80211.py: no
+iw package needed); one that left is dropped. Only while the Wi-Fi is the hotspot. Switched on Maintenance > Network (kept in
 state/hotspot_relay.json; until then wifi.hotspot.relay_udp).
 """
 
@@ -21,6 +21,8 @@ import subprocess
 import threading
 import time
 from typing import Callable, Dict, List, Optional, Tuple
+
+from .. import nl80211
 
 logger = logging.getLogger(__name__)
 
@@ -36,22 +38,6 @@ def _run(argv: List[str], timeout: float = 3.0) -> Tuple[int, str]:
     return r.returncode, r.stdout
 
 
-def ap_interface(iw_dev: str) -> Optional[str]:
-    """The interface in access-point mode, from `iw dev`."""
-    dev = None
-    for line in iw_dev.splitlines():
-        m = re.match(r"\s*Interface\s+(\S+)", line)
-        if m:
-            dev = m.group(1)
-        elif dev and re.match(r"\s*type\s+AP\s*$", line):
-            return dev
-    return None
-
-
-def associated_macs(station_dump: str) -> set:
-    return {m.group(1).lower() for m in re.finditer(r"^Station\s+([0-9a-fA-F:]{17})", station_dump, re.M)}
-
-
 def neighbours(ip_neigh: str) -> List[Tuple[str, str]]:
     """(address, MAC) of the usable entries of `ip -4 neigh show dev X`."""
     out = []
@@ -65,7 +51,8 @@ def neighbours(ip_neigh: str) -> List[Tuple[str, str]]:
 class HotspotRelay:
     name = "hotspot-relay"
 
-    def __init__(self, cfg, state_file, events=None, runner: Callable = _run, offered: Callable = None):
+    def __init__(self, cfg, state_file, events=None, runner: Callable = _run, offered: Callable = None,
+                 access_point: Callable = nl80211.access_point):
         h = (cfg.data.get("wifi") or {}).get("hotspot") or {}
         try:
             self.network = ipaddress.ip_interface(str(h.get("address") or "10.42.0.1/24")).network
@@ -77,6 +64,7 @@ class HotspotRelay:
         self.events = events
         self._run = runner
         self._offered = offered or (lambda: True)
+        self._access_point = access_point
         self._lock = threading.Lock()
         self._stop = threading.Event()
         self._thread: Optional[threading.Thread] = None
@@ -113,14 +101,18 @@ class HotspotRelay:
         targets: List[Tuple[str, int]] = []
         active = False
         if self._offered():
-            rc, out = self._run(["iw", "dev"])
-            dev = ap_interface(out) if rc == 0 else None
-            if dev:
+            try:
+                ap = self._access_point()
+            except OSError as e:                      # said once, not every REFRESH_S
+                if self.last_error != f"cannot read the Wi-Fi: {e}":
+                    self.last_error = f"cannot read the Wi-Fi: {e}"
+                    logger.warning("hotspot relay: %s", self.last_error)
+                ap = None
+            if ap:
+                dev, macs = ap
                 active = True
-                rc1, stations = self._run(["iw", "dev", dev, "station", "dump"])
-                rc2, neigh = self._run(["ip", "-4", "neigh", "show", "dev", dev])
-                macs = associated_macs(stations) if rc1 == 0 else set()
-                for addr, mac in (neighbours(neigh) if rc2 == 0 else []):
+                rc, neigh = self._run(["ip", "-4", "neigh", "show", "dev", dev])
+                for addr, mac in (neighbours(neigh) if rc == 0 else []):
                     if mac in macs and ipaddress.ip_address(addr) in self.network:
                         targets.append((addr, self.port))
         with self._lock:

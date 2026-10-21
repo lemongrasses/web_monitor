@@ -87,9 +87,6 @@ class HotspotNM(FakeNM):
 
     def __call__(self, argv, timeout):
         a = argv[1:]
-        if argv[0] == "iw":
-            self.calls.append(argv)
-            return 0, "Station 02:00:00:00:00:01 (on wlan0)\n\tinactive time:\t10 ms\n"
         if a[:4] == ["-t", "-f", "DEVICE,TYPE,STATE,CONNECTION", "device"]:
             self.calls.append(argv)
             state = "connected" if self.active else "disconnected"
@@ -124,7 +121,8 @@ class HotspotNM(FakeNM):
 class HotspotTest(unittest.TestCase):
     def mgr(self, nm):
         self.events, self.clock = Events(), Clock()
-        return w.WifiManager(hotspot_cfg(), self.events, runner=nm, clock=self.clock, sleep=self.clock.sleep)
+        return w.WifiManager(hotspot_cfg(), self.events, runner=nm, clock=self.clock, sleep=self.clock.sleep,
+                             stations=lambda dev: {"02:00:00:00:00:01"})
 
     def assert_secret_nowhere(self, *results):
         self.assertNotIn(SECRET, json.dumps(results) + " ".join(self.events.items))
@@ -347,11 +345,12 @@ class WifiWebTest(unittest.TestCase):
                               still_calibration=still.StillCalibration(lambda: (None, None, None), limits))
         from aio_system_dashboard.collectors.hotspot_relay import HotspotRelay
         ctx.hotspot_relay = self.relay = HotspotRelay(cfg, base / "state" / "hotspot_relay.json",
-                                                      runner=lambda argv, timeout=3.0: (1, ""))
+                                                      runner=lambda argv, timeout=3.0: (1, ""), access_point=lambda: None)
         app = create_maintenance_app(ctx)
         self.addCleanup(lambda: ctx.terminals.shutdown())
         self.nm = HotspotNM()
         ctx.wifi._run = self.nm
+        ctx.wifi._stations = lambda dev: {"02:00:00:00:00:01"}               # one phone on the hotspot
         self.c = app.test_client()
         self.h = {"X-Requested-With": "aio-dashboard"}
 
@@ -430,6 +429,7 @@ class UserPageSettingsTest(unittest.TestCase):
         self.app = create_product_app(ctx)
         self.nm = FakeNM()
         ctx.wifi._run = self.nm
+        ctx.wifi._stations = lambda dev: set()
         self.ctx, self.c = ctx, self.app.test_client()
         self.h = {"X-Requested-With": "aio-dashboard"}
 

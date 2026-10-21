@@ -30,7 +30,8 @@
 # - optional parts (see above): sysmon installs aio-sysmon.service, the computer's black box
 #   (docs/SYSMON.md), and keeps the system journal across reboots; replay installs the replay
 #   module (without it the machine always runs Live); wifi lets the dashboard's user manage
-#   NetworkManager (polkit); hotspot adds the right to run a Wi-Fi hotspot.
+#   NetworkManager (polkit); hotspot adds the right to run a Wi-Fi hotspot, and a NetworkManager
+#   dispatcher script that keeps it a closed network (nothing forwarded to or from it).
 set -euo pipefail
 
 HERE="$(cd "$(dirname "$0")" && pwd)"
@@ -54,6 +55,7 @@ declare -A TITLE=(
 )
 PKLA=/etc/polkit-1/localauthority/50-local.d/50-aio-dashboard-wifi.pkla
 RULES=/etc/polkit-1/rules.d/50-aio-dashboard-wifi.rules
+HOTSPOT_DISPATCHER=/etc/NetworkManager/dispatcher.d/50-aio-hotspot
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -91,11 +93,21 @@ installed_now() {                                # is the part on this machine n
     hotspot) [[ "$(chosen_words)" == *" hotspot "* ]] ;;
   esac
 }
-available() {                                    # can this package install the part?
+needs() {                                        # what this system lacks for the part ("" = nothing)
+  local out=()
+  if [[ $1 == wifi || $1 == hotspot ]] && ! command -v nmcli >/dev/null 2>&1; then out+=("NetworkManager (nmcli)"); fi
+  # NetworkManager runs dnsmasq to give the devices on the hotspot their addresses
+  if [[ $1 == hotspot ]] && ! command -v dnsmasq >/dev/null 2>&1; then out+=("dnsmasq (package dnsmasq-base)"); fi
+  if [[ $1 == hotspot ]] && ! command -v nft >/dev/null 2>&1 && ! command -v iptables >/dev/null 2>&1; then
+    out+=("nft or iptables (keeps the hotspot a closed network)")
+  fi
+  if (( ${#out[@]} )); then (IFS=,; echo "${out[*]}") | sed 's/,/, /g'; fi
+}
+available() {                                    # can this package install the part on this system?
   case "$1" in
     sysmon) [[ -d "$SRC/aio_sysmon" ]] ;;
     replay) [[ -d "$SRC/aio_dashboard_replay" ]] || compgen -G "$SRC/aio_dashboard_replay*.so" >/dev/null ;;
-    wifi|hotspot) command -v nmcli >/dev/null 2>&1 ;;
+    wifi|hotspot) [[ -z "$(needs "$1")" ]] ;;
   esac
 }
 declare -A WANT=()
@@ -109,12 +121,14 @@ else                                             # first time with this installe
 fi
 for p in "${!ASKED[@]}"; do WANT[$p]=${ASKED[$p]}; done
 settle() {                                       # the hotspot needs the Wi-Fi permission
+  local why
   if [[ ${WANT[hotspot]} -eq 1 && ${WANT[wifi]} -eq 0 ]]; then
     if [[ ${ASKED[wifi]:-} == 0 ]]; then WANT[hotspot]=0; else WANT[wifi]=1; fi
   fi
   for p in "${PARTS[@]}"; do
     if [[ ${WANT[$p]} -eq 1 ]] && ! available "$p"; then
-      echo "    note: this package cannot install $p (${TITLE[$p]}); left out" >&2
+      why="$(needs "$p")"
+      echo "    note: $p (${TITLE[$p]}) left out: ${why:+this system has no }${why:-not in this package}" >&2
       WANT[$p]=0
     fi
   done
@@ -401,9 +415,27 @@ elif [[ -f "$PKLA" || -f "$RULES" ]]; then
   echo "==> removing the Wi-Fi permission (not chosen)"
   rm -f "$PKLA" "$RULES"
 fi
-if [[ $WITH_HOTSPOT -eq 0 ]] && installed_now hotspot; then
-  echo "==> removing the hotspot (not chosen): its NetworkManager profile goes, the Wi-Fi joins a saved network"
-  nmcli connection delete aio-hotspot >/dev/null 2>&1 || true
+hotspot_dev() {                                  # the interface the hotspot runs on now, if it does
+  nmcli -t -f NAME,DEVICE connection show --active 2>/dev/null | sed -n 's/^aio-hotspot://p' | head -n 1
+}
+if [[ $WITH_HOTSPOT -eq 1 ]]; then
+  echo "==> hotspot: a closed network (its devices reach this computer only, nothing is forwarded)"
+  install -d -m 0755 "$(dirname "$HOTSPOT_DISPATCHER")"
+  install -m 0755 "$SRC/deploy/aio-hotspot-dispatcher" "$HOTSPOT_DISPATCHER"
+  dev="$(hotspot_dev)"
+  if [[ -n "$dev" ]]; then
+    CONNECTION_ID=aio-hotspot "$HOTSPOT_DISPATCHER" "$dev" up ||
+      echo "    warning: could not close the running hotspot; it is closed at its next start" >&2
+  fi
+else
+  if [[ -f "$HOTSPOT_DISPATCHER" ]]; then
+    CONNECTION_ID=aio-hotspot "$HOTSPOT_DISPATCHER" "$(hotspot_dev)" down || true
+    rm -f "$HOTSPOT_DISPATCHER"
+  fi
+  if installed_now hotspot; then
+    echo "==> removing the hotspot (not chosen): its NetworkManager profile goes, the Wi-Fi joins a saved network"
+    nmcli connection delete aio-hotspot >/dev/null 2>&1 || true
+  fi
 fi
 
 if systemctl is-enabled --quiet aio-nav.service 2>/dev/null; then

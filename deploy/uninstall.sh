@@ -52,6 +52,10 @@ rm -f /etc/sudoers.d/aio-dashboard
 rm -f /etc/sysctl.d/90-aio-unattended.conf     # kernel.panic returns to the default at the next boot
 if [[ -f /etc/chrony/conf.d/aio-gnss.conf ]]; then rm -f /etc/chrony/conf.d/aio-gnss.conf; systemctl restart chrony 2>/dev/null || true; fi
 rm -f /etc/polkit-1/localauthority/50-local.d/50-aio-dashboard-wifi.pkla /etc/polkit-1/rules.d/50-aio-dashboard-wifi.rules
+if [[ -f /etc/NetworkManager/dispatcher.d/50-aio-hotspot ]]; then
+  CONNECTION_ID=aio-hotspot /etc/NetworkManager/dispatcher.d/50-aio-hotspot "" down || true
+  rm -f /etc/NetworkManager/dispatcher.d/50-aio-hotspot
+fi
 if nmcli -t -f NAME connection show 2>/dev/null | grep -qx aio-hotspot; then
   echo "==> removing the Wi-Fi hotspot profile (the Wi-Fi joins a saved network again)"
   nmcli connection delete aio-hotspot >/dev/null 2>&1 || true

@@ -75,7 +75,7 @@ fi
 mkdir -p "$STAGE/config" "$STAGE/deploy" "$STAGE/docs"
 cp config/dashboard.yaml "$STAGE/config/"
 cp -r wheels "$STAGE/"
-cp deploy/aio-dashboard deploy/aio-dashboard.service deploy/aio-nav.service "$STAGE/deploy/"
+cp deploy/aio-dashboard deploy/aio-dashboard.service deploy/aio-nav.service deploy/aio-hotspot-dispatcher "$STAGE/deploy/"
 cp deploy/install.sh "$STAGE/install.sh"
 cp docs/CONFIG.md docs/CONFIG.zh-TW.md docs/OPERATION.md docs/OPERATION.zh-TW.md "$STAGE/docs/"
 mkdir -p "$STAGE/dev" && cp dev/fake_state.json "$STAGE/dev/"   # data for --fake demos, not code
