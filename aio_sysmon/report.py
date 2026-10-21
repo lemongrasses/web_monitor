@@ -53,19 +53,65 @@ def when(e: Dict) -> str:
     """The time of a record, from its number: its text was written with the clock of that moment, and
     a clock not set yet gave "1970-01-01 08:00:38" (fmt_ts says so instead)."""
     t = e.get("t")
-    return fmt_ts(t) if isinstance(t, (int, float)) and t else str(e.get("ts") or "-")
+    if not (isinstance(t, (int, float)) and t):
+        return str(e.get("ts") or "-")
+    return fmt_ts(t) + (" (clock set later)" if "t_unset" in e else "")
+
+
+# Written at the start of a run, before its "start" record: they belong to that run.
+_RUN_OPENERS = ("unclean_stop", "recorder_killed")
+
+
+def _fix_unset_clock(records: List[Dict]) -> List[Dict]:
+    """Records (in the order written) of a run whose clock was not set yet get their real time back.
+
+    The Jetson has no clock kept over a power-off: every power-on starts at 1970 until GNSS time or
+    NTP sets it, so the records of the first minute (the unclean stop of the run before, the start)
+    said "1970" (seen 2026-10-21 at three power-ons, left out of "the last 24 h" and of `events`).
+    The clock_step record of the same run gives the exact jump. The written time stays in "t_unset".
+    A run that lost power before its clock was set leaves its records unknown."""
+    pending: List[Dict] = []
+    since_start: List[Dict] = []
+    for e in records:
+        kind = e.get("kind")
+        if kind == "start":
+            ours = {id(p) for p in since_start if p.get("kind") in _RUN_OPENERS}
+            pending = [p for p in pending if id(p) in ours]
+            since_start = []
+        jump = e.get("jump_s")
+        if kind == "clock_step" and pending and isinstance(jump, (int, float)):
+            for p in pending:
+                p["t_unset"], p["t"] = p["t"], p["t"] + float(jump)
+            pending = []
+        t = e.get("t")
+        if kind != "clock_step" and isinstance(t, (int, float)) and t < MIN_VALID_TS:
+            pending.append(e)
+        since_start.append(e)
+    return records
+
+
+def _written(base: str) -> List[Dict]:
+    """Every event record in the order written, times corrected (_fix_unset_clock)."""
+    files = sorted(glob.glob(os.path.join(base, "events-*.jsonl.gz"))) + [os.path.join(base, "events.jsonl")]
+    out: List[Dict] = []
+    for p in files:
+        out += list(_lines(p))
+    return _fix_unset_clock(out)
 
 
 def events(base: str, since: float, until: float, kinds: Optional[List[str]] = None,
            unknown_time: bool = False) -> List[Dict]:
-    """unknown_time: also the records written while the clock was not set (before MIN_VALID_TS),
-    whatever the window: their time says nothing, and hiding them hid an unclean stop."""
-    files = sorted(glob.glob(os.path.join(base, "events-*.jsonl.gz"))) + [os.path.join(base, "events.jsonl")]
-    out = []
-    for p in files:
-        out += [e for e in _lines(p) if (since <= e.get("t", 0) <= until or (unknown_time and e.get("t", 0) < MIN_VALID_TS))
-                and (not kinds or e.get("kind") in kinds)]
-    return sorted(out, key=lambda e: e.get("t", 0))
+    """unknown_time: also the records whose time stays unknown (written while the clock was not set,
+    and not corrected), whatever the window: hiding them hid an unclean stop. They keep their place
+    in the order written."""
+    out, key = [], 0.0
+    for e in _written(base):
+        t = e.get("t", 0)
+        known = isinstance(t, (int, float)) and t >= MIN_VALID_TS
+        key = t if known else key                     # unknown: right after the record before it
+        if (since <= t <= until if known else unknown_time) and (not kinds or e.get("kind") in kinds):
+            out.append((key, e))
+    return [e for _, e in sorted(out, key=lambda ke: ke[0])]
 
 
 def hourly(samples_: List[Dict]) -> List[Dict]:
@@ -114,13 +160,7 @@ def last_unclean(base: str) -> Optional[Dict]:
     """The newest unclean stop, by the order it was written, whatever its clock says. Right after a
     reboot the clock can be hours off (RTC in local time, no network yet), so a time window can
     miss the very record this command is for."""
-    files = sorted(glob.glob(os.path.join(base, "events-*.jsonl.gz"))) + [os.path.join(base, "events.jsonl")]
-    last = None
-    for p in files:
-        for e in _lines(p):
-            if e.get("kind") == "unclean_stop":
-                last = e
-    return last
+    return next((e for e in reversed(_written(base)) if e.get("kind") == "unclean_stop"), None)
 
 
 END_KINDS = ("stop", "unclean_stop", "recorder_killed")
@@ -130,13 +170,7 @@ def last_end(base: str) -> Optional[Dict]:
     """How the run before this one ended: the newest clean stop, unclean stop or killed recorder, by
     the order written (as last_unclean). An unclean stop is written when the next run starts, so the
     newest of the three is about the run that ended last."""
-    files = sorted(glob.glob(os.path.join(base, "events-*.jsonl.gz"))) + [os.path.join(base, "events.jsonl")]
-    last = None
-    for p in files:
-        for e in _lines(p):
-            if e.get("kind") in END_KINDS:
-                last = e
-    return last
+    return next((e for e in reversed(_written(base)) if e.get("kind") in END_KINDS), None)
 
 
 def describe_snapshot(path: str) -> str:

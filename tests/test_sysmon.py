@@ -509,3 +509,40 @@ class ClockNotSetTest(unittest.TestCase):
         self.assertIn("clock not set yet", fmt_ts(38.0))        # seen: unclean stop "at 1970-01-01 08:00:38"
         self.assertNotIn("clock not set", fmt_ts(1792485954.0))
         self.assertEqual(fmt_ts(0), "-")
+
+
+class ClockSetLaterTest(unittest.TestCase):
+    """Every power-on of the Jetson starts at 1970 until GNSS time or NTP sets the clock (seen
+    2026-10-21): the unclean stops of three power-offs were missing from `events` and the 24 h count."""
+
+    def write(self, d, records):
+        with open(os.path.join(d, "events.jsonl"), "w") as f:
+            for r in records:
+                f.write(json.dumps(r) + "\n")
+
+    def test_records_before_the_clock_step_get_their_real_time(self):
+        now = time.time()
+        jump = now - 1900 - 100.0                       # set 100 s after power-on
+        with tempfile.TemporaryDirectory() as d:
+            self.write(d, [{"t": now - 3000, "kind": "start"},
+                           {"t": 46.2, "kind": "unclean_stop", "last_record_t": now - 2000},
+                           {"t": 47.0, "kind": "start"},
+                           {"t": now - 1900, "kind": "clock_step", "jump_s": jump},
+                           {"t": now - 1000, "kind": "anomaly"}])
+            ev = report.events(d, now - 86400, float("inf"), ["unclean_stop", "start"])
+            self.assertEqual([e["kind"] for e in ev], ["start", "unclean_stop", "start"])
+            self.assertAlmostEqual(ev[1]["t"], 46.2 + jump, places=3)
+            self.assertIn("clock set later", report.when(ev[1]))
+            self.assertNotIn("clock not set", report.when(ev[1]))
+            self.assertAlmostEqual(report.last_unclean(d)["t"], 46.2 + jump, places=3)
+
+    def test_a_run_that_lost_power_before_its_clock_was_set_stays_unknown(self):
+        now = time.time()
+        with tempfile.TemporaryDirectory() as d:
+            self.write(d, [{"t": 40.0, "kind": "unclean_stop"}, {"t": 41.0, "kind": "start"},   # no clock step
+                           {"t": 39.0, "kind": "unclean_stop"}, {"t": 40.0, "kind": "start"},
+                           {"t": now, "kind": "clock_step", "jump_s": now - 100.0}])
+            ev = report.events(d, now - 86400, float("inf"), unknown_time=True)
+            self.assertEqual([e["kind"] for e in ev], ["unclean_stop", "start", "unclean_stop", "start", "clock_step"])
+            self.assertEqual([e.get("t_unset") for e in ev], [None, None, 39.0, 40.0, None])
+            self.assertIn("clock not set yet", report.when(ev[0]))

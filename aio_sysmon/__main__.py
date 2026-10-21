@@ -44,8 +44,10 @@ def cmd_status(args) -> int:
         print(f"latest record: {rp.fmt_ts(lk['t'])} ({time.time() - lk['t']:.0f} s ago)  cpu {lk.get('b')}%  load {lk.get('l')}  "
               f"mem avail {lk.get('a', '-')} MB  temp {lk.get('T', '-')} C  vin {lk.get('v', '-')} mV  "
               f"disk write {lk.get('fs', '-')} ms")
-        if time.time() - lk["t"] > 30:
-            print("WARNING: the recorder is not writing (last record is older than 30 s)")
+        # last_known.json is a backstop written every 30 s, at the next sample (30-35 s apart): the
+        # old 30 s limit warned for a few seconds of every cycle (seen 2026-10-21).
+        if time.time() - lk["t"] > 60:
+            print("WARNING: the recorder is not writing (last record is older than 60 s)")
     else:
         print("no records yet")
     ev = rp.events(base, time.time() - 86400, float("inf"), ["anomaly", "unclean_stop"])   # incl. a clock running ahead
