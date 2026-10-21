@@ -451,17 +451,36 @@ class AutostartTest(unittest.TestCase):
         self.tick(c, 2.5)
         self.assertEqual(self.actions.calls, ["start_process"])
 
+    def drivers(self, load="loaded", state="stopped"):
+        self.store.set("services", {"aio_nav": {"pids": []},
+                                    "drivers": {"state": state, "pids": [], "unit_state": {"load": load}}})
+
     def test_starts_the_sensor_drivers_first(self):
         self.data["services"]["drivers"] = {"label": "Sensor drivers", "user_unit": "drivers.service"}
         self.data["autostart"]["start_services"] = ["drivers"]
         c = self.make()
         readiness(self.store, "CHECKING", imu_ok=False)
+        self.drivers()
         self.tick(c)
         self.assertEqual(self.actions.calls, ["start_driver"])
         self.tick(c, 5)
         self.assertEqual(self.actions.calls, ["start_driver"])      # not again within 30 s
         self.tick(c, 30)
         self.assertEqual(self.actions.calls, ["start_driver", "start_driver"])
+
+    def test_drivers_are_left_alone_until_their_service_manager_answers(self):
+        # Power-on: the dashboard runs before the user's systemd, which starts the drivers itself.
+        self.data["services"]["drivers"] = {"label": "Sensor drivers", "user_unit": "drivers.service"}
+        self.data["autostart"]["start_services"] = ["drivers"]
+        c = self.make()
+        readiness(self.store, "CHECKING", imu_ok=False)
+        self.drivers(load="unknown")                        # systemctl --user: no bus yet
+        self.tick(c)
+        self.tick(c, 5)
+        self.assertEqual(self.actions.calls, [])
+        self.drivers(state="running")                       # it started them
+        self.tick(c, 5)
+        self.assertEqual(self.actions.calls, [])
 
     def test_already_running_at_boot_is_adopted(self):
         c = self.make()

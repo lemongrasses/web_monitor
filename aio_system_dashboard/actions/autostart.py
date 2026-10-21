@@ -332,7 +332,13 @@ class StartupCoordinator:
         service_retry_s each, unless an operator stopped them. Normally they are enabled in the
         user manager and already run; a unit that runs without data is the driver watchdog's job."""
         for key in self.start_services:
-            if (services.get(key) or {}).get("state") == "running" or key in self._services_held:
+            svc = services.get(key) or {}
+            if svc.get("state") == "running" or key in self._services_held:
+                continue
+            if (svc.get("unit_state") or {}).get("load", "unknown") == "unknown":
+                # The user's service manager does not answer yet: the first seconds after power-on,
+                # before it starts the (enabled) drivers itself. Seen 2026-10-21: "Failed to connect
+                # to bus" logged as a fault at every boot.
                 continue
             if now - self._service_tried.get(key, -1e9) < self.service_retry_s:
                 continue
