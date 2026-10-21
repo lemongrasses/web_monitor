@@ -3,6 +3,7 @@
 import copy
 import json
 import os
+import subprocess
 import tempfile
 import time
 import unittest
@@ -34,6 +35,42 @@ aio_nav_node:
 """
 BAG = LIVE.replace("ros_domain_id: 10", "ros_domain_id: 13").replace("use_sim_time: false", "use_sim_time: true")
 
+# Stands in for aio_nav_node in a test start (args: --ros-args --params-file FILE -p config_file:=FILE).
+# It refuses to run unless it is cut off from every network and the copy sends nothing to the vehicle.
+FAKE_NODE = r"""#!/bin/bash
+f="$3"
+[ "$(tail -n +3 /proc/net/dev | wc -l)" = 1 ] || { echo "[FATAL] [1.0] [aio_nav_node]: not isolated"; exit 1; }
+grep -q 'output_udp: ""' "$f" || { echo "[FATAL] [1.0] [aio_nav_node]: output_udp kept"; exit 1; }
+grep -q BROKEN "$f" && { echo "[FATAL] [1.0] [aio_nav_node]: parameter 'x' has invalid type"; exit 1; }
+echo "[WARN] [1.0] [aio_nav_node]: something to note"
+echo "[INFO] [1.0] [aio_nav_node]: aio_nav_node ready"
+exec sleep 30
+"""
+
+
+def install_fake_node(config_dir: Path) -> bool:
+    """Put FAKE_NODE where test_start looks for aio_nav_node; False if this system cannot isolate it."""
+    if subprocess.run(["unshare", "-rn", "true"], capture_output=True).returncode != 0:
+        return False
+    lib = config_dir.parents[2] / "lib" / "aio_nav_ros"
+    lib.mkdir(parents=True)
+    (lib / "aio_nav_node").write_text(FAKE_NODE)
+    (lib / "aio_nav_node").chmod(0o755)
+    (lib / "aio_nav_env.sh").write_text("aio_nav_source_ros() { :; }\n")
+    ac._TESTED.clear()
+    return True
+
+
+def processes_under(folder: str) -> list:
+    out = []
+    for pid in filter(str.isdigit, os.listdir("/proc")):
+        try:
+            if folder.encode() in Path(f"/proc/{pid}/cmdline").read_bytes():
+                out.append(pid)
+        except OSError:
+            pass
+    return out
+
 
 class ConfigEditTest(unittest.TestCase):
     def test_form_change_keeps_comments_and_layout(self):
@@ -55,6 +92,33 @@ class ConfigEditTest(unittest.TestCase):
             with self.assertRaises(ac.ConfigError) as e:
                 ac.apply_form(LIVE, change)
             self.assertIn(words, str(e.exception), change)
+
+    def test_compare_with_the_file_it_replaces(self):
+        """What AIO NAV was seen to refuse (2026-10-21: 33 broken copies started on the device)."""
+        for old, new, words in (("output_rate: 100.0", "output_rate: 100", "100.0, not 100"),
+                                ("      coarse_duration: 10.0\n", "", "was removed"),
+                                ("coarse_duration: 10.0", "coarse_duration:", "no value"),
+                                ("output_rate: 100.0", "output_rate: abc", "must be a number"),
+                                ("use_sim_time: false", "use_sim_time: 0", "true or false"),
+                                ('imu_topic: "/imu"', "imu_topic: 5", "must be text"),
+                                ("leverarm: [-0.49, 0.0, 0.0]", "leverarm: [-0.49, 0.0]", "must have 3 values"),
+                                ("leverarm: [-0.49, 0.0, 0.0]", "leverarm: 1.0", "list of 3"),
+                                ("    Alignment:\n      pos:", "    Alignment: 5\n    Alignment_x:\n      pos:", "section"),
+                                ("ini_value: [22.9, 120.2, 59.7]", "ini_value: [22.9, x, 59.7]", "must be a number"),
+                                ("aio_nav_node:", "aio_nav:", "first line")):
+            errors, _ = ac.compare(LIVE, LIVE.replace(old, new, 1))
+            self.assertTrue(any(words in e for e in errors), (new, errors))
+        for old, new in (("output_rate: 100.0", "output_rate: 1.0e2"), ("output_rate: 100.0", "output_rate: 1e2"),
+                         ("option: 1", "option: 2"), ('imu_topic: "/imu"', "imu_topic: /imu2"),
+                         ("use_sim_time: false", "use_sim_time: true"),
+                         ("ini_value: [22.9, 120.2, 59.7]", "ini_value: [23.0, 120.0, 60.0]")):
+            self.assertEqual(ac.compare(LIVE, LIVE.replace(old, new, 1)), ([], []), new)
+        _, warnings = ac.compare(LIVE, LIVE.replace("output_rate: 100.0", "output_rate: 100.0\n    outptu_rate: 5.0"))
+        self.assertIn("outptu_rate is new", warnings[0])
+
+    def test_a_list_mixing_whole_numbers_and_decimals_is_refused(self):
+        errors, _ = ac.validate(LIVE.replace("ini_value: [22.9, 120.2, 59.7]", "ini_value: [22, 120.2, 59.7]"))
+        self.assertIn("decimal point", errors[0])
 
     def test_validate(self):
         self.assertEqual(ac.validate(LIVE), ([], []))
@@ -109,6 +173,39 @@ class ConfigFilesTest(unittest.TestCase):
             with self.assertRaises(ac.ConfigError):
                 ac.read_backup(self.cfg, "aio_nav.yaml", bad)
         self.assertFalse(ac.save(self.cfg, "live", new, None)["changed"])   # same text: nothing to do
+
+    def test_a_file_aio_nav_would_refuse_is_not_saved(self):
+        f = ac.file_for(self.cfg, "live")
+        with self.assertRaises(ac.ConfigError) as e:
+            ac.save(self.cfg, "live", LIVE.replace("      coarse_duration: 10.0\n", ""), f["version"])
+        self.assertIn("was removed", str(e.exception))
+        self.assertEqual((self.dir / "aio_nav.yaml").read_text(), LIVE)
+        self.assertEqual(ac.backups(self.cfg, "aio_nav.yaml"), [])
+
+    def test_a_broken_file_on_disk_does_not_block_its_repair(self):
+        broken = LIVE.replace("coarse_duration: 10.0", "coarse_duration: abc")
+        (self.dir / "aio_nav.yaml").write_text(broken)
+        refused = {"ran": True, "ok": False, "detail": "bad conversion", "said": []}
+        started = {"ran": True, "ok": True, "detail": "it reported ready after 0.8 s", "said": []}
+        with mock.patch.object(ac, "test_start", side_effect=lambda _p, text: refused if text == broken else started):
+            r = ac.save(self.cfg, "live", LIVE, ac.file_for(self.cfg, "live")["version"])
+        self.assertTrue(r["changed"])
+        self.assertTrue(any("does not start AIO NAV either" in w for w in r["warnings"]), r["warnings"])
+        self.assertEqual((self.dir / "aio_nav.yaml").read_text(), LIVE)
+
+    def test_aio_nav_is_test_started_isolated_before_saving(self):
+        if not install_fake_node(self.dir):
+            self.skipTest("this system cannot start a program without network (unshare -rn)")
+        f = ac.file_for(self.cfg, "live")
+        with self.assertRaises(ac.ConfigError) as e:
+            ac.save(self.cfg, "live", LIVE.replace("output_rate: 100.0", "output_rate: 100.0  # BROKEN"), f["version"])
+        self.assertIn("does not start with this file: parameter 'x' has invalid type", str(e.exception))
+        self.assertEqual((self.dir / "aio_nav.yaml").read_text(), LIVE)
+        r = ac.save(self.cfg, "live", ac.apply_form(LIVE, {"output_rate": 50}), f["version"])
+        self.assertEqual((r["test_start"]["ok"], r["changed"]), (True, True), r["test_start"])
+        self.assertIn("AIO NAV said: something to note", r["warnings"])
+        self.assertEqual(processes_under(str(self.tmp.name)), [])          # nothing left running
+        self.assertFalse(ac.test_start("/nonexistent/a/b/c/aio_nav.yaml", LIVE)["ran"])
 
     def test_version_survives_a_browser_round_trip(self):
         """Regression: the version used to be st_mtime_ns (~1.8e18). A browser keeps numbers exact

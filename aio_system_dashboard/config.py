@@ -20,7 +20,10 @@ DEFAULTS: Dict[str, Any] = {
     "maintenance": {"host": "0.0.0.0", "port": 8081,
                     # The config editor and the terminal need this password (aio-dashboard password).
                     "password_file": "config/maint_password", "unlock_minutes": 15,
-                    "lock": "all"},       # all: the whole maintenance view needs it; tools: only those two
+                    "lock": "all",        # all: the whole maintenance view needs it; tools: only those two
+                    # Before an AIO NAV config file is saved, start AIO NAV on it for a moment, cut
+                    # off from the network, and refuse the file if it stops (actions/aionav_config).
+                    "config_test_start": True},
     # Browsers allowed to open the pages (IPs or CIDRs). Loopback is always allowed.
     # Empty = no restriction.
     "access": {"allowed_clients": []},

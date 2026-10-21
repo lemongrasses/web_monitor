@@ -128,9 +128,10 @@
       },
       saveHint() {
         if (!this.file) return "";
-        if (!this.file.active) return "This file belongs to the " + this.file.label + " mode; it is used when that mode is.";
-        return this.navRunning() ? "Save alone: AIO NAV keeps its current settings until it is restarted."
-                                 : "It applies at the next Start.";
+        const check = "Saving first starts AIO NAV on the new file for a moment, cut off from the network: a file it refuses is not saved. ";
+        if (!this.file.active) return check + "This file belongs to the " + this.file.label + " mode; it is used when that mode is.";
+        return check + (this.navRunning() ? "Save alone: AIO NAV keeps its current settings until it is restarted."
+                                          : "It applies at the next Start.");
       },
       insertTab(ev) {
         const t = ev.target, s = t.selectionStart, e = t.selectionEnd;

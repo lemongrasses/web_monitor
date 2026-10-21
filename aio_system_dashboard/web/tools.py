@@ -107,6 +107,9 @@ def register_tools(ctx, app, page_context) -> None:
         except (ac.ConfigError, OSError) as e:
             return jsonify({"success": False, "summary": str(e)})
         errors, warnings = ac.validate(new)
+        if not errors and new != text:
+            more_errors, more = ac.check_against(f["path"], text, new, ac.test_start_enabled(ctx.cfg))
+            errors, warnings = more_errors, warnings + more
         return jsonify({"success": not errors, "diff": ac.diff(text, new, f["name"]), "text": new,
                         "errors": errors, "warnings": warnings, "changed": new != text})
 
@@ -143,6 +146,9 @@ def register_tools(ctx, app, page_context) -> None:
         ctx.events.add("warning", "action", f"AIO NAV config {f['name']} saved",
                        f"{lines} line(s) changed from {request.remote_addr}; previous version {result['backup']}")
         summary = f"saved {f['name']} (previous version kept as {result['backup']})"
+        started = result.get("test_start") or {}
+        if started.get("ok"):
+            summary = f"AIO NAV starts with the new file ({started['detail']}); " + summary
         # Saving and applying are separate results: a save whose restart failed is not a success.
         restart = {"requested": bool(b.get("restart")), "success": None}
         nav = (ctx.store.get("services", {}) or {}).get(ctx.cfg["nav"]["service"]) or {}

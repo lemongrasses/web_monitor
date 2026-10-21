@@ -11,6 +11,12 @@
 * The new text is written to a temporary file in the same folder, flushed to disk, renamed over
   the original (atomic: a reader sees the old or the new file, never half of one), then read back
   and compared before the save is reported as done.
+* AIO NAV is stricter than YAML. Starting it on 33 broken copies of aio_nav.yaml (2026-10-21)
+  showed it stops at once when a setting is removed or left empty, holds another kind of value
+  (text for a number, 1 for true, a list for a text), a list changes length or mixes 3 and 2.5,
+  or a decimal setting is written as a whole number (path_publish_rate_hz: 10). So a new file is
+  also compared with the one it replaces (compare), and before saving AIO NAV itself is started on
+  it for a moment, cut off from every network (test_start): a file it refuses is not saved.
 """
 
 import difflib
@@ -18,6 +24,9 @@ import hashlib
 import json
 import os
 import re
+import shutil
+import signal
+import subprocess
 import tempfile
 import threading
 import time
@@ -245,11 +254,274 @@ def validate(text: str) -> Tuple[List[str], List[str]]:
         else:
             if f["type"] == "bool" and not isinstance(value, bool):
                 errors.append(f"{f['label']}: must be true or false")
+    errors += _mixed_lists(params, [])
     for key in ("output_rate", "ros_domain_id", "use_sim_time"):
         if key not in params:
             warnings.append(f"{key} is missing; AIO NAV uses its built-in default")
     if params.get("use_sim_time") is True and params.get("ros_localhost_only") == 1:
         warnings.append("use_sim_time is on (bag replay) but ROS is limited to this computer")
+    log = params.get("fusion_txt_path")
+    if (params.get("save_fusion_txt") is True or params.get("save_parsed_txt") is True) \
+            and isinstance(log, str) and os.path.isabs(log):
+        folder = os.path.dirname(log)
+        if not os.path.isdir(folder):
+            warnings.append(f"the log folder {folder} does not exist: AIO NAV runs but writes no logs")
+        elif not os.access(folder, os.W_OK | os.X_OK):
+            warnings.append(f"the log folder {folder} cannot be written: AIO NAV runs but writes no logs")
+    return errors, warnings
+
+
+# ---------------------------------------------------------------------------- against the file it replaces
+MAX_MESSAGES = 8
+
+
+def _kind(v: Any) -> str:
+    if isinstance(v, bool):
+        return "bool"
+    if isinstance(v, (int, float)):
+        return "int" if isinstance(v, int) else "float"
+    if isinstance(v, str):
+        return "str"
+    if isinstance(v, list):
+        return "list"
+    if isinstance(v, dict):
+        return "section"
+    return "none" if v is None else "other"
+
+
+def _numeric_text(v: str) -> bool:
+    """1e7 is text to PyYAML (YAML 1.1 wants a dot) but a number to ROS and to AIO NAV."""
+    try:
+        float(v)
+        return True
+    except ValueError:
+        return False
+
+
+def _cap(items: List[str]) -> List[str]:
+    return items if len(items) <= MAX_MESSAGES else items[:MAX_MESSAGES] + [f"and {len(items) - MAX_MESSAGES} more"]
+
+
+def _mixed_lists(node: Any, path: List[str], depth: int = 0) -> List[str]:
+    """A list mixing whole numbers and decimals ([3, 3, 2.5]) stops the ROS parameter parser:
+    AIO NAV aborts before it starts, wherever the list is in the file."""
+    out: List[str] = []
+    if depth > 20:
+        return out
+    if isinstance(node, dict):
+        for k, v in node.items():
+            out += _mixed_lists(v, path + [str(k)], depth + 1)
+    elif isinstance(node, list):
+        kinds = {_kind(x) for x in node}
+        if {"int", "float"} <= kinds:
+            out.append(f"{'.'.join(path)}: write every value with a decimal point (3.0, not 3) or none: "
+                       f"a list that mixes 3 and 2.5 stops AIO NAV")
+    return out
+
+
+def compare(old_text: str, new_text: str) -> Tuple[List[str], List[str]]:
+    """(errors, warnings) of a new file against the file it replaces, which AIO NAV started with.
+    Only what AIO NAV was seen to refuse is an error; a new key is a warning (AIO NAV ignores
+    keys it does not know, so it is most likely a misspelling). Whole number -> decimal is left to
+    test_start: some settings take it (fine_heading_std_threshold), others stop AIO NAV
+    (Alignment.pos.option)."""
+    old, _ = load_yaml(old_text)
+    new, _ = load_yaml(new_text)
+    old_node, old_p = params_of(old)
+    new_node, new_p = params_of(new)
+    if old_p is None or new_p is None:
+        return [], []                   # validate() says what is wrong with the new file
+    errors: List[str] = []
+    warnings: List[str] = []
+    if old_node != new_node:
+        errors.append(f"the first line changed from {old_node}: to {new_node}: AIO NAV would not find its settings")
+    _compare_section(old_p, new_p, [], errors, warnings)
+    return _cap(errors), _cap(warnings)
+
+
+def _compare_section(old: Dict, new: Dict, path: List[str], errors: List[str], warnings: List[str]) -> None:
+    for key, was in old.items():
+        name = ".".join(path + [str(key)])
+        if key not in new:
+            errors.append(f"{name} was removed: AIO NAV does not start without it")
+        else:
+            _compare_value(name, was, new[key], path + [str(key)], errors, warnings)
+    for key in new:
+        if key not in old:
+            warnings.append(f"{'.'.join(path + [str(key)])} is new: AIO NAV ignores settings it does not know "
+                            f"(misspelt?)")
+
+
+def _compare_value(name: str, was: Any, now: Any, path: List[str], errors: List[str], warnings: List[str]) -> None:
+    a, b = _kind(was), _kind(now)
+    if "section" in (a, b):
+        if a != b:
+            errors.append(f"{name} must stay {'a section with settings below it' if a == 'section' else 'a single value'}")
+        else:
+            _compare_section(was, now, path, errors, warnings)
+        return
+    if a == "none":
+        return                                       # empty before: nothing to compare with
+    if b == "none":
+        errors.append(f"{name} has no value: AIO NAV does not start with an empty setting")
+        return
+    if "list" in (a, b):
+        if a != b:
+            errors.append(f"{name} must stay a list of {len(was)} values" if a == "list" else
+                          f"{name} must stay a single value, not a list")
+        elif len(now) != len(was):
+            errors.append(f"{name} must have {len(was)} values (it has {len(now)})")
+        elif all(_kind(x) in ("int", "float") for x in was) and not all(
+                _kind(x) in ("int", "float") or (_kind(x) == "str" and _numeric_text(x)) for x in now):
+            errors.append(f"{name}: every value must be a number")
+        return
+    if a == "bool":
+        if b != "bool" and not (b == "str" and now.strip().lower() in ("true", "false")):
+            errors.append(f"{name} must be true or false")
+    elif a in ("int", "float"):
+        if b in ("bool", "other") or (b == "str" and not _numeric_text(now)):
+            errors.append(f"{name} must be a number")
+        elif a == "float" and b == "int":
+            errors.append(f"{name}: write {now}.0, not {now}: a decimal setting written as a whole number "
+                          f"can stop AIO NAV")
+    elif a == "str" and b != "str":
+        errors.append(f"{name} must be text: put it in quotes (\"{now}\")")
+
+
+# ---------------------------------------------------------------------------- test start
+TEST_START_S = 8.0          # longest wait; AIO NAV said "ready" after 0.8 s on the Orin NX
+TEST_START_SETTLE_S = 1.0   # still running this long after "ready": started
+_READY = re.compile(r"\bready\b")
+_SAID = re.compile(r"\[(FATAL|ERROR|WARN)\]\s*\[[^\]]*\]\s*(?:\[[^\]]*\]:\s*)?(.*)")
+_EXEC_MARK = "aio-nav-test: starting"
+_TEST_LOCK = threading.Lock()                  # one test start at a time
+_TESTED: Dict[str, Dict[str, Any]] = {}        # content version -> result (the file on disk, re-checked rarely)
+# The script runs in a new user + network namespace (unshare -rn, no root needed): only a loopback
+# that nothing else shares, so the test cannot reach the drivers' ROS domain, the dashboard's NAV
+# port or the vehicle (output_udp is emptied as well). Its logs go to a temporary folder.
+_TEST_SCRIPT = ('ip link set lo up || exit 97; ulimit -c 0; . "$1" || exit 98; aio_nav_source_ros >/dev/null 2>&1 '
+                '|| exit 98; echo "' + _EXEC_MARK + '"; exec "$2" --ros-args --params-file "$3" -p "config_file:=$3"')
+_HINTS = [("Failed to parse global arguments",
+           "the file cannot be read as ROS parameters (a list that mixes 3 and 2.5, or a setting left empty?)"),
+          ("setting it to {integer} is not allowed", "write the value with a decimal point (10.0, not 10)")]
+
+
+def node_program(config_path: str) -> Optional[Path]:
+    """aio_nav_node of the install the config file belongs to:
+    <prefix>/share/aio_nav_ros/config/aio_nav.yaml -> <prefix>/lib/aio_nav_ros/aio_nav_node."""
+    p = Path(config_path).resolve()
+    if len(p.parents) < 4:
+        return None
+    node = p.parents[3] / "lib" / "aio_nav_ros" / "aio_nav_node"
+    return node if os.access(node, os.X_OK) and (node.parent / "aio_nav_env.sh").is_file() else None
+
+
+def test_start(config_path: str, text: str, wait_s: float = TEST_START_S) -> Dict[str, Any]:
+    """Start AIO NAV on ``text`` for a moment, isolated. {"ran", "ok", "detail", "said"}: ran False
+    when it could not be tried here (no program, no namespaces); ok False when AIO NAV stopped."""
+    version = version_of(text.encode("utf-8"))
+    with _TEST_LOCK:
+        if version in _TESTED:
+            return _TESTED[version]
+        result = _test_start(config_path, text, wait_s)
+        if result["ran"]:
+            if len(_TESTED) >= 16:
+                _TESTED.pop(next(iter(_TESTED)))
+            _TESTED[version] = result
+        return result
+
+
+def _test_start(config_path: str, text: str, wait_s: float) -> Dict[str, Any]:
+    def no(why: str) -> Dict[str, Any]:
+        return {"ran": False, "ok": None, "detail": why, "said": []}
+
+    node = node_program(config_path)
+    unshare = shutil.which("unshare")
+    if node is None:
+        return no("the AIO NAV program was not found next to the config file")
+    if unshare is None:
+        return no("unshare is not installed")
+    with tempfile.TemporaryDirectory(prefix="aio-nav-test-") as tmp:
+        copy = text
+        for key, value in (("fusion_txt_path", json.dumps(os.path.join(tmp, "test.txt"))), ("output_udp", '""')):
+            try:
+                copy = set_value(copy, [key], value)
+            except ConfigError:
+                pass
+        cfg_file = os.path.join(tmp, os.path.basename(config_path))
+        with open(cfg_file, "w", encoding="utf-8") as fh:
+            fh.write(copy)
+        program = os.path.join(tmp, "aio_nav_test_node")   # another name: not taken for the running AIO NAV
+        os.symlink(node, program)
+        env = {"HOME": tmp, "PATH": "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
+               "LANG": "C.UTF-8", "ROS_LOG_DIR": tmp, "ROS_DOMAIN_ID": "0", "ROS_LOCALHOST_ONLY": "1",
+               "RCUTILS_COLORIZED_OUTPUT": "0"}
+        t0 = time.monotonic()
+        try:
+            proc = subprocess.Popen([unshare, "-rn", "bash", "-c", _TEST_SCRIPT, "aio-nav-test",
+                                     str(node.parent / "aio_nav_env.sh"), program, cfg_file],
+                                    stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                                    env=env, cwd=tmp, start_new_session=True)
+        except OSError as e:
+            return no(f"cannot run unshare: {e}")
+        lines: List[str] = []
+        reader = threading.Thread(target=lambda: lines.extend(l.decode("utf-8", "replace").rstrip()
+                                                              for l in proc.stdout), daemon=True)
+        reader.start()
+        ready_at = None
+        try:
+            while True:
+                now = time.monotonic()
+                if ready_at is None and any(_READY.search(l) for l in lines):
+                    ready_at = now
+                if proc.poll() is not None:
+                    break
+                if (ready_at is not None and now - ready_at >= TEST_START_SETTLE_S) or now - t0 >= wait_s:
+                    break
+                time.sleep(0.05)
+        finally:
+            running, ended = proc.poll() is None, time.monotonic()
+            _stop_group(proc)
+            reader.join(2.0)
+        took = (ready_at or ended) - t0
+    said = [m.group(2) for m in (_SAID.search(l) for l in lines) if m]
+    if not running and _EXEC_MARK not in lines:
+        if proc.returncode == 97 or any("unshare" in l for l in lines):
+            return no("this system does not allow an isolated test start (" + (lines[-1] if lines else "unshare failed") + ")")
+        return no("the ROS environment of AIO NAV could not be loaded")
+    if running:
+        how = f"it reported ready after {took:.1f} s" if ready_at is not None else f"it was still running after {took:.0f} s"
+        return {"ran": True, "ok": True, "detail": how, "said": [f"AIO NAV said: {s}" for s in said[:3]]}
+    why = next((s for s in said if s), "") or next((l for l in reversed(lines) if l.strip()), "") \
+        or f"it stopped at once (exit code {proc.returncode})"
+    hint = next((h for pattern, h in _HINTS if pattern in why), "")
+    return {"ran": True, "ok": False, "detail": why + (f" ({hint})" if hint else ""), "said": said[:5]}
+
+
+def _stop_group(proc: subprocess.Popen) -> None:
+    for sig, wait in ((signal.SIGTERM, 3.0), (signal.SIGKILL, 2.0)):
+        if proc.poll() is not None:
+            return
+        try:
+            os.killpg(proc.pid, sig)
+        except OSError:
+            return
+        try:
+            proc.wait(wait)
+        except subprocess.TimeoutExpired:
+            continue
+
+
+def check_against(config_path: str, old_text: str, new_text: str, test: bool) -> Tuple[List[str], List[str]]:
+    """compare(), when the file on disk is one AIO NAV starts with. A file broken by hand must not
+    hold its mistakes in place (restoring a backup would be refused), so if it does not start
+    either, the new file is judged by its own test start only."""
+    errors, warnings = compare(old_text, new_text)
+    if errors and test:
+        res = test_start(config_path, old_text)
+        if res["ran"] and not res["ok"]:
+            return [], warnings + [f"the file on disk does not start AIO NAV either ({res['detail']}), so the "
+                                   f"new one is only checked by starting AIO NAV on it when it is saved"]
     return errors, warnings
 
 
@@ -315,13 +587,19 @@ class ConflictError(ConfigError):
     """The file changed on disk since the editor opened it."""
 
 
+def test_start_enabled(cfg) -> bool:
+    return not cfg.fake and bool(cfg["maintenance"].get("config_test_start", True))
+
+
 def save(cfg, mode: str, text: str, base_version: Optional[str]) -> Dict[str, Any]:
     """Validate and write ``text``. base_version: the ``version`` the editor opened (None: no
-    check). Raises ConflictError if the file changed since, ConfigError for bad text or a folder
-    that cannot be written; an OSError while writing leaves the original file intact."""
+    check). Raises ConflictError if the file changed since, ConfigError for bad text, a file AIO
+    NAV does not start with, or a folder that cannot be written; an OSError while writing leaves
+    the original file intact."""
     errors, warnings = validate(text)
     if errors:
         raise ConfigError("; ".join(errors))
+    test = test_start_enabled(cfg)
     with _SAVE_LOCK:
         f = file_for(cfg, mode)
         path = Path(f["path"])
@@ -332,14 +610,26 @@ def save(cfg, mode: str, text: str, base_version: Optional[str]) -> Dict[str, An
         old = old_bytes.decode("utf-8")
         if old == text:
             return {"changed": False, "warnings": warnings, "diff": "", "version": current}
+        errors, more = check_against(f["path"], old, text, test)
+        if errors:
+            raise ConfigError("; ".join(errors))
+        warnings += more
         if not f["writable"]:
             raise ConfigError(f"cannot write {path}: this account may not replace files in "
                               f"{path.parent} (the folder must be writable, not only the file)")
+        started = test_start(f["path"], text) if test else \
+            {"ran": False, "ok": None, "detail": "test start is off", "said": []}
+        if started["ran"] and not started["ok"]:
+            raise ConfigError(f"not saved: AIO NAV does not start with this file: {started['detail']}")
+        if test and not started["ran"]:
+            warnings.append(f"AIO NAV could not be test-started here ({started['detail']}); "
+                            f"the file was only checked by the rules above")
+        warnings += started["said"]
         backup = _write_backup(cfg, f["name"], old)
         new_version = _atomic_write(path, text.encode("utf-8"))
     cfg.refresh_aio_nav()
     return {"changed": True, "warnings": warnings, "diff": diff(old, text, f["name"]),
-            "backup": backup, "version": new_version}
+            "backup": backup, "version": new_version, "test_start": started}
 
 
 def _write_backup(cfg, name: str, old: str) -> str:
