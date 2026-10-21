@@ -1,0 +1,7 @@
+{#- Small building blocks of the user pages (styles in static/css/product.css). -#}
+
+{#- A status word with its dot: expr returns {level, label}. -#}
+{% macro link(title, expr, text=None) -%}
+<div class="u-link"><span class="u-dot" :class="'is-' + ({{ expr }}).level"></span><b>{{ title }}</b>
+  <span class="u-state-word" :class="'is-' + ({{ expr }}).level" x-text="{{ text or '(' ~ expr ~ ').label' }}"></span></div>
+{%- endmacro %}

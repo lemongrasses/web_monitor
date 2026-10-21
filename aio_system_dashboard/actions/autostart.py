@@ -16,6 +16,11 @@ Rules, in order:
 * AIO NAV running but without output: if a prerequisite is missing (no IMU data, no valid time) the
   cause is upstream, so it is left running and may resume by itself; with the inputs fine it gets
   ``stale_grace_s`` to recover, then it is stopped and started again.
+* While it waits to start, the services in ``start_services`` (the sensor drivers, a systemd user
+  unit) are started if they do not run, unless an operator stopped them. A prerequisite still
+  missing after ``prerequisite_timeout_s`` is reported as a fault (the wait goes on).
+* Success means AIO NAV started. DSO starts with it, but a DSO failure is left to the DSO
+  watchdog: it never makes the coordinator stop or restart a healthy AIO NAV.
 * A program already running (dashboard restart, desktop app) is adopted, never started twice:
   process_control.start_one checks for it under a lock.
 
@@ -74,6 +79,14 @@ class StartupCoordinator:
         self.stale_grace_s = float(a["stale_grace_s"])
         self.backoff = [float(x) for x in a["retry_backoff_s"]] or [5.0]
         self.max_attempts = int(a["max_attempts"] or 0)         # 0: never give up
+        self.prereq_timeout_s = float(a.get("prerequisite_timeout_s") or 0)
+        self.start_services = [k for k in a.get("start_services") or []
+                               if (cfg["services"].get(k) or {}).get("user_unit")]
+        self.service_retry_s = 30.0
+        self._service_tried: Dict[str, float] = {}
+        self._services_held: set = set()             # drivers stopped by an operator
+        self._wait_since: Optional[float] = None
+        self._inputs_missing: list = []              # the prerequisites (not still / clock) missing
         self._file = cfg.state_file("autostart.json")
         self._fallback = FALLBACK_FILE
         self._save_failed = False
@@ -152,6 +165,13 @@ class StartupCoordinator:
     def on_action(self, action_id: str, target: str) -> None:
         """Called after every maintenance / Overview action. An operator Stop of AIO NAV holds the
         automatic start; an operator Start or Restart releases it and starts the waits afresh."""
+        if target in self.start_services:              # the drivers: an operator Stop is kept
+            with self._lock:
+                if action_id == "stop_driver":
+                    self._services_held.add(target)
+                elif action_id in ("start_driver", "restart_driver"):
+                    self._services_held.discard(target)
+            return
         nav = (process_control.GROUP, self.cfg["nav"]["service"])
         if target not in nav or self._launching or self._no_hold:
             return
@@ -163,7 +183,7 @@ class StartupCoordinator:
                     self.events.add("info", "autostart", "Automatic start on hold", "AIO NAV stopped by an operator")
             elif action_id in ("start_process", "restart_process"):
                 changed = self.hold or self.attempts
-                self.hold, self.attempts, self.next_at = False, 0, None
+                self.hold, self.attempts, self.next_at, self._wait_since = False, 0, None, None
                 if self.state == "gave_up":
                     self.state = "waiting"
                 if changed:
@@ -260,10 +280,21 @@ class StartupCoordinator:
             if self.next_at is not None and now < self.next_at:
                 self._set("retry_wait", self.detail or "Waiting to try again")
                 return
+            self._start_services(services, now)
             missing = self._missing_prerequisites(r, now)
             if missing:
-                self._set("waiting", "Waiting for " + ", ".join(missing))
+                inputs = self._inputs_missing       # waiting for "still" or the clock is no fault
+                if not inputs:
+                    self._wait_since = None
+                elif self._wait_since is None:
+                    self._wait_since = now
+                waited = 0.0 if self._wait_since is None else now - self._wait_since
+                if inputs and self.prereq_timeout_s and waited >= self.prereq_timeout_s:
+                    self._set("prereq_timeout", f"{', '.join(inputs)} not available after {waited:.0f} s")
+                else:
+                    self._set("waiting", "Waiting for " + ", ".join(missing))
                 return
+            self._wait_since = None
             self.attempts += 1
             self._save()
             self._launch("start", now)
@@ -296,6 +327,29 @@ class StartupCoordinator:
         self._retry_later(now, f"AIO NAV {why}; restarting it")
         self._launch("stop", now)
 
+    def _start_services(self, services: Dict, now: float) -> None:
+        """Start the configured user units (sensor drivers) that do not run, at most every
+        service_retry_s each, unless an operator stopped them. Normally they are enabled in the
+        user manager and already run; a unit that runs without data is the driver watchdog's job."""
+        for key in self.start_services:
+            if (services.get(key) or {}).get("state") == "running" or key in self._services_held:
+                continue
+            if now - self._service_tried.get(key, -1e9) < self.service_retry_s:
+                continue
+            self._service_tried[key] = now
+            label = self.cfg["services"][key].get("label", key)
+            self.events.add("info", "autostart", f"Automatic start: starting {label}")
+
+            def work(k=key):
+                try:
+                    res = self.actions.run("start_driver", k)
+                    if not res.get("success"):
+                        logger.warning("autostart: %s did not start: %s", k, res.get("summary"))
+                except Exception:
+                    logger.exception("autostart: starting %s failed", k)
+
+            threading.Thread(target=work, name=f"autostart-{key}", daemon=True).start()
+
     def _missing_prerequisites(self, r: Dict, now: float, still: bool = True):
         conds = {c["name"]: c for c in (r.get("conditions") or [])}
         missing = []
@@ -312,6 +366,7 @@ class StartupCoordinator:
                 label = c.get("label") or name
                 why = c.get("reason") if c.get("ok") is False else ""   # e.g. an IMU without valid time
                 missing.append(f"{label}: {why}" if why else label)
+        self._inputs_missing = list(missing)
         if still and self.clock_wait_s:
             clk = r.get("clock") or {}
             if clk.get("gnss_source") and clk.get("matches") is False and not self._clock_gave_up:
@@ -360,11 +415,14 @@ class StartupCoordinator:
                 action = "start_process" if verb == "start" else "stop_process"
                 res = self.actions.run(action, process_control.GROUP)
                 if verb == "start":
+                    # Judge AIO NAV only: a DSO that fails to start is the DSO watchdog's job, and
+                    # must not make us stop and restart a healthy AIO NAV.
+                    nav = process_control.user_result(self.cfg, "start", res)
                     with self._lock:
-                        if res.get("success"):
+                        if nav.get("success"):
                             self._started_at = self._clock()
                         else:
-                            self._retry_later(self._clock(), res.get("summary") or "AIO NAV did not start")
+                            self._retry_later(self._clock(), nav.get("summary") or "AIO NAV did not start")
             except ActionError as e:
                 with self._lock:
                     if e.status == 409:                # busy (e.g. the DSO watchdog): not a failure

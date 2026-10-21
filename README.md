@@ -4,7 +4,7 @@ Web dashboard for the Jetson AIO navigation system.
 
 | UI | Port | Audience | Pages |
 |----|------|----------|-------|
-| Product | `:8080` | Operators (no login) | Overview · Navigation · Data, with Start / Restart / Stop of AIO NAV |
+| Product | `:8080` | Operators (no login) | Overview · Navigation · Data · Settings (Wi-Fi, RTK requirement), with Start / Restart / Stop of AIO NAV; English / 繁體中文 |
 | Maintenance | `:8081` | Engineers (password) | Overview · System · ROS 2 · Camera · LiDAR · Network · Diagnostics · AIO NAV config · Terminal (· Replay with the replay module) |
 
 The main data source is the **AIO NAV 0x04 binary packet** that `aio_nav_node`
@@ -17,6 +17,7 @@ their own sessions, so a dashboard crash or restart never stops them.
 [English](docs/OPERATION.md) · [繁體中文](docs/OPERATION.zh-TW.md).
 Settings: [English](docs/CONFIG.md) · [繁體中文](docs/CONFIG.zh-TW.md).
 Optional system recorder (a black box for the computer, to trace freezes and power cuts; install with `sudo deploy/install.sh --with-sysmon`): [English](docs/SYSMON.md) · [繁體中文](docs/SYSMON.zh-TW.md).
+Engineering flowcharts (system data flow, health tick, readiness states, automatic start, Wi-Fi, vehicle side): [docs/FLOWS.md](docs/FLOWS.md).
 Ideas discussed and kept for later (in Traditional Chinese): [docs/IDEAS.md](docs/IDEAS.md).
 
 ## Architecture
@@ -34,9 +35,11 @@ aio_system_dashboard/
   state/indicator.py   debounced status (raise/clear hold, no flicker on a single miss)
   state/health.py      5 Hz evaluator: product state, alignment step, advisories, issues, events
   actions/             fixed actions only: process_control (AIO NAV / DSO), service_control (drivers),
-                       diagnostics, aionav_config (config editor), terminal (shell sessions)
+                       diagnostics, aionav_config (config editor), terminal (shell sessions),
+                       autostart (power-on start), wifi (NetworkManager, with rollback)
   data_access/         read-only browse/download inside configured roots
-  web/                 Flask apps: product.py, maintenance.py, tools.py (editor, terminal), auth.py
+  web/                 Flask apps: product.py, maintenance.py, tools.py (editor, terminal), auth.py,
+                       settings_api.py (Wi-Fi / RTK on both apps), i18n.py + i18n_zh.py (user-page languages)
   templates/, static/  Bootstrap + Alpine.js + Leaflet + xterm.js (vendored, offline)
 aio_dashboard_replay/  optional module: Live / Bag replay switch and bag player
 aio_sysmon/            optional system recorder (separate service)
@@ -185,7 +188,9 @@ Re-run `install.sh` after changing which units are restartable.
 - Restarts need confirmation in the UI, have a timeout, and are logged (Diagnostics page and `logs/events.jsonl`), as are sign-ins, config saves and terminals.
 - POSTs require JSON and the header `X-Requested-With: aio-dashboard`, which blocks plain cross-site form posts.
 - Downloads are limited to the configured roots: realpath containment rejects `..`, absolute paths and escaping symlinks. There is no upload, delete or rename.
-- Each port serves only its own routes. Maintenance APIs are not reachable on :8080. The product view has no login.
+- Each port serves only its own routes. Maintenance APIs are not reachable on :8080. The product view has no login;
+  its only changes are Start / Stop, Wi-Fi (accepted only from a browser connected by cable, so a change cannot cut off
+  the page that made it) and the RTK requirement (turning it off needs a confirmation). All are logged.
 
 ## Not included
 

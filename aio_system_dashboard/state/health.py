@@ -34,6 +34,29 @@ PRODUCT_FAULT = "FAULT"
 PRODUCT_UNKNOWN = "UNKNOWN"
 _PRODUCT_SEVERITY = {PRODUCT_UNKNOWN: 0, STOPPED: 0, READY: 1, STARTING: 1, INITIALIZING: 2, PRODUCT_FAULT: 3}
 IDLE = "idle"                      # lamp level: off on purpose (not unknown, not a problem)
+RTK_FILE = "readiness.json"         # state/: the RTK switch set on the Maintenance page
+
+
+def rtk_setting(cfg) -> Tuple[bool, str, Dict]:
+    """(RTK required for READY, where that comes from, details of the last change)."""
+    try:
+        import json
+        data = json.loads(cfg.state_file(RTK_FILE).read_text(encoding="utf-8"))
+        if isinstance(data.get("require_rtk"), bool):
+            return data["require_rtk"], "saved setting", data
+    except (OSError, ValueError, AttributeError):
+        pass
+    return bool(cfg["readiness"].get("require_rtk", True)), "config", {}
+
+
+def set_rtk_setting(cfg, required: bool, who: str) -> None:
+    import json
+    f = cfg.state_file(RTK_FILE)
+    f.parent.mkdir(parents=True, exist_ok=True)
+    tmp = f.with_name(f.name + ".tmp")
+    tmp.write_text(json.dumps({"require_rtk": bool(required), "changed_by": who,
+                               "changed_at": time.time()}) + "\n", encoding="utf-8")
+    tmp.replace(f)
 START_REQUEST_GRACE_S = 10.0       # a start request with no process yet is "starting" this long
 
 SERVICE_DOWN_STATES = ("stopped", "failed", "not_installed")
@@ -171,8 +194,10 @@ class HealthEngine:
         self.session_id = secrets.randbits(32) or 1     # new at every dashboard start
         self._sequence = 0
         rcfg = cfg["readiness"]
-        self.conditions = {n: rd.Condition(rcfg["gnss_stable_s"] if n == "gnss_quality" else rcfg["stable_s"],
-                                           rcfg["loss_s"]) for n in rd.CONDITIONS}
+        self.conditions = {
+            n: rd.Condition(rcfg["gnss_stable_s"] if n == "gnss_quality" else rcfg["stable_s"],
+                            rcfg.get("gnss_loss_s", rcfg["loss_s"]) if n in ("gnss", "gnss_quality") else rcfg["loss_s"])
+            for n in rd.CONDITIONS}
         # READY reached by the current AIO NAV process. Per process, not per NAV session: when AIO
         # NAV dies the NAV state is cleared (a new session) at once, and the latch must survive that
         # so a crash while driving says "stop using navigation", not "starting".
@@ -184,6 +209,8 @@ class HealthEngine:
         self._duplicate = DebouncedStatus(3.0, 2.0, clock=clock)   # a stop/start overlap is not a fault
         self._rd_state: Optional[str] = None
         self._rd_since = clock()
+        self._view_state: Optional[str] = None         # the state the pages show, and since when
+        self._view_since = clock()
         self.autostart_status = None                   # callable -> dict, set by the app
         self.clock_status = None                       # callable -> dict: GNSS time vs the system clock
         self.still_limits = None                       # state/still.StillLimits, set by the app
@@ -317,6 +344,8 @@ class HealthEngine:
         readiness = self._readiness(now, shown, nav, nav_svc, gq, fresh, latest, in_grace)
         health_view = self._health_view(shown, readiness)
 
+        checks = self._startup_checks(readiness, services, nav_svc, latest, fresh, health_view["state"],
+                                      align_lamps, nav)
         network = self.store.get("network", {}) or {}
         indicators = {
             **align_lamps,
@@ -373,6 +402,7 @@ class HealthEngine:
             "ts": time.time(),
             "health": health_view,
             "readiness": readiness,
+            "checks": checks,
             "nav": nav_out,
             "solution": latest if latest else None,
             "udp": {"level": u_shown, "label": self._udp_label[0], "detail": self._udp_label[1],
@@ -380,6 +410,7 @@ class HealthEngine:
                     "age_s": nav.get("age_s"), "destinations": self._destinations(network)},
             "indicators": indicators,
             "control": self._nav_control(nav_svc),
+            "status_udp": self.status_publisher.status() if self.status_publisher is not None else None,
             "aiding": aiding,
             "advisories": advisories,
             "storage": storage,
@@ -487,6 +518,9 @@ class HealthEngine:
     def _readiness(self, now, shown, nav, nav_svc, gq, fresh, latest, in_grace) -> Dict:
         rcfg = self.cfg["readiness"]
         required = set(rcfg.get("require") or [])
+        rtk, rtk_source, _ = rtk_setting(self.cfg)
+        if rtk:
+            required |= {"gnss", "gnss_quality"}
         if "dso" in required and rcfg.get("dso_only_with_vupt", True) and not self.cfg.aio_nav.get("vupt"):
             required.discard("dso")                 # DSO only matters when AIO NAV uses it (VUPT)
         conditions, listing = {}, []
@@ -541,9 +575,119 @@ class HealthEngine:
                     "flags_c": int(latest.get("flags_c", 0)) if fresh and latest else 0},
             "required": sorted(required), "conditions": listing, "motion": self._motion(),
             "clock": self._clock_view(),
+            "rtk_required": rtk, "rtk_source": rtk_source,
+            "gnss_min_quality": rcfg.get("gnss_min_quality") or "float",
             "autostart": {k: v for k, v in auto.items() if k != "enabled"} | {"enabled": bool(auto.get("enabled"))},
         })
         return snap
+
+    def _startup_checks(self, r: Dict, services: Dict, nav_svc: Dict, latest: Dict, fresh: bool,
+                        shown: str, align_lamps: Dict, nav: Dict) -> List[Dict]:
+        """The power-on sequence for the user pages, as five steps: sensors, GNSS / RTK, AIO NAV,
+        alignment, vehicle link. Each has a level, a short status and rows of plain detail
+        ({k, v}) that the page shows when the step is opened. Same data as the readiness snapshot."""
+        conds = {c["name"]: c for c in r.get("conditions") or []}
+        auto = r.get("autostart") or {}
+        timed_out = auto.get("state") == "prereq_timeout"
+        # What Ready or the automatic start waits for; anything else that is missing is grey, not amber.
+        needed = set(r.get("required") or [])
+        if auto.get("enabled"):
+            needed |= set(self.cfg["autostart"].get("prerequisites") or [])
+        steps = []
+
+        def cond_state(name):
+            c = conds.get(name) or {}
+            return "ready" if c.get("ready") else ("settling" if c.get("ok") else "missing")
+
+        # 1. Sensors: the drivers the automatic start launches, and IMU data.
+        rows, pending = [], []
+        for key in self.cfg["autostart"].get("start_services") or []:
+            up = (services.get(key) or {}).get("state") == "running"
+            label = (self.cfg["services"].get(key) or {}).get("label", key)
+            rows.append({"k": label, "v": "Running" if up else "Starting"})
+            if not up:
+                pending.append(label)
+        imu = cond_state("imu")
+        rows.append({"k": "IMU data", "v": {"ready": "Receiving", "settling": "Settling", "missing": "Waiting"}[imu]})
+        if imu != "ready":
+            pending.append("IMU data")
+        if not pending:
+            steps.append({"key": "sensors", "name": "Sensors", "level": HEALTHY, "label": "Ready", "rows": rows})
+        else:
+            waiting_for_it = pending != ["IMU data"] or "imu" in needed
+            steps.append({"key": "sensors", "name": "Sensors",
+                          "level": (FAULT if timed_out else WARNING) if waiting_for_it else IDLE,
+                          "label": "Not found" if timed_out else ("Settling" if imu == "settling" and len(pending) == 1 else "Waiting"),
+                          "rows": rows, "hint": "Check the sensor cables and power." if timed_out else ""})
+
+        # 2. GNSS position, and RTK when Ready requires it.
+        need_rtk = bool(r.get("rtk_required"))
+        quality = (self.store.get("gnss", {}) or {})
+        quality = quality.get("quality") if quality.get("available") else None
+        now_text = GNSS_LEVEL.get(quality, (None, "No data"))[1]
+        rows = [{"k": "GNSS position", "v": {"ready": "Receiving", "settling": "Settling", "missing": "Waiting"}[cond_state("gnss")]},
+                {"k": "Now", "v": now_text},
+                {"k": "RTK required for Ready", "v": ("Yes (RTK fix)" if rd.MIN_QUALITY.get(str(r.get("gnss_min_quality")).lower(), 3) >= 4
+                                                      else "Yes (RTK float or fix)") if need_rtk else "No"}]
+        gate = cond_state("gnss_quality") if need_rtk else cond_state("gnss")
+        g_needed = need_rtk or bool({"gnss", "gnss_quality"} & needed)
+        steps.append({"key": "gnss", "name": "GNSS / RTK", "rows": rows,
+                      "level": HEALTHY if gate == "ready" else (FAULT if timed_out and quality in (None, "none") else
+                                                                WARNING if g_needed else IDLE),
+                      "label": now_text if quality is not None else "Waiting",
+                      "hint": "" if gate == "ready" else ("Move to open sky; RTK needs the correction service (internet)."
+                                                          if need_rtk else "Move to open sky.")})
+
+        # 3. AIO NAV (DSO runs beside it; it is information only, never a step of its own).
+        running = bool(nav_svc.get("pids")) or fresh      # output arriving: it runs, seen or not
+        dso = conds.get("dso") or {}
+        if shown == PRODUCT_FAULT or r.get("state") == "FAULT":
+            n_level, n_label = FAULT, "Problem"
+        elif running and fresh:
+            n_level, n_label = HEALTHY, "Running"
+        elif running:
+            n_level, n_label = WARNING, "Starting"
+        elif r.get("state") == "MAINTENANCE":
+            n_level, n_label = IDLE, "Stopped"
+        else:
+            n_level, n_label = IDLE, "Not started"
+        rows = [{"k": "AIO NAV", "v": n_label}]
+        if running and fresh and nav.get("rate_hz"):
+            rows.append({"k": "Output rate", "v": f"{nav['rate_hz']:.0f} Hz"})
+        rows.append({"k": "Visual odometry (DSO)", "v": "Running" if dso.get("ok") else "Not running"})
+        steps.append({"key": "nav", "name": "AIO NAV", "level": n_level, "label": n_label, "rows": rows})
+
+        # 4. Alignment, its three phases.
+        names = {"alignment": "Keep still", "heading_valid": "Drive straight", "fine_alignment": "Fine alignment"}
+        done = [bool(fresh and latest and latest.get(f)) for f in ALIGN_LAMPS]
+        rows = [{"k": names[f], "v": (align_lamps.get(f) or {}).get("label", "Waiting") if fresh else "Waiting"}
+                for f in ALIGN_LAMPS]
+        step = self._step if fresh and not all(done) else None
+        steps.append({"key": "alignment", "name": "Alignment", "rows": rows,
+                      "level": HEALTHY if all(done) else (WARNING if fresh else IDLE),
+                      "label": "Done" if all(done) else (f"Step {sum(done) + 1} of 3" if fresh else "Not started"),
+                      "hint": (step or {}).get("action", "")})
+
+        # 5. Vehicle link: what the vehicle is sent (UDP: sent, never confirmed received).
+        tx = self.status_publisher.status() if self.status_publisher is not None else {"enabled": False}
+        externals = [d for d in self.cfg.nav_destinations() if d.get("kind") == "external"]
+        dest = f'{externals[0]["host"]}:{externals[0]["port"]}' if externals else None
+        rows = [{"k": "Vehicle address", "v": dest or "Not set"},
+                {"k": "Navigation data (0x04)", "v": ("Sending" if fresh else "Not sending") if dest else "Not set"},
+                {"k": "Ready signal (0x05)", "v": ("Sending" if tx.get("sent") and not tx.get("destination_error") else
+                                                   "Problem" if tx.get("destination_error") else "Starting")
+                                                  if tx.get("enabled") else "Off"}]
+        if not dest:
+            v_level, v_label, hint = WARNING, "No vehicle address", "Set the vehicle address in Maintenance, AIO NAV config."
+        elif not tx.get("enabled"):
+            v_level, v_label, hint = IDLE, "Ready signal off", "The vehicle gets navigation data but no Ready signal."
+        elif tx.get("destination_error") or tx.get("errors"):
+            v_level, v_label, hint = WARNING, "Problem", tx.get("destination_error") or tx.get("last_error") or ""
+        else:
+            v_level, v_label, hint = HEALTHY, "Sending", "Sent over UDP: the vehicle does not reply, so delivery is not confirmed."
+        steps.append({"key": "vehicle", "name": "Vehicle link", "level": v_level, "label": v_label,
+                      "rows": rows, "hint": hint})
+        return steps
 
     def _health_view(self, shown: str, r: Dict) -> Dict:
         """What the pages show. The product state as before, except where readiness knows more:
@@ -560,19 +704,24 @@ class HealthEngine:
         elif r["state"] == "DEGRADED" and shown in (READY, INITIALIZING):
             state, lines, step = DEGRADED, ["Navigation degraded: " + why, r["action_text"]], None
         elif r["state"] == "REFINING" and shown == READY:          # aligned, a required condition is missing
-            state, lines, step = INITIALIZING, ["Waiting for: " + why, r["action_text"]], None
+            state, lines, step = INITIALIZING, ["Waiting for: " + why if why else "Finishing alignment", r["action_text"]], None
         elif r["state"] == "FAULT" and "OWNERSHIP_CONFLICT" in r["inhibit"]:
             state, lines, step = PRODUCT_FAULT, [why, "Maintenance is needed before AIO NAV can be used."], None
         elif r["state"] == "FAULT" and r["requested_action"] == "SAFE_STOP" and shown != PRODUCT_FAULT:
             state, lines, step = PRODUCT_FAULT, [why, r["action_text"]], None
-        elif r["state"] == "FAULT" and "STARTUP_TIMEOUT" in r["inhibit"] and shown == STOPPED:
-            state, lines, step = PRODUCT_FAULT, [why, "Automatic start gave up. Press Start to try again."], None
+        elif r["state"] == "FAULT" and "STARTUP_TIMEOUT" in r["inhibit"] and shown in (STOPPED, PRODUCT_FAULT, STARTING):
+            hint = ("Check the sensors; it starts as soon as they are there, or press Start."
+                    if (r.get("autostart") or {}).get("state") == "prereq_timeout"
+                    else "Automatic start gave up. Press Start to try again.")
+            state, lines, step = PRODUCT_FAULT, [why, hint], None
         elif r["state"] == "CHECKING" and shown in (STOPPED, PRODUCT_FAULT, PRODUCT_UNKNOWN):
             state, lines, step = STARTING, ["Starting automatically", why], None
         elif r["state"] == "MAINTENANCE" and "MAINTENANCE_HOLD" in r["inhibit"]:
             lines = ["Stopped by an operator",
-                     "Press Start to resume" + (", or switch the system off and on." if auto.get("enabled") else ".")]
-        return {"state": state, "since_s": self._clock() - self.product.since,
+                     "Press Resume to start it again" + (", or switch the system off and on." if auto.get("enabled") else ".")]
+        if state != self._view_state:                  # "for 0:12": time in the state shown,
+            self._view_state, self._view_since = state, self._clock()   # not in the debounced one
+        return {"state": state, "since_s": self._clock() - self._view_since,
                 "title": lines[0] if lines else "", "detail": lines[1] if len(lines) > 1 else "",
                 "reasons": [x for x in lines if x], "step": step,
                 "action": r["requested_action"], "readiness": r["state"]}

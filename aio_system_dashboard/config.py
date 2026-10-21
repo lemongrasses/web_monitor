@@ -89,8 +89,12 @@ DEFAULTS: Dict[str, Any] = {
     # fresh output, as before. require: extra conditions, each held stable_s before READY counts
     # and lost after failing loss_s: imu, gnss, gnss_quality, dso, vehicle_route, storage.
     "readiness": {"require": [], "stable_s": 2.0, "loss_s": 1.0,
+                  # RTK: READY needs a GNSS position of at least gnss_min_quality (gnss + gnss_quality).
+                  # Switchable on Maintenance > Overview (kept in state/readiness.json).
+                  "require_rtk": True,
                   "gnss_min_quality": "float",   # for gnss_quality: spp, float or fixed
                   "gnss_stable_s": 3.0,
+                  "gnss_loss_s": 3.0,            # GNSS lost this long before READY drops (trees, bridges)
                   "imu_topic": "auto",           # a ros.topics name; auto: the first one in group nav
                   "dso_stale_s": 1.0,            # DSO odometry older than this is not ready
                   # "Vehicle still" from the IMU (2 s of samples): largest rotation rate and the
@@ -106,6 +110,8 @@ DEFAULTS: Dict[str, Any] = {
     "autostart": {"enabled": True,
                   "prerequisites": ["imu"],      # readiness conditions to wait for: imu, gnss
                   "prerequisite_stable_s": 2.0,
+                  "prerequisite_timeout_s": 120.0,  # still missing after this: a fault (it keeps waiting)
+                  "start_services": [],          # user units to start if not running, e.g. [drivers]
                   "retry_backoff_s": [5, 15, 30, 60],   # waits between attempts; the last repeats
                   "max_attempts": 0,             # 0 = never give up
                   "stale_grace_s": 10.0,         # output stopped, inputs fine: restart after this
@@ -127,6 +133,10 @@ DEFAULTS: Dict[str, Any] = {
     "status_udp": {"enabled": True,
                    "destination": "auto",       # host:port; auto: output_udp of aio_nav.yaml
                    "message_id": 5, "rate_hz": 2.0},
+    # Wi-Fi on the user Settings page and Maintenance > Network (actions/wifi.py). Changes need a
+    # browser connected by cable (plus the password on Maintenance), and once:
+    # sudo deploy/install.sh --with-wifi (no root afterwards).
+    "wifi": {"enabled": True, "interface": "auto", "connect_timeout_s": 30, "ip_timeout_s": 30},
     "events": {"log_file": "logs/events.jsonl", "max_memory": 500},
     "actions": {"restart_timeout_s": 30.0, "diagnostic_timeout_s": 15.0,
                 "stop_grace_s": 5.0},  # stop_grace_s: SIGTERM -> SIGKILL delay for AIO NAV / DSO

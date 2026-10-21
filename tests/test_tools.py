@@ -364,6 +364,20 @@ class GuardWebTest(unittest.TestCase):
         self.post("/api/maint/auth/lock", {})
         self.assertEqual(self.post("/api/maint/aionav/live/save", save).status_code, 401)
 
+    def test_rtk_switch_needs_the_password_and_is_logged(self):
+        self.assertEqual(self.post("/api/maint/readiness/rtk", {"required": False}).status_code, 401)
+        self.post("/api/maint/auth/unlock", {"password": "right-password"})
+        self.assertEqual(self.post("/api/maint/readiness/rtk", {"required": "no"}).status_code, 400)
+        r = self.post("/api/maint/readiness/rtk", {"required": False})
+        self.assertEqual(r.status_code, 409)                       # turning it off needs a confirm
+        self.assertTrue(r.get_json()["needs_confirm"])
+        j = self.post("/api/maint/readiness/rtk", {"required": False, "confirm": True}).get_json()
+        self.assertTrue(j["success"])
+        from aio_system_dashboard.state.health import rtk_setting
+        required, source, info = rtk_setting(self.ctx.cfg)
+        self.assertEqual((required, source), (False, "saved setting"))
+        self.assertIn("RTK no longer required for Ready", self.events)
+
     def test_saved_but_restart_failed_is_not_a_success(self):
         self.post("/api/maint/auth/unlock", {"password": "right-password"})
         nav = self.ctx.cfg["nav"]["service"]

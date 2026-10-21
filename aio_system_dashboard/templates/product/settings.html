@@ -1,0 +1,146 @@
+{% extends "product/base.html" %}
+{% from "product/_ui.html" import link %}
+{% block title %}{{ _("Settings") }} · AIO Navigation{% endblock %}
+{% block content %}
+<div x-data="settingsPage()" class="u-settings">
+  <h1>{{ _("Settings") }}</h1>
+
+  <!-- Wi-Fi: pick a network, type the password, connect. Only from a computer on a cable. -->
+  <section class="u-sec" aria-labelledby="wifi-h">
+    <h2 id="wifi-h">{{ _("Wi-Fi") }}</h2>
+    <div class="u-list">
+      <div class="u-item">
+        <div class="u-item-main">
+          <div class="u-item-title" x-text="wifi ? (wifiNow() || AIO.tr('Not connected')) : AIO.tr('Loading…')"></div>
+          <div class="u-item-sub" x-show="wifi && wifi.ipv4 && wifi.ipv4.length" x-text="wifi && wifi.ipv4 ? wifi.ipv4.join(', ') : ''"></div>
+        </div>
+        <span class="u-dot" :class="wifi && wifi.connection ? 'is-healthy' : 'is-idle'"></span>
+      </div>
+      <template x-if="wifi && !wifi.available">
+        <div class="u-item"><span class="u-muted">{{ _("This device has no Wi-Fi that can be set up here.") }}</span></div>
+      </template>
+      <template x-if="wifi && wifi.available && !wifi.may_change">
+        <div class="u-item stack">
+          <div class="u-callout">
+            <strong>{{ _("Connect with a network cable to change Wi-Fi.") }}</strong>
+            {{ _("Your computer reaches this device over Wi-Fi or another network, and changing Wi-Fi could cut it off.") }}
+          </div>
+        </div>
+      </template>
+      <template x-if="wifi && wifi.available && wifi.may_change">
+        <form class="u-item stack" @submit.prevent="connect(false)" autocomplete="off">
+          <label class="u-field" for="wifi-net"><span class="u-label">{{ _("Network") }}</span></label>
+          <div class="u-with-btn">
+            <select id="wifi-net" class="u-select" x-model="choice" @change="picked()" :disabled="!!busy">
+              <option value="" x-text="scanning ? AIO.tr('Searching for networks…') : AIO.tr('Choose a network')"></option>
+              <template x-for="n in networks" :key="n.ssid">
+                <option :value="n.ssid" x-text="netText(n)"></option>
+              </template>
+              <option value="__other__">{{ _("Other network (hidden)…") }}</option>
+            </select>
+            <button type="button" class="u-btn u-btn-quiet u-icon-btn" @click="scan()" :disabled="!!busy || scanning"
+                    title="{{ _('Search again') }}" aria-label="{{ _('Search again') }}">
+              <svg viewBox="0 0 16 16" aria-hidden="true" :class="scanning ? 'spin' : ''"><path d="M13 8a5 5 0 1 1-1.5-3.55M13 2.5v3h-3" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            </button>
+          </div>
+          <label class="u-field" x-show="choice === '__other__'" x-cloak><span class="u-label">{{ _("Network name") }}</span>
+            <input id="wifi-ssid" class="u-input" x-model="ssid" maxlength="32"></label>
+          <label class="u-field" x-show="needsPassword()" x-cloak><span class="u-label">{{ _("Password") }}</span>
+            <span class="u-with-btn">
+              <input id="wifi-pw" class="u-input" :type="showPw ? 'text' : 'password'" x-model="password" maxlength="63" autocomplete="new-password">
+              <button type="button" class="u-btn u-btn-quiet" @click="showPw = !showPw" x-text="showPw ? AIO.tr('Hide') : AIO.tr('Show')"></button>
+            </span></label>
+          <div class="u-actions">
+            <button class="u-btn" :disabled="!!busy || !target() || !pwOk()">
+              <span x-show="busy === 'connect'" class="spinner-border spinner-border-sm" aria-hidden="true"></span>
+              <span x-text="busy === 'connect' ? AIO.tr('Connecting…') : AIO.tr('Connect')"></span>
+            </button>
+            <span class="u-hint" x-text="busy === 'connect' ? AIO.tr('This can take up to a minute. If it fails, the previous Wi-Fi comes back.') : AIO.tr('If the new network fails, the previous Wi-Fi comes back.')"></span>
+          </div>
+          <div class="u-callout warn mt-3" x-show="confirmRisks.length" x-cloak role="alertdialog">
+            <strong>{{ _("Change Wi-Fi now?") }}</strong>
+            <ul><template x-for="r in confirmRisks" :key="r"><li x-text="r"></li></template></ul>
+            <div class="d-flex gap-2">
+              <button type="button" class="u-btn u-btn-sm" @click="connect(true)">{{ _("Change Wi-Fi") }}</button>
+              <button type="button" class="u-btn u-btn-sm u-btn-quiet" @click="confirmRisks = []">{{ _("Cancel") }}</button>
+            </div>
+          </div>
+          <p class="u-result" :class="resultClass" x-show="result" x-cloak role="status" x-text="result"></p>
+        </form>
+      </template>
+    </div>
+  </section>
+
+  <!-- Ready requirement: RTK on (default) or off, with a confirm to turn it off. -->
+  <section class="u-sec" aria-labelledby="rtk-h" x-show="cfg" x-cloak>
+    <h2 id="rtk-h">{{ _("Position accuracy for Ready") }}</h2>
+    <div class="u-list">
+      <div class="u-item">
+        <div class="u-item-main">
+          <div class="u-item-title" id="rtk-label">{{ _("Require RTK before Ready") }}</div>
+          <div class="u-item-sub" x-text="rtkExplain()"></div>
+        </div>
+        <button type="button" id="rtk-sw" class="u-switch" role="switch" aria-labelledby="rtk-label"
+                :aria-checked="cfg && cfg.rtk.required ? 'true' : 'false'" :disabled="rtkBusy" @click="toggleRtk()"></button>
+      </div>
+      <div class="u-item">
+        <span>{{ _("GNSS now") }}</span>
+        <span class="u-item-end"><span class="u-dot" :class="'is-' + ind('gnss').level"></span><span x-text="ind('gnss').label"></span></span>
+      </div>
+      <div class="u-item" x-show="cfg && cfg.rtk.changed_at">
+        <span>{{ _("Last changed") }}</span>
+        <span class="u-item-end u-muted" x-text="cfg && cfg.rtk.changed_at ? fmt.datetime(cfg.rtk.changed_at) : ''"></span>
+      </div>
+      <div class="u-item stack" x-show="rtkAsk || rtkMsg" x-cloak>
+        <div class="u-callout warn" x-show="rtkAsk" role="alertdialog">
+          <strong>{{ _("Turn off the RTK requirement?") }}</strong>
+          <p class="mb-2">{{ _("Ready can then be given with a normal GNSS position, accurate to a few metres. Use this only where RTK is not available.") }}</p>
+          <div class="d-flex gap-2">
+            <button type="button" class="u-btn u-btn-sm" @click="setRtk(false, true)">{{ _("Turn off") }}</button>
+            <button type="button" class="u-btn u-btn-sm u-btn-quiet" @click="rtkAsk = false">{{ _("Keep RTK") }}</button>
+          </div>
+        </div>
+        <p class="u-result mt-0" :class="rtkClass" x-show="rtkMsg && !rtkAsk" role="status" x-text="rtkMsg"></p>
+      </div>
+    </div>
+  </section>
+
+  <!-- Automatic start: what happens at power-on, and Resume after an operator Stop. -->
+  <section class="u-sec" aria-labelledby="auto-h" x-show="cfg" x-cloak>
+    <h2 id="auto-h">{{ _("Automatic start") }}</h2>
+    <div class="u-list">
+      <div class="u-item">
+        <div class="u-item-main">
+          <div class="u-item-title"><span x-text="autoChip().label"></span></div>
+          <div class="u-item-sub" x-text="autoExplain()"></div>
+        </div>
+        <div class="u-item-end">
+          <button type="button" class="u-btn u-btn-sm" x-show="cfg && cfg.autostart.hold && cfg.control" :disabled="ctlBusy"
+                  @click="runCtl('start').then(() => loadCfg())">{{ _("Resume") }}</button>
+          <span class="u-dot" x-show="!(cfg && cfg.autostart.hold)" :class="'is-' + autoChip().level"></span>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Vehicle link: where the data goes. Changing the address is a maintenance task. -->
+  <section class="u-sec" aria-labelledby="veh-h" x-show="cfg" x-cloak>
+    <h2 id="veh-h">{{ _("Vehicle link") }}</h2>
+    <div class="u-list">
+      <div class="u-item">
+        <div class="u-item-main">
+          <div class="u-item-title">{{ _("Vehicle address") }}</div>
+          <div class="u-item-sub">{{ _("Navigation data (0x04) and the Ready signal (0x05), on the same port") }}</div>
+        </div>
+        <span class="u-item-end"><span class="u-dot" :class="'is-' + vehicleChip().level"></span>
+          <span x-text="cfg && cfg.vehicle.nav ? cfg.vehicle.nav : AIO.tr('Not set')"></span></span>
+      </div>
+      <div class="u-item" x-show="cfg && cfg.vehicle.status.enabled">
+        <span>{{ _("Ready signals sent") }}</span>
+        <span class="u-item-end" x-text="cfg ? (cfg.vehicle.status.sent || 0).toLocaleString() : ''"></span>
+      </div>
+    </div>
+    <p class="u-hint mt-2 ms-1">{{ _("UDP has no reply, so delivery is not confirmed here. The vehicle address is set on the Maintenance page (AIO NAV config).") }}</p>
+  </section>
+</div>
+{% endblock %}

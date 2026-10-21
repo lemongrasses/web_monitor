@@ -1,10 +1,11 @@
 {
   "_help": "Edit while the dashboard runs (fake mode). services: running|stopped|failed|not_installed. devices: true/false reachable. ros.topics: healthy|low_rate|stale|missing or {state, hz}. pids: change aio_nav pid to simulate a node restart. vehicle: still|moving (IMU motion and speed).",
   "services": {
-    "aio_nav": "running",
+    "aio_nav": "stopped",
     "camera": "running",
     "ouster": "running",
-    "dashboard": "running"
+    "dashboard": "running",
+    "dso": "stopped"
   },
   "pids": {
     "aio_nav": 4242

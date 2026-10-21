@@ -109,6 +109,16 @@
         return this.lvl(c.required ? "fault" : "idle", c.required ? "Not ready" : "No");
       },
       hex(v) { return v == null ? "—" : "0x" + Number(v).toString(16).padStart(5, "0"); },
+      rtkMsg: "", rtkBusy: false,
+      async setRtk(required) {
+        const q = required ? "Require RTK for Ready?" :
+          "Stop requiring RTK? Ready will then be given with SPP accuracy.";
+        if (!confirm(q)) return;
+        this.rtkBusy = true;
+        const j = await this.toolFetch("/api/maint/readiness/rtk", { method: "POST", body: JSON.stringify({ required, confirm: true }) });
+        this.rtkBusy = false;
+        this.rtkMsg = j.summary || "";
+      },
       get stateReasons() {
         if (!this.connected) return ["Lost connection to the dashboard. Values on this page are not live."];
         const h = this.d && this.d.product && this.d.product.health;

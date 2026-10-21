@@ -1,66 +1,54 @@
 {% extends "product/base.html" %}
-{% from "macros.html" import chip, annun, heading_arrow, output_line %}
-{% block title %}Overview · AIO Navigation{% endblock %}
+{% from "product/_ui.html" import link %}
+{% block title %}{{ _("Overview") }} · AIO Navigation{% endblock %}
 {% block content %}
-
-{{ output_line() }}
-
-<div class="row g-3">
-  <div class="col-lg-8">
-    <div class="position-relative">
-      <div id="map-overview" class="map map-overview" data-navmap="short"></div>
-      <div class="map-ctrl">
-        <button class="btn btn-sm" x-show="!follow" x-cloak @click="setFollow(true)">Follow vehicle</button>
-      </div>
+<div class="u-grid">
+  <div class="u-map-wrap">
+    <div id="map-overview" class="u-map" data-navmap="short" role="img" aria-label="{{ _('Map with the vehicle and its recent track') }}"></div>
+    <div class="u-map-tools">
+      <button class="u-btn u-btn-sm" x-show="!follow" x-cloak @click="setFollow(true)">{{ _("Follow vehicle") }}</button>
     </div>
   </div>
 
-  <div class="col-lg-4">
-    <div class="panel h-100 readout" :class="fresh ? '' : 'stale'">
-      <div class="panel-b">
-        <div class="vgroup">
-          <div class="small-caps mb-1">Position</div>
-          <div class="vrow"><span class="k">Latitude</span><span class="v"><span x-text="latlon('latitude')">—</span><span class="u">°</span></span></div>
-          <div class="vrow"><span class="k">Longitude</span><span class="v"><span x-text="latlon('longitude')">—</span><span class="u">°</span></span></div>
-          <div class="vrow"><span class="k">Height</span><span class="v"><span x-text="v('height', 2)">—</span><span class="u">m</span></span></div>
-        </div>
-        <div class="vgroup">
-          <div class="small-caps mb-1">Motion</div>
-          <div class="vrow"><span class="k">Heading</span>
-            <span class="v"><span x-text="heading360()">—</span><span class="u">°</span><span x-show="hasHeading()">{{ heading_arrow('hdgRot') }}</span></span></div>
-          <div class="vrow"><span class="k">Speed</span><span class="v"><span x-text="v('speed', 2)">—</span><span class="u">m/s</span></span></div>
-        </div>
-        <div class="vgroup">
-          <div class="small-caps mb-1">Attitude</div>
-          <div class="vrow"><span class="k">Roll</span><span class="v"><span x-text="v('roll', 2)">—</span><span class="u">°</span></span></div>
-          <div class="vrow"><span class="k">Pitch</span><span class="v"><span x-text="v('pitch', 2)">—</span><span class="u">°</span></span></div>
-        </div>
-        <p class="muted small mt-3 mb-0" x-show="s && s.solution && !fresh" x-cloak>Showing the last known values. No fresh NAV data.</p>
-      </div>
+  <section class="u-readout" :class="fresh ? '' : 'stale'" aria-label="{{ _('Position') }}">
+    <div class="u-group u-big">
+      <h2>{{ _("Position") }}</h2>
+      <div class="u-kv"><span>{{ _("Latitude") }}</span><span class="u-val"><span x-text="latlon('latitude')">—</span><small>°</small></span></div>
+      <div class="u-kv"><span>{{ _("Longitude") }}</span><span class="u-val"><span x-text="latlon('longitude')">—</span><small>°</small></span></div>
+      <div class="u-kv"><span>{{ _("Height") }}</span><span class="u-val"><span x-text="v('height', 2)">—</span><small>m</small></span></div>
     </div>
-  </div>
+    <div class="u-group">
+      <h2>{{ _("Motion") }}</h2>
+      <div class="u-kv"><span>{{ _("Heading") }}</span><span class="u-val"><span x-text="heading360()">—</span><small>°</small>
+        <span x-show="hasHeading()"><svg class="hdg" :style="'transform: rotate(' + hdgRot + 'deg)'" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2 L19 20 L12 15.5 L5 20 Z" fill="currentColor"/></svg></span></span></div>
+      <div class="u-kv"><span>{{ _("Speed") }}</span><span class="u-val"><span x-text="v('speed', 2)">—</span><small>m/s</small></span></div>
+    </div>
+    <div class="u-group">
+      <h2>{{ _("Attitude") }}</h2>
+      <div class="u-kv"><span>{{ _("Roll") }}</span><span class="u-val"><span x-text="v('roll', 2)">—</span><small>°</small></span></div>
+      <div class="u-kv"><span>{{ _("Pitch") }}</span><span class="u-val"><span x-text="v('pitch', 2)">—</span><small>°</small></span></div>
+    </div>
+    <p class="u-note" x-show="s && s.solution && !fresh" x-cloak>{{ _("Showing the last known values. No fresh NAV data.") }}</p>
+  </section>
 </div>
 
-<div class="annun-row mt-3">
-  {{ annun('Alignment', "ind('alignment')") }}
-  {{ annun('Initial heading', "ind('heading_valid')") }}
-  {{ annun('Fine alignment', "ind('fine_alignment')") }}
-  {{ annun('GNSS', "ind('gnss')") }}
-  {% for key, dev in devices.items() %}{{ annun(dev.label, "ind('" ~ key ~ "')") }}{% endfor %}
-  {{ annun('Network', "ind('network')") }}
+<!-- What the system sends and talks to: one quiet line -->
+<div class="u-links" aria-label="{{ _('Connections') }}">
+  {{ link(_("Navigation output"), "udp", "outputText()") }}
+  {% for key, dev in devices.items() %}{{ link(_(dev.label), "ind('" ~ key ~ "')") }}{% endfor %}
+  {{ link(_("Sensor network"), "ind('network')") }}
 </div>
 
 <!-- Advisories inform; they never change Ready -->
-<template x-if="connected && s && s.advisories && s.advisories.length">
-  <div class="mt-2 d-flex flex-column gap-1">
-    <template x-for="a in s.advisories" :key="a.title">
-      <div class="advisory"><strong x-text="a.title"></strong><span class="ms-2 muted" x-text="a.detail"></span></div>
-    </template>
-  </div>
-</template>
-
-<div class="page-foot mt-3">
-  <span>Storage: <span x-text="storageText()">—</span></span>
-  <span>Device uptime <span x-text="fmt.duration(s && s.uptime_s)">—</span></span>
+<div class="u-advice" x-show="connected && s && s.advisories && s.advisories.length" x-cloak>
+  <template x-for="a in (s && s.advisories ? s.advisories : [])" :key="a.title">
+    <div><strong x-text="a.title"></strong><span x-text="a.detail"></span></div>
+  </template>
 </div>
+
+<footer class="u-foot">
+  <span>{{ _("Storage") }}: <span x-text="storageText()">—</span></span>
+  <span x-show="linkText()" x-cloak x-text="linkText()" title="{{ _('For comparing with the vehicle log') }}"></span>
+  <span>{{ _("Device uptime") }} <span x-text="fmt.duration(s && s.uptime_s)">—</span></span>
+</footer>
 {% endblock %}

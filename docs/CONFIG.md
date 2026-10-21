@@ -173,16 +173,19 @@ The dashboard keeps one *readiness* snapshot: the state for the vehicle (`BOOTIN
 and of every reason the output must not be used. The pages, `GET /api/readiness` and the 0x05
 status packet (section 4.2c) all show this same snapshot.
 
-By default READY means exactly what it meant before: AIO NAV running, fresh output, the
-`nav.ready_requires` flags set. `require` adds conditions on top.
+READY needs AIO NAV running with fresh output and the `nav.ready_requires` flags set, and, by
+default, **RTK**: a GNSS position of at least RTK float (`require_rtk`). `require` adds further
+conditions.
 
 | Key | Default | Meaning |
 |-----|---------|---------|
+| `require_rtk` | `true` | READY needs a GNSS position of at least `gnss_min_quality` (RTK float). Switch it on the user **Settings** page (turning it off asks for a confirmation) or on **Maintenance → Overview → Readiness for the vehicle** (password); recorded in the event log and kept in `state/readiness.json`, which then wins over this value. Or set it here. |
 | `require` | `[]` | Extra conditions for READY. Any of: `imu` (the IMU topic is healthy), `gnss` (the receiver reports a position), `gnss_quality` (at least `gnss_min_quality`), `dso` (DSO odometry is fresh and valid), `vehicle_route` (the kernel has a route to the `output_udp` destination), `storage` (disk below `system.disk_warn_percent`). |
 | `stable_s` | `2.0` | A condition must hold this long before READY counts it. |
 | `loss_s` | `1.0` | Once counted, a condition is dropped only after failing this long, so a single missed sample does not toggle READY. |
 | `gnss_min_quality` | `float` | For `gnss_quality`: `spp`, `float` or `fixed`. A position the driver reports without a type but with good accuracy counts as float (it happens inside float periods). |
 | `gnss_stable_s` | `3.0` | `stable_s` for `gnss_quality`. |
+| `gnss_loss_s` | `3.0` | `loss_s` for GNSS: how long RTK may drop (trees, bridges) before READY becomes DEGRADED. Adjust per site. |
 | `imu_topic` | `auto` | Which `ros.topics` entry is the IMU for `imu`. `auto` = the first one in group `nav`. Its *state* is used, not its raw age, so it also works with `ros.sampling`. |
 | `dso_stale_s` | `1.0` | DSO odometry older than this is not ready. |
 | `dso_only_with_vupt` | `true` | With `dso` in `require`, DSO is only required when `Odometry.vupt` is on in `aio_nav.yaml` (AIO NAV uses it). |
@@ -191,18 +194,27 @@ After READY was reached in a navigation run, losing a required condition (or the
 gives **DEGRADED** with the action *stop using navigation*, never a return to the alignment
 prompts: the vehicle may be moving. A new run (AIO NAV restarted) starts the flow again.
 
-> Requiring `gnss_quality` makes READY wait for RTK. That fits a demonstration with a working
-> RTK link; without RTK (only SPP) the system never becomes READY. Decide per site.
+> With RTK required, a site without RTK (only SPP) never becomes READY: switch RTK off there.
+> An unknown name in `require` (a typo) blocks READY with `CONFIG_INVALID` instead of being ignored.
 
 ### 4.2b `autostart`: start AIO NAV by itself after power-on
 
 | Key | Default | Meaning |
 |-----|---------|---------|
-| `enabled` | `false` | `true` starts AIO NAV and DSO (`nav.control_group`) after the dashboard starts. Needs `nav.allow_control: true`. |
+| `enabled` | `false` (shipped config: `true`) | `true` starts AIO NAV and DSO (`nav.control_group`) after the dashboard starts. Needs `nav.allow_control: true`. |
 | `prerequisites` | `[]` | Readiness conditions (see 4.2a, e.g. `imu`, `gnss`) that must hold before the first start, so AIO NAV does not start while sensors are still coming up. |
 | `prerequisite_stable_s` | `2.0` | How long the prerequisites must hold. |
+| `prerequisite_timeout_s` | `120` | A prerequisite still missing after this is a **Fault** (for example *IMU data not available after 120 s*). It keeps waiting and starts as soon as the prerequisite appears, or when someone presses **Start**. |
+| `start_services` | `[]` | Services with a `user_unit` (e.g. `drivers`) to start if they are not running, before waiting for the prerequisites. `install.sh` then enables *lingering* for the service user, so the user unit can start at power-on with nobody logged in. |
 | `retry_backoff_s` | `[5, 15, 30, 60]` | Before READY: if AIO NAV does not start, exits, or sends nothing within `nav.startup_timeout_s`, it is stopped and tried again after these waits. |
 | `max_attempts` | `5` | After this many attempts the state is **Fault** (*automatic start gave up*); **Start** tries again. |
+
+The shipped `config/dashboard.yaml` turns this on: power-on runs
+BOOTING → CHECKING (sensor drivers started if needed, then IMU data and a GNSS position) →
+NAV_STARTING (AIO NAV, then DSO) → KEEP_STILL → MOVE_STRAIGHT → REFINING → READY (RTK float).
+Only AIO NAV decides whether a start worked: DSO starts with it, and a DSO failure is handled by
+the DSO watchdog, never by restarting AIO NAV. An existing installation keeps its own config;
+compare it with `dashboard.yaml.new`, or re-install with `--reset-config`.
 
 Rules that always apply:
 
@@ -219,9 +231,9 @@ Rules that always apply:
 
 | Key | Default | Meaning |
 |-----|---------|---------|
-| `enabled` | `false` | `true` sends the readiness snapshot as a 42-byte 0x05 packet (format: [Operation manual, section 6.8](OPERATION.md#68-status-packet-0x05)). |
-| `destination` | `auto` | `host:port`. `auto` = `output_udp` of `aio_nav.yaml`, the same address and port the vehicle reads 0x04 from; it tells them apart by message id. The dashboard's own listener (`nav.udp_bind`) is refused. |
-| `message_id` | `5` | Change only if AIO NAV and the vehicle team assign another id. |
+| `enabled` | `false` (shipped config: `true`) | `true` sends the readiness snapshot as a 42-byte 0x05 packet (format: [Operation manual, section 6.8](OPERATION.md#68-status-packet-0x05)). |
+| `destination` | `auto` | IPv4 `address:port`. `auto` = the `output_udp` address **and port** of `aio_nav.yaml`: 0x05 arrives on the same socket as 0x04 and the receiver tells them apart by the message ID. Write an address only if the vehicle wants 0x05 on its own port. Host names are refused (no DNS lookups on the 5 Hz path), and so is the dashboard's own listener (`nav.udp_bind`). |
+| `message_id` | `5` | 0x05 is reserved for this packet (AIO NAV only sends 0x04). |
 | `rate_hz` | `2.0` | Packets per second; a change of state, action or inhibit mask is sent at once. It keeps sending after READY. |
 
 The Maintenance Overview shows the readiness snapshot, the condition table, the automatic
@@ -303,6 +315,35 @@ ros2 param get /ouster/os_driver sensor_hostname   # Ouster IP (node name may di
 |-----|---------|---------|
 | `sensor_interface` | `auto` | Network interface connected to the sensor LAN, e.g. `eth0`. `auto` = the interface that routes to a device `host`, else the one with the default route. Shown as the **Network** lamp (link up or down). List interfaces with `ip -br link`. |
 | `ping_interval_s` | `5` | Seconds between ping checks of device `host`s. |
+
+### 4.5a `wifi`: Wi-Fi on the Settings page and the Maintenance page
+
+The user **Settings** page (a network list, password, Connect) and **Maintenance → Network →
+Wi-Fi** scan for networks and connect to one. Both use the same code and the same rules.
+
+| Key | Default | Meaning |
+|-----|---------|---------|
+| `enabled` | `true` | Show the Wi-Fi panel (when NetworkManager manages a Wi-Fi adapter). |
+| `interface` | `auto` | The Wi-Fi adapter; `auto` = the first one. |
+| `connect_timeout_s` | `30` | How long to wait for the network to accept the connection. |
+| `ip_timeout_s` | `30` | How long to wait for an IPv4 address afterwards. |
+
+Rules:
+
+- **One-time setup, no root afterwards:** `sudo deploy/install.sh --with-wifi` installs a polkit
+  rule that lets the service user (only) manage NetworkManager. Without it the page says so.
+  This also allows that user to change wired profiles; the dashboard itself only ever touches
+  Wi-Fi profiles. `uninstall.sh` removes the rule.
+- **Only from a cable:** a change is accepted only when *your browser's* connection to the device
+  goes over Ethernet (or you are on the device itself). From a browser on Wi-Fi or a VPN the
+  page refuses, so a change can never cut off the page that made it.
+- **Safe fallback:** if the new network fails (wrong password, no address within
+  `ip_timeout_s`), the new profile is deleted and the previous Wi-Fi comes back.
+- **Asks first** while navigation is Ready / Degraded, or when the vehicle output or the internet
+  route (RTK corrections) goes over Wi-Fi.
+- No password on the user Settings page (the cable rule above protects it); the maintenance
+  password on the Maintenance page. Every change is recorded in the event log; the Wi-Fi password
+  is never logged, shown or returned.
 
 ### 4.6 `system`: Jetson health
 

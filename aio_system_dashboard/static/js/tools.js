@@ -7,6 +7,45 @@
     method: "POST", headers: { "Content-Type": "application/json", "X-Requested-With": "aio-dashboard" },
     body: JSON.stringify(body || {}) }).then((r) => r.json());
 
+  // ======================================================================= Wi-Fi (Network page)
+  window.wifiPanel = function () {
+    return {
+      st: null, networks: [], ssid: "", password: "", hidden: false, showPw: false,
+      busy: "", msg: "", msgClass: "", confirmText: "",
+      async init() { await this.refresh(); },
+      async refresh() {
+        try { this.st = await (await fetch("/api/maint/wifi", { cache: "no-store" })).json(); }
+        catch (e) { this.st = { available: false, reason: "cannot read Wi-Fi state" }; }
+      },
+      async scan() {
+        this.busy = "scan"; this.msg = "";
+        const j = await postJson("/api/maint/wifi/scan", { rescan: true });
+        this.busy = "";
+        if (j.success) this.networks = j.networks; else { this.msg = j.summary; this.msgClass = "bad"; }
+      },
+      pick(n) { this.ssid = n.ssid; this.password = ""; this.hidden = false; this.confirmText = ""; this.msg = ""; },
+      async connect(confirm) {
+        this.busy = "connect"; this.confirmText = "";
+        this.msg = "Connecting to " + this.ssid + "… (up to a minute; the previous Wi-Fi comes back if it fails)";
+        this.msgClass = "";
+        const j = await this.toolFetch("/api/maint/wifi/connect", { method: "POST",
+          body: JSON.stringify({ ssid: this.ssid, password: this.password, hidden: this.hidden, confirm: !!confirm }) });
+        this.busy = "";
+        if (j.needs_confirm) { this.confirmText = j.summary; this.msg = ""; return; }
+        this.msg = j.summary || ""; this.msgClass = j.success ? "ok" : "bad";
+        if (j.success) this.password = "";
+        await this.refresh();
+      },
+      stageText() {
+        const r = this.st && this.st.last_result;
+        if (!r || !r.stages) return "";
+        const s = r.stages;
+        return "Last change (" + r.ssid + "): saved " + (s.saved ? "yes" : "no") + ", joined " + (s.associated ? "yes" : "no") +
+               ", IP address " + (s.ip ? "yes" : "no");
+      },
+    };
+  };
+
   // ======================================================================= config editor
   window.configPage = function () {
     return {

@@ -4,10 +4,13 @@ Called from the health step (about 5 Hz): a packet goes out every 1/rate_hz seco
 when the state, requested action or inhibit mask changes, so a transition never waits for the
 next tick. It keeps sending after READY: silence must mean "do not use".
 
-Destination: status_udp.destination, or "auto" = output_udp of the active aio_nav.yaml (the same
-host and port the vehicle reads 0x04 from; it tells the two apart by message id). The dashboard's
-own NAV listener (nav.udp_bind) is refused as a destination: it would count every status packet
-as a bad NAV packet. A failed send is counted and shown, never raised.
+Destination: status_udp.destination, or "auto" = output_udp of the active aio_nav.yaml, the
+same address and port where the vehicle already reads 0x04. Any number of senders may send to
+one UDP port, so the vehicle keeps one socket and one 55 AA frame parser and tells the packets
+apart by the message ID byte (0x04: 156 bytes, 0x05: 42 bytes). An explicit "IPv4:port" sends
+it elsewhere. The dashboard's own NAV listener (nav.udp_bind) is refused as a destination: it
+would count every status packet as a bad NAV packet. A failed send is counted and shown, never
+raised.
 """
 
 import ipaddress
@@ -43,9 +46,10 @@ class StatusUdpPublisher:
         """((host, port), "") or (None, why not)."""
         want = str(self.cfg["status_udp"].get("destination") or "auto")
         if want == "auto":
-            want = self.cfg.aio_nav.get("output_udp") or ""
-            if not want:
+            nav = parse_host_port(self.cfg.aio_nav.get("output_udp") or "")
+            if nav is None:
                 return None, "no destination: output_udp in aio_nav.yaml is empty"
+            want = f"{nav[0]}:{nav[1]}"                # 0x05 goes where 0x04 goes
         addr = parse_host_port(want)
         if addr is None:
             return None, f"invalid destination {want!r} (host:port)"

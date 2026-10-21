@@ -65,7 +65,7 @@
     <form class="panel shadow unlock-box" role="dialog" aria-modal="true" aria-labelledby="unlock-title" @submit.prevent="unlock()">
       <div class="panel-h"><strong id="unlock-title">Unlock maintenance tools</strong></div>
       <div class="panel-b">
-        <p class="small muted mb-2">The config editor and the terminal change this device. Enter the maintenance password. It stays unlocked for <span x-text="Math.round(auth.idle_s / 60)"></span> minutes without use.</p>
+        <p class="small muted mb-2">The config editor, the terminal, Wi-Fi and the RTK switch change this device. Enter the maintenance password. It stays unlocked for <span x-text="Math.round(auth.idle_s / 60)"></span> minutes without use.</p>
         <label class="small" for="unlock-pw">Password</label>
         <input id="unlock-pw" type="password" class="form-control" autocomplete="current-password" x-model="unlockPw" :disabled="!auth.configured">
         <p class="small mt-2 mb-0" :class="auth.configured ? 'text-danger' : 'muted'" x-show="unlockMsg" x-text="unlockMsg" role="alert"></p>

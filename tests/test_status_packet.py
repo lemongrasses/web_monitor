@@ -71,6 +71,7 @@ class PublisherTest(unittest.TestCase):
         tmp = tempfile.TemporaryDirectory()
         self.addCleanup(tmp.cleanup)
         y = Path(tmp.name) / "aio_nav.yaml"
+        # "auto" sends 0x05 where 0x04 goes: this receiver
         y.write_text(f"aio_nav_node:\n  ros__parameters:\n    output_udp: '127.0.0.1:{self.port}'\n")
         self.data = copy.deepcopy(DEFAULTS)
         self.data["nav"]["aio_nav_config"] = str(y)
@@ -100,6 +101,10 @@ class PublisherTest(unittest.TestCase):
         with self.assertRaises(socket.timeout):
             self.rx.recvfrom(256)
         self.assertEqual(p.status()["sent"], 3)
+
+    def test_auto_is_the_nav_address_and_port(self):
+        addr, why = self.pub().destination()
+        self.assertEqual(addr, ("127.0.0.1", self.port))
 
     def test_refuses_the_dashboards_own_listener(self):
         p = self.pub(destination="127.0.0.1:9000")

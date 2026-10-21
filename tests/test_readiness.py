@@ -283,9 +283,9 @@ class EngineTest(unittest.TestCase):
         r = self.run_for(eng, 2)
         self.assertEqual(r["state"], "READY")
         self.gnss("spp")                                             # lost after READY
-        r = self.run_for(eng, 0.6)
-        self.assertEqual(r["state"], "READY")                        # shorter than loss_s
-        r = self.run_for(eng, 1.0)
+        r = self.run_for(eng, 2.0)
+        self.assertEqual(r["state"], "READY")                        # shorter than gnss_loss_s (3 s)
+        r = self.run_for(eng, 1.6)
         self.assertEqual((r["state"], r["requested_action"]), ("DEGRADED", "SAFE_STOP"))
         self.assertEqual(self.store.get("product")["health"]["state"], "DEGRADED")
         self.new_process()                                           # a new AIO NAV run starts the flow again
@@ -422,6 +422,48 @@ class EngineTest(unittest.TestCase):
         r = self.run_for(eng, 4)
         self.assertEqual((r["state"], r["requested_action"]), ("MAINTENANCE", "MAINTENANCE_HOLD"))
         self.assertNotEqual(r["inhibit_flags"], 0)
+
+    def test_rtk_is_required_by_default_and_can_be_switched_off(self):
+        from aio_system_dashboard.state.health import set_rtk_setting
+        eng = self.engine()                                          # defaults: require_rtk true
+        self.aligned()
+        self.gnss("spp")
+        r = self.run_for(eng, 6)
+        self.assertEqual(r["state"], "REFINING")
+        self.assertIn("GNSS_QUALITY_LOW", r["inhibit"])
+        self.assertEqual((r["rtk_required"], r["rtk_source"]), (True, "config"))
+        set_rtk_setting(self.cfg, False, "192.0.2.1")                # the Maintenance switch
+        r = self.run_for(eng, 1)
+        self.assertEqual(r["state"], "READY")
+        self.assertEqual((r["rtk_required"], r["rtk_source"]), (False, "saved setting"))
+
+    def test_startup_checklist_follows_the_sequence(self):
+        self.data["autostart"]["start_services"] = ["drivers"]
+        self.data["services"]["drivers"] = {"label": "Sensor drivers", "user_unit": "d.service"}
+        eng = self.engine()
+        self.nav.latest, self.nav.age = {"alignment": True}, 0.01
+        self.gnss("spp")
+        self.run_for(eng, 4)
+        steps = {c["key"]: c for c in self.store.get("product")["checks"]}
+        self.assertEqual(list(steps), ["sensors", "gnss", "nav", "alignment", "vehicle"])
+        self.assertEqual((steps["sensors"]["level"], steps["sensors"]["label"]), ("warning", "Waiting"))
+        self.assertIn({"k": "Sensor drivers", "v": "Starting"}, steps["sensors"]["rows"])
+        self.assertEqual((steps["gnss"]["level"], steps["gnss"]["label"]), ("warning", "SPP"))
+        self.assertIn({"k": "RTK required for Ready", "v": "Yes (RTK float or fix)"}, steps["gnss"]["rows"])
+        self.assertEqual((steps["nav"]["level"], steps["nav"]["label"]), ("healthy", "Running"))
+        self.assertEqual((steps["alignment"]["level"], steps["alignment"]["label"]), ("warning", "Step 2 of 3"))
+        self.assertEqual(steps["vehicle"]["label"], "Ready signal off")       # no 0x05 sender here
+
+    def test_time_in_state_is_for_the_state_shown(self):
+        """Regression: "Degraded for 1:00" after a minute of Ready and a moment of Degraded."""
+        eng = self.engine()
+        self.aligned()
+        self.run_for(eng, 60)
+        self.gnss("spp")                                             # RTK lost: Degraded after 3 s
+        self.run_for(eng, 4)
+        h = self.store.get("product")["health"]
+        self.assertEqual(h["state"], "DEGRADED")
+        self.assertLess(h["since_s"], 2.0)
 
     def test_dso_only_required_when_vupt_is_on(self):
         eng = self.engine(require=["dso"])

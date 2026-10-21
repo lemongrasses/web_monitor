@@ -140,32 +140,39 @@ GNSS、相機、光達與網路只會產生提示，永遠不會讓 Ready 變成
 
 儀表板維護一份 *readiness* 快照：給車端的狀態（`BOOTING`、`CHECKING`、`NAV_STARTING`、`KEEP_STILL`、`MOVE_STRAIGHT`、`REFINING`、`READY`、`DEGRADED`、`FAULT`、`MAINTENANCE`）、操作人員該做的動作，以及兩組位元遮罩：哪些條件正常、以及所有禁止使用輸出的原因。網頁、`GET /api/readiness` 與 0x05 狀態封包（第 4.2c 節）顯示的都是同一份快照。
 
-預設情況下 READY 的意義與以前完全相同：AIO NAV 正在執行、輸出即時、`nav.ready_requires` 的旗標都成立。`require` 可以在此之上增加條件。
+READY 需要 AIO NAV 正在執行、輸出即時、`nav.ready_requires` 的旗標都成立，並且預設需要 **RTK**：GNSS 位置至少為 RTK float（`require_rtk`）。`require` 可以再增加其他條件。
 
 | 項目 | 預設值 | 說明 |
 |------|--------|------|
+| `require_rtk` | `true` | READY 需要 GNSS 位置至少為 `gnss_min_quality`（RTK float）。可在產品頁面的**設定**頁切換（關閉時會先確認），或在**維護頁面 → Overview → Readiness for the vehicle** 切換（需要密碼）；會記錄在事件紀錄，並保存在 `state/readiness.json`，之後以它為準。也可以在這裡設定。 |
 | `require` | `[]` | READY 的額外條件，可選：`imu`（IMU topic 正常）、`gnss`（接收器有位置）、`gnss_quality`（品質至少為 `gnss_min_quality`）、`dso`（DSO 里程計即時且有效）、`vehicle_route`（核心有通往 `output_udp` 目的地的路由）、`storage`（磁碟用量低於 `system.disk_warn_percent`）。 |
 | `stable_s` | `2.0` | 條件必須持續成立這麼久，READY 才會採計。 |
 | `loss_s` | `1.0` | 條件一旦被採計，要持續失敗這麼久才會被撤銷，避免偶爾掉一筆資料就讓 READY 跳動。 |
 | `gnss_min_quality` | `float` | `gnss_quality` 的門檻：`spp`、`float` 或 `fixed`。驅動程式未標示類型但精度良好的位置視為 float（這種情況出現在 float 期間內）。 |
 | `gnss_stable_s` | `3.0` | `gnss_quality` 使用的 `stable_s`。 |
+| `gnss_loss_s` | `3.0` | GNSS 使用的 `loss_s`：RTK 可以中斷多久（樹木、橋下）才讓 READY 變成 DEGRADED。請依場地調整。 |
 | `imu_topic` | `auto` | `imu` 條件使用 `ros.topics` 中的哪一個項目。`auto` = group 為 `nav` 的第一個。採用的是 topic 的*狀態*而非原始延遲，因此搭配 `ros.sampling` 也能正確運作。 |
 | `dso_stale_s` | `1.0` | DSO 里程計超過這個時間沒有更新即視為未就緒。 |
 | `dso_only_with_vupt` | `true` | `require` 含 `dso` 時，只有在 `aio_nav.yaml` 開啟 `Odometry.vupt`（AIO NAV 有使用 DSO）時才要求 DSO。 |
 
 某次導航執行一旦達到 READY，之後若必要條件（或對準）失效，會進入 **DEGRADED**，動作為「停止使用導航」，而不會回到對準提示：此時車輛可能正在行駛。新的一次執行（AIO NAV 重新啟動）才會重新開始流程。
 
-> 要求 `gnss_quality` 代表 READY 會等待 RTK。適合 RTK 連線正常的展示場合；若現場沒有 RTK（只有 SPP），系統將永遠不會 READY。請依場地決定。
+> 要求 RTK 時，沒有 RTK（只有 SPP）的場地永遠不會 READY：在那裡請把 RTK 關掉。
+> `require` 中若有不認得的名稱（打錯字），會以 `CONFIG_INVALID` 擋住 READY，而不是被忽略。
 
 ### 4.2b `autostart`：開機後自動啟動 AIO NAV
 
 | 項目 | 預設值 | 說明 |
 |------|--------|------|
-| `enabled` | `false` | `true` 會在儀表板啟動後自動啟動 AIO NAV 與 DSO（`nav.control_group`）。需要 `nav.allow_control: true`。 |
+| `enabled` | `false`（隨附設定：`true`） | `true` 會在儀表板啟動後自動啟動 AIO NAV 與 DSO（`nav.control_group`）。需要 `nav.allow_control: true`。 |
 | `prerequisites` | `[]` | 第一次啟動前必須成立的 readiness 條件（見 4.2a，例如 `imu`、`gnss`），避免在感測器尚未就緒時啟動 AIO NAV。 |
 | `prerequisite_stable_s` | `2.0` | 前置條件需要持續成立的時間。 |
+| `prerequisite_timeout_s` | `120` | 超過這個時間仍缺少前置條件即為 **Fault**（例如「IMU data not available after 120 s」）。它會繼續等待，條件一出現就啟動，或由操作人員按 **Start**。 |
+| `start_services` | `[]` | 具有 `user_unit` 的服務（例如 `drivers`），若沒有在執行，會在等待前置條件之前先啟動。`install.sh` 會為服務使用者開啟 *lingering*，讓這個 user unit 在沒有人登入時也能於開機啟動。 |
 | `retry_backoff_s` | `[5, 15, 30, 60]` | READY 之前：若 AIO NAV 啟動失敗、自行結束，或在 `nav.startup_timeout_s` 內沒有任何輸出，會先停止，再依這些等待時間重試。 |
 | `max_attempts` | `5` | 超過這個次數後狀態變成 **Fault**（*automatic start gave up*）；按 **Start** 可再試一次。 |
+
+隨附的 `config/dashboard.yaml` 已開啟這個功能，開機流程為：BOOTING → CHECKING（必要時先啟動感測器驅動，再等待 IMU 資料與 GNSS 位置）→ NAV_STARTING（AIO NAV，接著 DSO）→ KEEP_STILL → MOVE_STRAIGHT → REFINING → READY（RTK float）。啟動是否成功只看 AIO NAV：DSO 會一起啟動，DSO 的失敗交給 DSO watchdog 處理，絕不會因此重新啟動 AIO NAV。已安裝的裝置會保留自己的設定；請與 `dashboard.yaml.new` 比較，或以 `--reset-config` 重新安裝。
 
 固定適用的規則：
 
@@ -178,9 +185,9 @@ GNSS、相機、光達與網路只會產生提示，永遠不會讓 Ready 變成
 
 | 項目 | 預設值 | 說明 |
 |------|--------|------|
-| `enabled` | `false` | `true` 會把 readiness 快照以 42 位元組的 0x05 封包送出（格式見[操作手冊第 6.8 節](OPERATION.zh-TW.md#sec6)）。 |
-| `destination` | `auto` | `host:port`。`auto` = `aio_nav.yaml` 的 `output_udp`，也就是車端接收 0x04 的同一個位址與 port；車端以訊息 ID 區分兩者。不可設為儀表板自己的接收位址（`nav.udp_bind`）。 |
-| `message_id` | `5` | 只有在 AIO NAV 與車端團隊指定其他 ID 時才需要修改。 |
+| `enabled` | `false`（隨附設定：`true`） | `true` 會把 readiness 快照以 42 位元組的 0x05 封包送出（格式見[操作手冊第 6.8 節](OPERATION.zh-TW.md#sec6)）。 |
+| `destination` | `auto` | IPv4 `位址:port`。`auto` = `aio_nav.yaml` 中 `output_udp` 的位址**與 port**：0x05 與 0x04 進入同一個 socket，接收端以訊息 ID 區分。只有車端希望 0x05 走另一個 port 時才需要填寫位址。不接受主機名稱（避免在 5 Hz 的流程中查詢 DNS），也不可設為儀表板自己的接收位址（`nav.udp_bind`）。 |
+| `message_id` | `5` | 0x05 專用於此封包（AIO NAV 只送 0x04）。 |
 | `rate_hz` | `2.0` | 每秒封包數；狀態、動作或禁止遮罩一改變就立即送出。READY 之後仍持續發送。 |
 
 維護頁面的 Overview 會顯示 readiness 快照、條件表、自動啟動狀態與封包計數（已送出、錯誤）。這裡只會顯示「傳送中」，不會顯示「已接收」：UDP 沒有回應確認。
@@ -257,6 +264,25 @@ ros2 param get /ouster/os_driver sensor_hostname   # Ouster IP（節點名稱可
 |------|--------|------|
 | `sensor_interface` | `auto` | 連接感測器網路的網路介面，例如 `eth0`。`auto` = 通往裝置 `host` 的介面，若沒有則使用預設路由的介面。顯示為 **Network** 指示燈（連線中或中斷）。可用 `ip -br link` 列出所有介面。 |
 | `ping_interval_s` | `5` | 每次 ping 裝置 `host` 之間的秒數。 |
+
+### 4.5a `wifi`：設定頁與維護頁面的 Wi-Fi
+
+產品頁面的**設定**頁（網路清單、密碼、連線）與**維護頁面 → Network → Wi-Fi** 都可以掃描並連線到網路，兩者使用相同的程式與規則。
+
+| 項目 | 預設值 | 說明 |
+|------|--------|------|
+| `enabled` | `true` | 顯示 Wi-Fi 面板（NetworkManager 有管理 Wi-Fi 網卡時）。 |
+| `interface` | `auto` | Wi-Fi 網卡；`auto` = 第一張。 |
+| `connect_timeout_s` | `30` | 等待網路接受連線的時間。 |
+| `ip_timeout_s` | `30` | 之後等待取得 IPv4 位址的時間。 |
+
+規則：
+
+- **只需設定一次，之後不需要 root**：`sudo deploy/install.sh --with-wifi` 會安裝一條 polkit 規則，只允許服務使用者管理 NetworkManager。沒有安裝時頁面會提示。此規則也讓該使用者能修改有線網路設定；但儀表板本身只會動到 Wi-Fi 設定。`uninstall.sh` 會移除此規則。
+- **只能從有線連線操作**：只有當*您的瀏覽器*是透過乙太網路連到裝置（或直接在裝置上操作）時才接受變更。透過 Wi-Fi 或 VPN 連線的瀏覽器會被拒絕，因此變更絕不會切斷發出變更的頁面。
+- **失敗會還原**：若新網路失敗（密碼錯誤、`ip_timeout_s` 內沒有取得位址），會刪除新建立的設定並恢復原本的 Wi-Fi。
+- **使用中會先詢問**：導航為 Ready／Degraded 時，或車端輸出、網際網路路由（RTK 修正資料）經由 Wi-Fi 時，會先要求確認。
+- 產品頁面的設定頁不需要密碼（由上面的有線連線規則保護）；維護頁面需要維護密碼。每次變更都會記錄在事件紀錄；Wi-Fi 密碼絕不會被記錄、顯示或回傳。
 
 ### 4.6 `system`：Jetson 系統狀態
 

@@ -24,8 +24,9 @@ Payload (little-endian, fixed 36 bytes)::
      32   2  nav_age_ms         u16   age of the last 0x04, clamped to 65535 (65535 also = none)
      34   2  reserved           u16   0
 
-The message id is configurable (status_udp.message_id) until AIO NAV and the vehicle team
-formally reserve 0x05.
+0x05 is reserved for this packet (AIO NAV itself only sends 0x04). By default it goes to the
+same address and port as 0x04; the receiver tells them apart by msg_id (and length: 0x04 is 156
+bytes, 0x05 42). status_udp.message_id stays configurable.
 """
 
 import struct

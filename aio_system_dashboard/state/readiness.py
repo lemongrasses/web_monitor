@@ -70,6 +70,11 @@ GNSS_RANK = {None: 0, "none": 1, "spp": 2, "unrated_poor": 2, "float": 3, "unrat
 GNSS_CODE_NAMES = ("unknown", "none", "spp", "rtk_float", "rtk_fix")      # 0x05 gnss_quality
 MIN_QUALITY = {"spp": 2, "float": 3, "rtk_float": 3, "fixed": 4, "fix": 4, "rtk_fix": 4}
 
+# Why "not READY" when it is only an alignment flag of the latest packet (the product state,
+# debounced, may still say READY): never an empty reason.
+FLAG_WAIT = {"KEEP_STILL_REQUIRED": "Waiting for alignment", "MOVE_STRAIGHT_REQUIRED": "Waiting for valid heading",
+             "FINE_ALIGNMENT_REQUIRED": "Waiting for fine alignment"}
+
 PHASE_OF_STEP = {"alignment": ("KEEP_STILL", "KEEP_STILL_REQUIRED", "HOLD_STILL"),
                  "heading_valid": ("MOVE_STRAIGHT", "MOVE_STRAIGHT_REQUIRED", "DRIVE_STRAIGHT"),
                  "fine_alignment": ("REFINING", "FINE_ALIGNMENT_REQUIRED", "KEEP_DRIVING")}
@@ -168,7 +173,7 @@ def evaluate(inp: Dict) -> Dict:
     if inp.get("ownership"):
         inhibit.add("OWNERSHIP_CONFLICT")
         return out("FAULT", "SERVICE_REQUIRED", [inp["ownership"]])
-    if auto.get("state") == "gave_up" and not inp.get("nav_running"):
+    if auto.get("state") in ("gave_up", "prereq_timeout") and not inp.get("nav_running"):
         inhibit.add("STARTUP_TIMEOUT")
         return out("FAULT", "SERVICE_REQUIRED", [auto.get("detail") or "AIO NAV did not start"] + product_why)
     # Automatic: the coordinator restarts AIO NAV by itself, so a failure asks the vehicle to stop
@@ -226,11 +231,12 @@ def evaluate(inp: Dict) -> Dict:
         return out("DEGRADED", "SAFE_STOP", unmet or ["Navigation output no longer valid"])
     if not inp.get("nav_fresh"):
         return out("NAV_STARTING", "HOLD_STILL", ["Waiting for navigation output"])
+    flag_why = [FLAG_WAIT[b] for b in FLAG_WAIT if b in inhibit]
     for bit, (phase, action) in (("KEEP_STILL_REQUIRED", ("KEEP_STILL", "HOLD_STILL")),
                                  ("MOVE_STRAIGHT_REQUIRED", ("MOVE_STRAIGHT", "DRIVE_STRAIGHT"))):
         if bit in inhibit:
-            return out(phase, action, unmet)
-    return out("REFINING", "KEEP_DRIVING", unmet)
+            return out(phase, action, flag_why + unmet)
+    return out("REFINING", "KEEP_DRIVING", flag_why + unmet or ["Waiting for the conditions to stay stable"])
 
 
 class Condition:

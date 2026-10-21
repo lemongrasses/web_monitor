@@ -1,4 +1,5 @@
-"""Maintenance tools that change the system: the AIO NAV config editor and the terminal.
+"""Maintenance tools that change the system: the AIO NAV config editor, the terminal, Wi-Fi and
+the RTK switch.
 
 Both need the maintenance password (web/auth.py). Changes are recorded in the event log.
 """
@@ -12,6 +13,7 @@ from ..actions import aionav_config as ac
 from ..actions import process_control
 from ..actions.terminal import TerminalManager
 from .auth import Guard, default_password_file
+from .settings_api import register_settings
 
 logger = logging.getLogger(__name__)
 
@@ -56,6 +58,9 @@ def register_tools(ctx, app, page_context) -> None:
         if bad_request():
             return jsonify({"success": False, "summary": "bad request"}), 400
         return guard.lock()
+
+    # ------------------------------------------------------------------ Wi-Fi, RTK switch
+    register_settings(ctx, app, "/api/maint", "/api/maint/readiness/rtk", guard=guard, where="Maintenance page")
 
     # ------------------------------------------------------------------ AIO NAV config editor
     @app.route("/config")

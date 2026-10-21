@@ -76,6 +76,14 @@
           <span class="v mono small" x-text="rd.session_id"></span></div>
       </div>
       <div class="col-lg-4">
+        <div class="vrow"><span class="k">RTK required for Ready</span>
+          <span class="v small">
+            <span x-text="rd.rtk_required ? 'Yes (' + (rd.gnss_min_quality || 'float') + ' or better)' : 'No'"></span>
+            <span class="muted" x-text="rd.rtk_source ? ' · ' + rd.rtk_source : ''"></span>
+            <button type="button" class="btn btn-sm btn-outline-secondary ms-2 py-0" :disabled="rtkBusy"
+                    @click="setRtk(!rd.rtk_required)" x-text="rd.rtk_required ? 'Turn off' : 'Turn on'"></button>
+          </span></div>
+        <div class="small muted mb-1" x-show="rtkMsg" x-text="rtkMsg"></div>
         <div class="small muted mb-1" x-text="(rd.required || []).length ? 'Required for Ready: ' + rd.required.join(', ') : 'Extra Ready conditions: none required (readiness.require)'"></div>
         <template x-for="c in (rd.conditions || [])" :key="c.name">
           <div class="vrow"><span class="k"><span x-text="c.label"></span><span class="muted small" x-show="c.required"> · required</span></span>

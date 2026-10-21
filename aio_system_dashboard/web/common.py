@@ -10,6 +10,7 @@ from flask import Flask, abort, jsonify, request
 from flask.json.provider import DefaultJSONProvider
 
 from .access import client_allowed, parse_allowed_clients
+from .i18n import gettext
 
 PKG_DIR = Path(__file__).resolve().parent.parent
 logger = logging.getLogger(__name__)
@@ -59,6 +60,7 @@ def create_base_app(name: str, ctx) -> Flask:
             return jsonify({"success": False, "summary": "internal error (see the dashboard log)"}), 500
         return e
     app.extensions["dashboard"] = ctx
+    app.jinja_env.globals["_"] = gettext       # English unless the user app chose a language
 
     # Static files may be cached for an hour, so every link carries the file's modification time
     # (?v=...): after an update the browser fetches the new CSS / JS at once instead of mixing

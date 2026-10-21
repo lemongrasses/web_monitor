@@ -76,5 +76,14 @@
 
   const LEVEL_TEXT = { healthy: "Normal", warning: "Warning", fault: "Fault", unknown: "Unknown" };
 
-  window.AIO = { fmt, poll, rotator, isNum, LEVEL_TEXT };
+  /* Text of the user pages in the chosen language (window.AIO_I18N, from web/i18n.py; English
+     when a phrase has no translation). trf fills {0}, {1}, ... after translating the pattern. */
+  const tr = (s) => (window.AIO_I18N && window.AIO_I18N[s]) || s;
+  const trf = (s, ...args) => tr(s).replace(/\{(\d+)\}/g, (m, i) => (args[i] == null ? "" : String(args[i])));
+  function setLang(code) {
+    document.cookie = "aio_lang=" + encodeURIComponent(code) + "; path=/; max-age=31536000; SameSite=Lax";
+    location.reload();
+  }
+
+  window.AIO = { fmt, poll, rotator, isNum, LEVEL_TEXT, tr, trf, setLang };
 })();

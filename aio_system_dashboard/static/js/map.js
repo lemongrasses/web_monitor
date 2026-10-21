@@ -4,9 +4,11 @@
 
   const TILE_URL = "https://tile.openstreetmap.org/{z}/{x}/{y}.png";
   const TILE_PROBE = "https://tile.openstreetmap.org/0/0/0.png";
-  const ARROW_SVG =
+  // Colors come from the page (CSS custom properties on the map element), so each view can theme it.
+  const css = (el, name, fallback) => (getComputedStyle(el).getPropertyValue(name) || "").trim() || fallback;
+  const arrowSvg = (fill) =>
     '<svg viewBox="0 0 24 24" width="30" height="30" style="transition:transform .2s linear">' +
-    '<path d="M12 2 L20 21 L12 16.5 L4 21 Z" fill="#102a43" stroke="#fff" stroke-width="1.6" stroke-linejoin="round"/></svg>';
+    '<path d="M12 2 L20 21 L12 16.5 L4 21 Z" fill="' + fill + '" stroke="#fff" stroke-width="1.6" stroke-linejoin="round"/></svg>';
 
   class NavMap {
     /* opts.full: draw the whole session (older 1 Hz + recent 10 Hz); otherwise only the recent window. */
@@ -15,8 +17,9 @@
       this.el = document.getElementById(elId);
       this.map = L.map(this.el, { zoomControl: true, attributionControl: true, worldCopyJump: false })
         .setView([23.7, 120.9], 7);
-      this.olderLine = L.polyline([], { color: "#7b8794", weight: 2, opacity: 0.8 }).addTo(this.map);
-      this.recentLine = L.polyline([], { color: "#1d6fa3", weight: 4, opacity: 0.95 }).addTo(this.map);
+      this.olderLine = L.polyline([], { color: css(this.el, "--map-older", "#7b8794"), weight: 2, opacity: 0.8 }).addTo(this.map);
+      this.recentLine = L.polyline([], { color: css(this.el, "--map-route", "#1d6fa3"), weight: 4, opacity: 0.95 }).addTo(this.map);
+      this.arrow = arrowSvg(css(this.el, "--map-marker", "#102a43"));
       this.marker = null;
       this.follow = true;
       this.rot = AIO.rotator();
@@ -30,11 +33,11 @@
     _probeBasemap() {
       const note = document.createElement("div");
       note.className = "map-note";
-      note.textContent = "Loading basemap…";
+      note.textContent = AIO.tr("Loading basemap…");
       this.el.appendChild(note);
       const img = new Image();
       const timer = setTimeout(() => { img.src = ""; fail(); }, 4000);
-      const fail = () => { note.textContent = "Basemap offline — position and trajectory still shown"; };
+      const fail = () => { note.textContent = AIO.tr("Map background offline: position and track are still shown"); };
       img.onload = () => {
         clearTimeout(timer);
         L.tileLayer(TILE_URL, { maxZoom: 19, attribution: "© OpenStreetMap contributors" }).addTo(this.map);
@@ -58,7 +61,7 @@
       if (!AIO.isNum(lat) || !AIO.isNum(lon) || (lat === 0 && lon === 0)) return;
       const ll = L.latLng(lat, lon);
       if (!this.marker) {
-        const icon = L.divIcon({ className: "nav-marker", html: ARROW_SVG, iconSize: [30, 30], iconAnchor: [15, 15] });
+        const icon = L.divIcon({ className: "nav-marker", html: this.arrow, iconSize: [30, 30], iconAnchor: [15, 15] });
         this.marker = L.marker(ll, { icon, keyboard: false, interactive: false }).addTo(this.map);
         this.map.setView(ll, 17, { animate: false });
       } else {

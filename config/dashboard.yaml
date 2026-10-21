@@ -124,17 +124,22 @@ modules:
     scan_depth: 2
 
 # Fully automatic (the default): AIO NAV + DSO start after power-on, are restarted after failures
-# (after READY only with the vehicle still) and the vehicle gets the 0x05 status packet. Override
-# here only to change that, e.g.:
+# (after READY only with the vehicle still) and the vehicle gets the 0x05 status packet. READY
+# needs RTK float or better (readiness.require_rtk, switchable on Settings). Override here only
+# to change that, e.g.:
 # readiness:
 #   require: [gnss_quality]          # e.g. imu, gnss, gnss_quality, dso, vehicle_route, storage
+#   require_rtk: false
 #   gnss_min_quality: float          # spp, float or fixed
 # autostart:
 #   enabled: false                   # manual Start/Stop only
 #   prerequisites: [imu]
+#   prerequisite_timeout_s: 120      # still missing after this: Fault (it keeps waiting)
 # status_udp:
 #   enabled: false                   # no 0x05 status packet (operation manual 6.8)
 #   destination: auto                # auto = output_udp of aio_nav.yaml
+autostart:
+  start_services: [drivers]          # start the sensor drivers if they are not running
 
 events:
   log_file: logs/events.jsonl

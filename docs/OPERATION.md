@@ -55,98 +55,115 @@ is closed.
 The map background needs Internet access on **your** computer. Without it, the vehicle
 position and track are still shown on a blank background.
 
+**Language.** The menu at the top right switches the user pages between **English** and
+**繁體中文**. The browser remembers the choice; without one, a browser set to Chinese gets
+Chinese. The Maintenance view, the logs and the packets to the vehicle are always in English.
+
 ## 3. Reading the dashboard
 
 ### 3.1 The status area
 
-A colored area across the top of every page answers one question: *can I use the
-navigation output right now?* It shows the state, a line saying what is happening, a line
-saying what to do next, and (on Overview and Navigation) the **Start**, **Restart** and
-**Stop** buttons. Red is kept for real problems with AIO NAV.
+A dark blue panel across the top of every page answers one question: *can I use the
+navigation output right now?* On the Overview it shows:
+
+- the **state** in its color, and how long it has been in it (*for 0:12*);
+- in large letters, **what to do now** whenever something is asked of the operator: *Keep still*,
+  *Drive straight*, *Keep driving*, *Stop using navigation*, *Maintenance needed* (or *Ready to
+  use*). This is the same request the vehicle receives in the status packet (section 6.8), so
+  the page and the vehicle never disagree;
+- a line saying what is happening and a line with the details;
+- a **ring** on the left: its five arcs are the five start-up steps (section 3.2), green when
+  done, amber while waiting, red for a problem. In the middle is an icon for what to do (hand,
+  arrow, curved arrow, stop sign, wrench) or, once Ready, the vehicle's heading;
+- the **Start** (**Resume** after an operator stop), **Restart** and **Stop** buttons.
+
+On the other pages the panel is a single line with a small ring. It turns **dark red** when
+navigation must not be used (Fault, Degraded); red is kept for that.
 
 ![Overview page while Ready](images/user/overview-ready.png)
-*The Overview page: status area with the AIO NAV buttons, output line, map with the recent track,
-position and attitude, and the status lamps.*
+*The Overview page: the status panel with its ring, the AIO NAV buttons and the start-up steps; the
+map with the recent track; position, motion and attitude.*
 
-| State | Color | Meaning | What to do |
+| State | Shown as | Meaning | What to do |
 |-------|-------|---------|------------|
-| **Stopped** | Light grey | AIO NAV is not running and nobody asked it to run. This is normal, not a problem. | Click **Start** when you want navigation. |
-| **Starting** | Teal | AIO NAV was started and is getting ready; no navigation output yet. | Wait. If nothing comes out within 60 s it becomes **Fault**. |
-| **Initializing** | Amber | AIO NAV is running and sends output, but alignment is not finished. It shows the current step and what to do, for example *Step 1 of 3: Alignment — Keep the vehicle completely still*. | Follow the instruction ([Alignment SOP](#5-alignment-sop)). Do not use the output yet. |
-| **Ready** | Green | AIO NAV is running, data is fresh, and alignment is complete. The output can be used. | Operate normally. |
-| **Degraded** | Amber | The output *was* Ready in this run, but a required condition (for example RTK) or the alignment is lost. It never goes back to the alignment prompts while the vehicle may be moving. | Stop using navigation as the vehicle's safety procedure says. Restart AIO NAV only with the vehicle standing still. |
-| **Fault** | Red | AIO NAV has a problem: it stopped although nobody pressed Stop, it runs but has sent nothing for 60 s after starting, or its output stopped for more than 2 s. The reason is shown. | See [Troubleshooting](#9-troubleshooting). |
-| **Unknown** / **Offline** | Dark grey | The dashboard just started, or your browser lost its connection to the device. | Wait a few seconds; check the network if it persists. |
+| **Stopped** | Grey label, slate panel | AIO NAV is not running and nobody asked it to run. This is normal, not a problem. | Click **Start** when you want navigation. |
+| **Starting** | Teal label | AIO NAV was started and is getting ready; no navigation output yet. | Wait. If nothing comes out within 60 s it becomes **Fault**. |
+| **Initializing** | Amber label | AIO NAV is running and sends output, but alignment is not finished. It shows the current step and what to do, for example *Step 1 of 3: Alignment — Keep the vehicle completely still*. | Follow the instruction ([Alignment SOP](#5-alignment-sop)). Do not use the output yet. |
+| **Ready** | Green label, closed green ring | AIO NAV is running, data is fresh, and alignment is complete. The output can be used. | Operate normally. |
+| **Degraded** | Dark red panel | The output *was* Ready in this run, but a required condition (for example RTK) or the alignment is lost. It never goes back to the alignment prompts while the vehicle may be moving. | Stop using navigation as the vehicle's safety procedure says. Restart AIO NAV only with the vehicle standing still. |
+| **Fault** | Dark red panel | AIO NAV has a problem: it stopped although nobody pressed Stop, it runs but has sent nothing for 60 s after starting, or its output stopped for more than 2 s. The reason is shown. | See [Troubleshooting](#9-troubleshooting). |
+| **Unknown** / **Offline** | Grey label, slate panel | The dashboard just started, or your browser lost its connection to the device. | Wait a few seconds; check the network if it persists. |
 
 ![A fault: what happened and what to do](images/user/status-fault.png)
 *A fault always says what happened and what to do.*
 
 A state only changes after the condition has lasted about a second, and only returns to
 Ready after about 2 stable seconds. A single lost packet never makes it flicker. While AIO
-NAV runs, the area also shows how long it has been running, and **Bag replay** when it
+NAV runs, the panel also shows how long it has been running, and **Bag replay** when it
 processes a recorded bag instead of the live sensors.
 
-### 3.2 Status lamps
+### 3.2 Start-up progress
 
-The lamps under the map follow the cockpit convention: **quiet when normal, lit when
-something needs attention.**
+At the bottom of the status panel, the Overview page lists the power-on sequence as five steps
+(the same five as the arcs of the ring):
 
-| Lamp look | Meaning |
-|-----------|---------|
-| Pale green | Normal / done |
-| Amber, fully lit | Needs attention or still in progress |
-| Red, fully lit | Fault |
-| Cyan, fully lit | An aiding function is active right now (Navigation page) |
-| Grey | No data, idle, or not set up |
+| Step | Done (green tick) when | Opens to show |
+|------|------------------------|---------------|
+| **Sensors** | The sensor drivers run and IMU data arrives. | Each driver, IMU data |
+| **GNSS / RTK** | A GNSS position, and RTK when Ready requires it (the default). | GNSS position, the current quality, whether RTK is required |
+| **AIO NAV** | AIO NAV runs and sends output. | AIO NAV, output rate, visual odometry (DSO: information only, never needed for Ready) |
+| **Alignment** | All three alignment steps are done. | *Keep still*, *Drive straight*, *Fine alignment* with Done / In progress / Waiting, and the instruction for the current step |
+| **Vehicle link** | The navigation data and the Ready signal are being sent to the vehicle address. | The vehicle address, what is being sent |
 
-| Lamp | Shows |
+A done step has a green tick, a step still waiting an amber outline, a problem is red, and a step
+that cannot start yet is grey. **Select a step** to see why; select it again to close.
+On a phone the steps are listed one under the other.
+
+### 3.3 Status dots
+
+Under the map, one quiet line says what the device talks to; the Navigation page adds the
+alignment, GNSS and aiding. Each item is a name, a colored dot and a word:
+
+| Dot | Meaning |
+|-----|---------|
+| Green | Normal, done, or (aiding) active right now |
+| Amber | Needs attention or still in progress |
+| Red | Fault |
+| Hollow grey | No data, idle, or not set up |
+
+| Item | Shows |
 |------|-------|
-| **Alignment** | Step 1, coarse alignment (leveling). |
-| **Initial heading** | Step 2, the filter has a valid heading. |
-| **Fine alignment** | Step 3, heading accuracy reached its target. |
-| **GNSS** | Position quality of the GNSS receiver: **green** = *RTK fix* (centimeter level), **amber** = *RTK float* (about 10 cm, less accurate), **red** = *SPP* (single-point positioning, meters) or *No signal* (no usable position; the advisory under the lamps says why, e.g. the receiver sends no messages). *Fix (type unknown)* is a position whose type the receiver did not report (amber when better than 1 m). Amber and red are warnings only: inertial navigation continues, but accuracy slowly degrades. |
+| **Navigation output** | Whether the navigation output (UDP, section 6) is sent, at what rate and to where, for example *100 Hz to 192.0.2.50:9000*. Grey when AIO NAV is stopped (normal), amber for *Low rate* (under 80% of the expected rate) or *Stale* (no packet for 0.5 s), red when nothing was sent for 2 s while it should (the state becomes Fault). UDP has no acknowledgement: it confirms that the device sends, not that your application receives. |
 | **Camera / LiDAR** (if fitted) | The sensor answers on the network. "Not set up" means no IP is configured; this is normal if not needed. |
-| **Network** | The sensor network link is up. |
-| **ZUPT / ZIHR / NHC / VUPT** (Navigation page) | Which aiding the filter is using at the moment (see the [glossary](#10-glossary)). Cyan = active, grey = idle. Idle is normal. |
+| **Sensor network** | The sensor network link is up. |
+| **Alignment**, **Initial heading**, **Fine alignment** (Navigation page) | The three alignment steps in order: **Done**, **In progress** (the current step), **Waiting** (a later step), or **—** while AIO NAV sends no output. |
+| **GNSS** (Navigation page) | Position quality of the GNSS receiver: green = *RTK fix* (centimeter level), amber = *RTK float* (about 10 cm) or *Fix (type unknown)*, red = *SPP* (single-point positioning, meters) or *No signal*. Amber and red are warnings only: inertial navigation continues, but accuracy slowly degrades. |
+| **ZUPT / ZIHR / NHC / VUPT** (Navigation page) | Which aiding the filter is using at the moment (see the [glossary](#10-glossary)). Idle is normal. |
 
-The three alignment lamps are steps in order: **Done** (pale green), **In progress** (amber,
-the current step), **Waiting** (grey, a later step), or **—** while AIO NAV sends no output.
+GNSS, camera, LiDAR and network problems are also shown as **advisories** (amber notes under the
+line). They never change the state from Ready to Fault, because the navigation solution is still
+usable.
 
-GNSS, camera, LiDAR and network problems are shown as **advisories** (amber bars under
-the lamps). They never change the state from Ready to Fault, because the navigation
-solution is still usable. A red GNSS lamp adds the advisory *GNSS: SPP* or *GNSS: No signal*.
+### 3.4 Language
 
-### 3.3 Output line
+See section 2: the menu at the top right switches the user pages between English and 繁體中文.
 
-One line under the status area tells whether the navigation output (UDP, section 6) is being
-sent, at what rate and to where, for example *Streaming · 100 Hz to 192.0.2.50:9000*.
+### 3.5 Pages
 
-| Label | Meaning |
-|-------|---------|
-| **Off** | AIO NAV is stopped, so nothing is sent. Normal. |
-| **Waiting** | AIO NAV is starting; nothing sent yet. |
-| **Streaming** | The device is sending navigation packets at the expected rate. |
-| **Low rate** | Packets are sent, but at under 80% of the expected rate. |
-| **Stale** | No packet for more than 0.5 s. |
-| **Lost** | No packet for more than 2 s while AIO NAV should be sending. The state becomes Fault. |
-
-UDP has no acknowledgement: "Streaming" confirms that the device is sending, not that your
-application received it.
-
-### 3.4 Pages
-
-- **Overview**: status area with the AIO NAV buttons, output line, map with the last 60 s of track,
-  position, heading (with an arrow; up = north), speed, roll and pitch, lamps,
-  advisories, storage.
+- **Overview**: the status panel with the AIO NAV buttons and the start-up steps, a map with the
+  last 60 s of track, position, heading (with an arrow; up = north), speed, roll and pitch,
+  the status dots, advisories, storage. The bottom line also shows *Ready signal #…, session …,
+  updated …*: the numbers in the status packet, for comparing with the vehicle's log.
 - **Navigation**: large map with the whole track of this run, and every value with its
-  accuracy (±): position, velocity north/east/up, speed, attitude, NAV time. Aiding lamps
-  and the output line (with the packet count) are at the bottom.
+  accuracy (±): position, velocity north/east/up, speed, attitude, NAV time. Alignment, GNSS and
+  aiding dots and the navigation output (with the packet count) are at the bottom.
   **Show whole trajectory** zooms to the full track; **Follow vehicle** re-centers.
 - **Data**: AIO NAV log folders. Click a folder to open it and **Download** to save a
   file. Nothing on the device can be changed from this page.
+- **Settings**: Wi-Fi, the RTK requirement, automatic start and the vehicle link (section 3.6).
 
 ![Navigation page](images/user/navigation.png)
-*Navigation page: the whole track of this run, every value with its accuracy, the aiding lamps.*
+*Navigation page: the whole track of this run, every value with its accuracy.*
 
 ![Data page](images/user/data.png)
 *Data page: download the AIO NAV logs.*
@@ -154,6 +171,25 @@ application received it.
 <img src="images/user/overview-phone.png" alt="Overview on a phone" width="300">
 
 *The pages also work on a phone or tablet.*
+
+### 3.6 Settings page
+
+![Settings page](images/user/settings.png)
+*Settings: one card per task.*
+
+| Card | What you can do |
+|------|-----------------|
+| **Wi-Fi** | See the network in use. Choose a network from the list (strongest first; *Other network (hidden)…* to type a name), enter the password, **Connect**. The result is said in plain words: *Connected to …*, or *The password was not accepted. Back on …*. A failed attempt always returns to the previous Wi-Fi within about a minute. |
+| **Position accuracy for Ready** | The switch **Require RTK before Ready** (on by default, recommended). Turning it off asks for confirmation, because Ready can then be given with a position accurate to only a few metres. The time of the last change is shown, and every change is recorded in the event log. |
+| **Automatic start** | *On*: AIO NAV starts by itself after power-on. *Paused*: an operator pressed Stop; **Resume** starts it again. *Off*: press Start on the Overview page. |
+| **Vehicle link** | The vehicle address, and that the navigation data (0x04) and the Ready signal (0x05) go there on the same port. Read only: the address is set on Maintenance → AIO NAV config. |
+
+Wi-Fi can be changed only from a computer connected to the device **by cable** (or on the
+device itself): changing Wi-Fi from a computer that is itself on Wi-Fi could cut it off. Such a
+computer sees *Connect with a network cable to change Wi-Fi.* While navigation is in use, or when
+the vehicle or the internet route (RTK corrections) goes over Wi-Fi, the page asks before it
+changes anything. These settings need no password on the user pages; the same settings are on the
+Maintenance view too. Wi-Fi needs a one-time setup by the installer (configuration manual 4.5a).
 
 ## 4. Daily operation
 
@@ -174,19 +210,34 @@ The **Start** button is in the status area at the top of the Overview and Naviga
 *Stopped: nothing is wrong, AIO NAV simply is not running. Click Start.*
 
 1. Click **Start**. The state becomes **Starting** (teal), then **Initializing** (amber) as
-   soon as AIO NAV sends output; the output line changes from **Off** to **Streaming**.
+   soon as AIO NAV sends output; **Navigation output** under the map changes from *Nothing is sent* to the rate and address.
 2. Follow the step shown in the status area ([Alignment SOP](#5-alignment-sop)).
 
 ![Initializing, step 1 of 3](images/user/overview-initializing.png)
-*Initializing: the status area names the current alignment step and what to do; the step's lamp is
-amber, later steps are grey.*
+*Initializing: the status area says what to do (Keep still) and names the alignment step; the
+Alignment step of the start-up progress is opened to show the three phases.*
 
-**Automatic start.** On a device with `autostart` on ([configuration manual 4.2b](CONFIG.md)),
-you do not press Start: after power-on the status area shows **Starting** — *Starting
-automatically* while it waits for the sensors, then the alignment steps. If AIO NAV does not
-start or sends nothing, it is tried again a few times by itself. After you press **Stop**, it
-stays stopped (also after a reboot) until someone presses **Start**. Once Ready was reached it
-is never restarted automatically until the next power-on.
+**Automatic start (power-on).** With `autostart` on (the shipped setting, [configuration
+manual 4.2b](CONFIG.md)) nobody presses Start. After power-on the system goes through:
+
+| Step | Status area | The vehicle receives (0x05) | Operator |
+|---|---|---|---|
+| 1. Dashboard starts | **Unknown** → **Starting** | `BOOTING`, then `CHECKING` | Keep the vehicle still |
+| 2. Sensor drivers started if needed; wait for IMU data and a GNSS position | **Starting** — *Starting automatically: Waiting for …* | `CHECKING` / `HOLD_STILL` | Keep the vehicle still |
+| 3. AIO NAV (and DSO) started | **Starting** | `NAV_STARTING` / `HOLD_STILL` | Keep the vehicle still |
+| 4. Alignment ([SOP](#5-alignment-sop)) | **Initializing**, step 1 → 2 → 3 | `KEEP_STILL` → `MOVE_STRAIGHT` → `REFINING` | Follow the step shown |
+| 5. RTK float or better, stable 3 s | **Ready** | `READY`, inhibit 0 | Use navigation |
+
+The **start-up progress** (section 3.2) shows which step it is on and what it is waiting for. If
+the sensors do not come within 2 minutes the state becomes **Fault** naming them (for example
+*IMU data not available after 120 s*); it still starts by itself as soon as they pass. If AIO NAV
+does not start or sends nothing, it is tried again a few times. After you press **Stop**, it stays
+stopped (also after a reboot) and the button reads **Resume** until someone presses it. Once Ready
+was reached it is never restarted automatically until the next power-on: if AIO NAV stops while
+driving, the state is **Fault** with *stop using navigation*.
+
+RTK is required for Ready by default. At a site without RTK it can be switched off on the
+**Settings** page (with a confirmation; recorded), or on Maintenance → Overview.
 
 If the state becomes **Fault** with *AIO NAV stopped unexpectedly*, or the message under the
 buttons reads *AIO NAV did not start: …*, see [Troubleshooting](#9-troubleshooting). If there
@@ -206,7 +257,8 @@ ask the administrator to enable it. AIO NAV that was started in another way is d
 - **Restart** (asks for confirmation: choose **Restart now**, or **Cancel** / Esc): stops and starts AIO NAV. **Alignment starts over**,
   so only restart while the vehicle can stand still.
 - **Stop** (asks for confirmation: choose **Stop now**, or **Cancel** / Esc): ends the navigation output. Your application stops
-  receiving data.
+  receiving data. With automatic start on, AIO NAV then stays stopped, also after a power cycle,
+  until someone presses **Resume**.
 
 ### 4.5 After the run
 
@@ -280,7 +332,7 @@ turns **Ready**.
    starts less accurately.
 2. On the Overview page, click **Start**. After **Starting**, the state becomes
    **Initializing**: *Step 1 of 3: Alignment — Keep the vehicle completely still*.
-3. **Do not move** for at least 10 s, until the **Alignment** lamp turns pale green.
+3. **Do not move** for at least 10 s, until the **Alignment** step is done (green).
    While stationary, the Navigation page shows **ZUPT** active; this is expected.
 4. Drive straight ahead at a steady speed. Watch **Initial heading** turn green.
 5. Keep driving with some turns until **Fine alignment** turns green. Check on the
@@ -447,12 +499,18 @@ For C/C++, use a packed struct (`#pragma pack(push, 1)`) with the field order of
 The 0x04 packet starts **before** alignment is complete, so receiving it does not mean the
 data may be used. When `status_udp` is on ([configuration manual 4.2c](CONFIG.md)) the
 dashboard also sends a **0x05 status packet**, twice a second and at once on every change, to
-the same address and port as 0x04. It carries the same readiness snapshot as the pages:
+the **same address and port as 0x04**. It carries the same readiness snapshot as the pages:
 the state, what the operator should do, and every reason the output must not be used. It
 keeps coming after READY: silence means "do not use".
 
-> 0x05 must be formally reserved by the AIO NAV and vehicle teams before use; the id is
-> configurable (`status_udp.message_id`).
+> 0x05 is reserved for this packet; AIO NAV itself only sends 0x04.
+
+**Receiving both on one port.** UDP lets any number of senders send to one port; only the
+vehicle binds it. So the vehicle keeps its one socket and its `55 AA` frame parser, and
+dispatches on the message ID (byte 2): `0x04` = navigation (156 bytes), `0x05` = status
+(42 bytes). A parser must check the ID and the length and skip any other frame; one that
+read every frame as 0x04 would misread the status packet. If the vehicle prefers a separate
+socket, set `status_udp.destination` to that address and port.
 
 **Frame**: same as 0x04: `55 AA`, message id `0x05`, payload length `36` (uint16 LE), payload,
 checksum (sum of the bytes from the message id to the end of the payload, modulo 256).
@@ -533,7 +591,8 @@ Bits that are not implemented stay 0 (for example `VEHICLE_ACK_OK`, `RTK_CORRECT
 4. A lost status packet alone never blocks (the sequence number counts losses); only the
    time-outs do.
 
-To watch the rules work on the vehicle's port: `python3 tools/vehicle_gate.py --port 9000`.
+To watch the rules work where the vehicle listens, from a checkout of this repository (the release package does not include `tools/`): `python3 tools/vehicle_gate.py --port 9000`
+(0x04 and 0x05 both on 9000; `--status-port` if 0x05 is sent to another port).
 
 **Golden vector** (any implementation must encode and decode exactly this): READY, action
 NONE, RTK float, session `0x12345678`, sequence 482, uptime 123456789 ms, health `0x10FFF`,
@@ -579,12 +638,12 @@ Download them from the **Data** page of the product view.
 
 | Page | Use it to |
 |------|-----------|
-| **Overview** | See the four layers (System, Services, Data flow, Network) and the list of active issues. Each issue links to the page that explains it. |
+| **Overview** | See the four layers (System, Services, Data flow, Network) and the list of active issues. Each issue links to the page that explains it. **Readiness for the vehicle**: what the vehicle is told (state, action, reasons, bit masks), the condition table, the automatic start, the 0x05 counters, and the **RTK required** switch (also on the user Settings page). |
 | **System** | CPU, GPU, memory, disk, temperatures, systemd services, network interfaces. |
 | **ROS 2** | Required nodes, monitored topics (rate, freshness, publishers, subscribers), all topics. Also here: **Sensor drivers** (Start / Stop / Restart the camera and IMU/GNSS drivers) and the ROS environment in use. |
 | **Replay** (replay module only) | Switch between Live and Bag replay, and play bags with any `ros2 bag play` option (section 4.6). |
 | **Camera / LiDAR** (if fitted) | Reachability, driver state, topic health, **Live view** (camera image; LiDAR point cloud with top/3D view), **Run diagnostic**, **Restart driver** (asks for confirmation). |
-| **Network** | Interfaces and addresses, sensor reachability, the NAV output destinations and their route. |
+| **Network** | Interfaces and addresses, sensor reachability, the NAV output destinations and their route. **Wi-Fi**: scan and connect (from a browser connected by cable only; the previous Wi-Fi comes back if the new one fails; see [configuration manual 4.5a](CONFIG.md)). |
 | **Diagnostics** | Active faults and warnings, results of diagnostics and restarts, and the event history. |
 | **AIO NAV config** | Edit AIO NAV's settings files (`aio_nav.yaml` for Live, `aio_nav_bag.yaml` for Bag replay). **Settings** is a form of the most used values (output, ROS, logs, alignment, aiding, lever arms); **Edit file** is the whole file. Comments in the file are kept. **Review changes** checks the file and shows exactly what changes; then **Save**, or **Save and restart AIO NAV** so it takes effect at once. Every save keeps the previous version (**Earlier versions**, to go back). |
 | **Terminal** | A shell on the device, in the browser, for quick checks (`ros2 topic hz …`, `journalctl …`, `top`). It runs as the dashboard's user and loads your `.bashrc`, like a desktop terminal (so ROS is set up); **Use active ROS domain** types the export line for the mode in use. Up to 3 at once; closed after 30 min without typing. |

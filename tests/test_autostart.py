@@ -40,8 +40,9 @@ class FakeActions:
 
     def run(self, action_id, target):
         self.calls.append(action_id)
+        if action_id in ("start_process", "stop_process"):
+            set_running(self.store, action_id == "start_process" and self.start_ok)
         running = action_id == "start_process" and self.start_ok
-        set_running(self.store, running)
         if self.coordinator:                               # like ActionRegistry.after_run
             self.coordinator.on_action(action_id, target)
         return {"success": running or action_id == "stop_process", "summary": "fake"}
@@ -419,6 +420,55 @@ class AutostartTest(unittest.TestCase):
         self.store.set("readiness", r)
         self.tick(c)
         self.assertEqual(self.actions.calls, ["start_process"])
+
+    def test_dso_failing_does_not_restart_a_healthy_aio_nav(self):
+        self.data["autostart"]["prerequisites"] = []
+        c = self.make()
+        orig = self.actions.run
+
+        def run(action_id, target):                        # AIO NAV starts, DSO does not
+            r = orig(action_id, target)
+            if action_id == "start_process":
+                r = {"success": False, "summary": "AIO NAV started; DSO did not start",
+                     "parts": [{"key": "aio_nav", "ok": True, "text": "AIO NAV started"},
+                               {"key": "dso", "ok": False, "text": "DSO did not start"}]}
+            return r
+        self.actions.run = run
+        self.tick(c)
+        self.tick(c, 30)
+        self.assertEqual((c.state, self.actions.calls), ("running", ["start_process"]))
+
+    def test_prerequisite_timeout_is_reported_and_it_still_starts_later(self):
+        self.data["autostart"]["prerequisite_timeout_s"] = 60
+        c = self.make()
+        readiness(self.store, "CHECKING", imu_ok=False)
+        self.tick(c)
+        self.tick(c, 61)
+        self.assertEqual(c.state, "prereq_timeout")
+        self.assertIn("IMU data not available after", c.detail)
+        readiness(self.store, "CHECKING", imu_ok=True)
+        self.tick(c)
+        self.tick(c, 2.5)
+        self.assertEqual(self.actions.calls, ["start_process"])
+
+    def test_starts_the_sensor_drivers_first(self):
+        self.data["services"]["drivers"] = {"label": "Sensor drivers", "user_unit": "drivers.service"}
+        self.data["autostart"]["start_services"] = ["drivers"]
+        c = self.make()
+        readiness(self.store, "CHECKING", imu_ok=False)
+        self.tick(c)
+        self.assertEqual(self.actions.calls, ["start_driver"])
+        self.tick(c, 5)
+        self.assertEqual(self.actions.calls, ["start_driver"])      # not again within 30 s
+        self.tick(c, 30)
+        self.assertEqual(self.actions.calls, ["start_driver", "start_driver"])
+
+    def test_already_running_at_boot_is_adopted(self):
+        c = self.make()
+        set_running(self.store, True)                       # dashboard restarted, AIO NAV still runs
+        for _ in range(5):
+            self.tick(c, 2)
+        self.assertEqual((c.state, self.actions.calls), ("running", []))
 
     def test_disabled_without_allow_control(self):
         self.data["nav"]["allow_control"] = False

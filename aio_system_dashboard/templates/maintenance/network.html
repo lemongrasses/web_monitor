@@ -72,4 +72,55 @@
     "Streaming" means aio_nav_node is sending packets. UDP has no acknowledgement, so reception by the remote application is not confirmed.
   </div>
 </div>
+
+<!-- Wi-Fi: changes only from a browser connected by cable, so a change can never cut off this page -->
+<div class="panel mt-3" x-data="wifiPanel()" x-init="init()">
+  <div class="panel-h"><strong>Wi-Fi</strong>
+    <span class="small" x-show="st && st.available" x-text="st && st.connection ? 'Connected to ' + st.connection + (st.ipv4 && st.ipv4.length ? ' (' + st.ipv4.join(', ') + ')' : '') : 'Not connected'"></span></div>
+  <div class="panel-b">
+    <div class="muted" x-show="st && !st.available" x-text="st && st.reason"></div>
+    <template x-if="st && st.available">
+      <div>
+        <div class="small mb-2" :class="st.may_change ? 'muted' : 'text-danger'"
+             x-text="st.may_change ? 'You are connected through ' + st.client + ': changes are allowed.' : 'Changes not allowed: ' + st.client"></div>
+        <div class="small text-warning-emphasis mb-2" x-show="(st.risks || []).length" x-text="'Note: ' + (st.risks || []).join('; ')"></div>
+        <div class="d-flex gap-2 align-items-center mb-2">
+          <button type="button" class="btn btn-sm btn-outline-secondary" :disabled="!!busy" @click="scan()">
+            <span x-text="busy === 'scan' ? 'Scanning…' : 'Scan for networks'"></span></button>
+          <span class="small muted" x-text="stageText()"></span>
+        </div>
+        <table class="table table-sm mb-3" x-show="networks.length">
+          <thead><tr><th>Network</th><th class="text-end">Signal</th><th>Security</th><th></th></tr></thead>
+          <tbody>
+            <template x-for="n in networks" :key="n.ssid">
+              <tr><td><span x-text="n.ssid"></span> <span class="muted small" x-show="n.in_use">(connected)</span></td>
+                  <td class="text-end num" x-text="n.signal + '%'"></td>
+                  <td class="small" x-text="n.security || 'open'"></td>
+                  <td class="text-end"><button type="button" class="btn btn-sm btn-outline-primary py-0" :disabled="!st.may_change || !!busy" @click="pick(n)">Choose</button></td></tr>
+            </template>
+          </tbody>
+        </table>
+        <form class="row g-2 align-items-end" @submit.prevent="connect(false)" x-show="st.may_change">
+          <div class="col-md-4"><label class="form-label small mb-0">Network name (SSID)</label>
+            <input class="form-control form-control-sm" x-model="ssid" maxlength="32" autocomplete="off" required></div>
+          <div class="col-md-4"><label class="form-label small mb-0">Password</label>
+            <input class="form-control form-control-sm" :type="showPw ? 'text' : 'password'" x-model="password" maxlength="63" autocomplete="new-password"></div>
+          <div class="col-md-4 d-flex gap-3 align-items-center">
+            <label class="small"><input type="checkbox" x-model="showPw"> Show</label>
+            <label class="small"><input type="checkbox" x-model="hidden"> Hidden network</label>
+            <button class="btn btn-sm btn-primary" :disabled="!!busy || !ssid" x-text="busy === 'connect' ? 'Connecting…' : 'Connect'"></button>
+          </div>
+        </form>
+        <div class="alert alert-warning py-2 mt-2 mb-0" x-show="confirmText">
+          <span x-text="confirmText"></span>
+          <button type="button" class="btn btn-sm btn-warning ms-2" @click="connect(true)">Change Wi-Fi anyway</button>
+          <button type="button" class="btn btn-sm btn-outline-secondary ms-1" @click="confirmText = ''">Cancel</button>
+        </div>
+        <div class="small mt-2" :class="msgClass === 'bad' ? 'text-danger' : (msgClass === 'ok' ? 'text-success' : 'muted')" x-text="msg"></div>
+      </div>
+    </template>
+  </div>
+</div>
 {% endblock %}
+
+{% block scripts %}<script src="{{ url_for('static', filename='js/tools.js') }}"></script>{% endblock %}

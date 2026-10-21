@@ -4,7 +4,7 @@
 # made by tools/build_release.sh (./install.sh), which contains no Python source.
 #
 #   sudo deploy/install.sh [--user nvidia] [--prefix /opt/aio-dashboard] [--with-aio-nav PATH_TO_aio-nav]
-#                          [--reset-config] [--with-sysmon] [--with-replay]
+#                          [--reset-config] [--with-sysmon] [--with-replay] [--with-wifi]
 #
 # - copies the app to PREFIX (default /opt/aio-dashboard), keeping an existing config
 #   (--reset-config replaces it with the default; the old one is saved as .bak)
@@ -34,6 +34,7 @@ RUN_USER="${SUDO_USER:-nvidia}"
 AIO_NAV_BIN=""
 RESET_CONFIG=0
 WITH_SYSMON=0
+WITH_WIFI=0
 WITH_REPLAY=0
 
 while [[ $# -gt 0 ]]; do
@@ -43,6 +44,7 @@ while [[ $# -gt 0 ]]; do
     --with-aio-nav) AIO_NAV_BIN="$2"; shift 2 ;;
     --reset-config) RESET_CONFIG=1; shift ;;
     --with-sysmon) WITH_SYSMON=1; shift ;;
+    --with-wifi) WITH_WIFI=1; shift ;;
     --with-replay) WITH_REPLAY=1; shift ;;
     --no-sysmon) shift ;;                        # old flag: the recorder is off by default now
     -h|--help) sed -n '2,23p' "$0"; exit 0 ;;
@@ -216,6 +218,57 @@ if [[ -n "$AIO_NAV_BIN" ]]; then
     systemctl enable aio-nav.service
   fi
 fi
+# Automatic start of a systemd *user* unit (the sensor drivers) at power-on needs the user's
+# service manager to exist with nobody logged in: lingering. One-time, root.
+AUTOSTART_USER_UNITS=$(PYTHONPATH="$PREFIX/lib" python3 - "$PREFIX/config/dashboard.yaml" <<'EOF2'
+import sys, yaml
+cfg = yaml.safe_load(open(sys.argv[1])) or {}
+auto = cfg.get("autostart") or {}
+services = cfg.get("services") or {}
+if auto.get("enabled", True) and (cfg.get("nav") or {}).get("allow_control"):   # on by default
+    print(" ".join((services.get(k) or {}).get("user_unit", "") for k in auto.get("start_services") or []).strip())
+EOF2
+)
+if [[ -n "$AUTOSTART_USER_UNITS" ]]; then
+  echo "==> lingering for $RUN_USER (user units start at power-on: $AUTOSTART_USER_UNITS)"
+  loginctl enable-linger "$RUN_USER" || echo "    warning: could not enable lingering; the drivers may not start before someone logs in" >&2
+fi
+
+# Wi-Fi from the Maintenance page without root: allow the dashboard's user (only) to manage
+# NetworkManager. polkit 0.105 (Ubuntu 22.04) reads .pkla files; newer polkit reads .rules.
+if [[ $WITH_WIFI -eq 1 ]]; then
+  echo "==> Wi-Fi permission for $RUN_USER (NetworkManager, via polkit)"
+  PKLA_DIR=/etc/polkit-1/localauthority/50-local.d
+  install -d -m 0755 "$PKLA_DIR"
+  cat > "$PKLA_DIR/50-aio-dashboard-wifi.pkla" <<EOF2
+# Installed by aio-dashboard install.sh --with-wifi; removed by uninstall.sh.
+[aio-dashboard Wi-Fi]
+Identity=unix-user:$RUN_USER
+Action=org.freedesktop.NetworkManager.settings.modify.system;org.freedesktop.NetworkManager.network-control;org.freedesktop.NetworkManager.wifi.scan;org.freedesktop.NetworkManager.enable-disable-wifi
+ResultAny=yes
+ResultInactive=yes
+ResultActive=yes
+EOF2
+  chmod 0644 "$PKLA_DIR/50-aio-dashboard-wifi.pkla"
+  if [[ -d /etc/polkit-1/rules.d ]]; then
+    cat > /etc/polkit-1/rules.d/50-aio-dashboard-wifi.rules <<EOF2
+// Installed by aio-dashboard install.sh --with-wifi; removed by uninstall.sh.
+polkit.addRule(function(action, subject) {
+  if (subject.user == "$RUN_USER" && [
+      "org.freedesktop.NetworkManager.settings.modify.system",
+      "org.freedesktop.NetworkManager.network-control",
+      "org.freedesktop.NetworkManager.wifi.scan",
+      "org.freedesktop.NetworkManager.enable-disable-wifi"].indexOf(action.id) >= 0) {
+    return polkit.Result.YES;
+  }
+});
+EOF2
+    chmod 0644 /etc/polkit-1/rules.d/50-aio-dashboard-wifi.rules
+  fi
+  echo "    note: this also lets $RUN_USER change wired NetworkManager profiles; the dashboard itself"
+  echo "    only ever changes Wi-Fi profiles"
+fi
+
 if systemctl is-enabled --quiet aio-nav.service 2>/dev/null; then
   if [[ "$NAV_OWNER" == autostart ]]; then
     echo "==> aio-nav.service was enabled at boot; disabling it (the dashboard starts AIO NAV itself)"

@@ -1,46 +1,47 @@
 {% extends "product/base.html" %}
-{% block title %}Setup · AIO Navigation{% endblock %}
+{% block title %}{{ _("Setup") }} · AIO Navigation{% endblock %}
 {% block content %}
-<div x-data="setupPage()" x-init="setupInit()">
-  <div class="alert alert-warning" x-show="error" x-text="error" x-cloak></div>
+<div x-data="setupPage()" x-init="setupInit()" class="u-settings u-setup">
+  <h1>{{ _("Setup") }}</h1>
+  <p>{{ _("Where the GNSS antenna and the centre of the rear axle are, measured from the IMU in the AIO unit, in metres along the vehicle.") }}
+     {{ _("Measure them again whenever the AIO unit or the antenna is moved: wrong values make the position and heading worse.") }}</p>
+  <div class="u-callout warn mt-3" x-show="error" x-text="AIO.tr(error)" x-cloak role="alert"></div>
 
-  <section class="panel" x-show="info" x-cloak aria-labelledby="arms-title">
-    <div class="panel-h"><strong id="arms-title">Mounting: lever arms</strong>
-      <span class="small" :class="dirty() ? 'cfg-dirty' : 'muted'" x-text="dirty() ? 'Unsaved changes' : 'Saved values'"></span></div>
-    <div class="panel-b">
-      <p class="small mb-3" style="max-width: 50rem">
-        Where the GNSS antenna and the centre of the rear axle are, measured from the <strong>IMU in the AIO unit</strong>,
-        in metres along the vehicle. Measure them again whenever the AIO unit or the antenna is moved:
-        wrong values make the position and heading worse.
-      </p>
+  <!-- Lever arms: three numbers per point, a to-scale drawing to check them, Save (and restart). -->
+  <section class="u-sec" x-show="info" x-cloak aria-labelledby="arms-h">
+    <h2 id="arms-h">{{ _("Mounting: lever arms") }}
+      <span class="u-arm-state" :class="dirty() ? 'is-dirty' : ''" x-text="dirty() ? AIO.tr('Unsaved changes') : AIO.tr('Saved values')"></span></h2>
+    <div class="u-list">
+      <div class="u-item stack">
+        <table class="u-arm-table">
+          <thead><tr><th></th>
+            <th>{{ _("Forward") }} <span class="u-muted">{{ _("+ ahead") }}</span></th>
+            <th>{{ _("Right") }} <span class="u-muted">{{ _("+ right") }}</span></th>
+            <th>{{ _("Down") }} <span class="u-muted">{{ _("+ below") }}</span></th></tr></thead>
+          <tbody>
+            <template x-for="row in rows" :key="row.key">
+              <tr>
+                <th scope="row"><span class="arm-dot" :class="'arm-' + row.key" aria-hidden="true"></span><span x-text="AIO.tr(row.label)"></span>
+                  <span class="u-item-sub" x-text="AIO.tr(row.help)"></span></th>
+                <template x-for="(axis, i) in AXES" :key="axis">
+                  <td><label class="u-arm-input" :class="bad(row.key, i) ? 'is-bad' : ''">
+                    <input type="number" step="0.01" class="u-input" :aria-invalid="bad(row.key, i)"
+                           :aria-label="AIO.tr(row.label) + ', ' + AIO.tr(axis) + ' (m)'" x-model.number="form[row.key][i]" @input="msg = ''">
+                    <span aria-hidden="true">m</span></label></td>
+                </template>
+              </tr>
+            </template>
+          </tbody>
+        </table>
+        <p class="u-note" x-text="AIO.trf('Negative values: behind, left, above. Up to {0} m each, to the centimetre or better.', info ? info.max_m : 20)"></p>
+      </div>
 
-      <div class="arm-grid">
-        <div class="arm-form">
-          <table class="table table-sm align-middle mb-2 arm-table">
-            <thead><tr><th></th><th>Forward <span class="muted small">+ ahead</span></th><th>Right <span class="muted small">+ right</span></th><th>Down <span class="muted small">+ below</span></th></tr></thead>
-            <tbody>
-              <template x-for="row in rows" :key="row.key">
-                <tr>
-                  <th scope="row"><span class="arm-dot" :class="'arm-' + row.key" aria-hidden="true"></span><span x-text="row.label"></span>
-                    <div class="small muted fw-normal" x-text="row.help"></div></th>
-                  <template x-for="(axis, i) in AXES" :key="axis">
-                    <td><div class="input-group input-group-sm">
-                      <input type="number" step="0.01" class="form-control" :class="bad(row.key, i) ? 'is-invalid' : ''"
-                             :aria-label="row.label + ', ' + axis + ' (m)'" x-model.number="form[row.key][i]" @input="msg = ''">
-                      <span class="input-group-text">m</span></div></td>
-                  </template>
-                </tr>
-              </template>
-            </tbody>
-          </table>
-          <p class="small muted mb-0">Negative values: behind, left, above. Up to <span x-text="info ? info.max_m : 20"></span> m each, to the centimetre or better.</p>
-        </div>
-
-        <figure class="arm-views mb-0" aria-label="Drawing of the entered positions">
+      <div class="u-item stack">
+        <figure class="arm-views mb-0" aria-label="{{ _('Drawing of the entered positions') }}">
           <template x-for="v in VIEWS" :key="v.key">
             <div class="arm-view">
-              <div class="small muted" x-text="v.title"></div>
-              <svg viewBox="0 0 320 170" role="img" :aria-label="v.title + ' of the IMU, antenna and rear axle centre'">
+              <div class="u-label" x-text="AIO.tr(v.title)"></div>
+              <svg viewBox="0 0 320 170" role="img" :aria-label="AIO.tr(v.title)">
                 <!-- a typical car, to scale, its rear axle on the rear axle centre entered: front to the right;
                      seen from above, its right side at the bottom -->
                 <g aria-hidden="true">
@@ -49,52 +50,48 @@
                   <path class="arm-car" :d="carPath(v.key)"/>
                   <path class="arm-glass" :d="glassPath(v.key)"/>
                   <path class="arm-wheel" :d="wheelPath(v.key)" x-show="v.key === 'side'"/>
-                  <text class="arm-car-t" :x="carLabel(v.key, 'front').x" :y="carLabel(v.key, 'front').y" text-anchor="start">FRONT</text>
-                  <text class="arm-car-t" :x="carLabel(v.key, 'rear').x" :y="carLabel(v.key, 'rear').y" text-anchor="end">REAR</text>
-                  <text class="arm-car-t" x-show="v.key === 'top'" :x="carLabel(v.key, 'left').x" :y="carLabel(v.key, 'left').y" text-anchor="middle">LEFT SIDE</text>
-                  <text class="arm-car-t" x-show="v.key === 'top'" :x="carLabel(v.key, 'right').x" :y="carLabel(v.key, 'right').y" text-anchor="middle">RIGHT SIDE</text>
+                  <text class="arm-car-t" :x="carLabel(v.key, 'front').x" :y="carLabel(v.key, 'front').y" text-anchor="start">{{ _("FRONT") }}</text>
+                  <text class="arm-car-t" :x="carLabel(v.key, 'rear').x" :y="carLabel(v.key, 'rear').y" text-anchor="end">{{ _("REAR") }}</text>
+                  <text class="arm-car-t" x-show="v.key === 'top'" :x="carLabel(v.key, 'left').x" :y="carLabel(v.key, 'left').y" text-anchor="middle">{{ _("LEFT SIDE") }}</text>
+                  <text class="arm-car-t" x-show="v.key === 'top'" :x="carLabel(v.key, 'right').x" :y="carLabel(v.key, 'right').y" text-anchor="middle">{{ _("RIGHT SIDE") }}</text>
                 </g>
                 <line class="arm-axis" x1="12" y1="12" x2="44" y2="12"/><path class="arm-axis-head" d="M44 8 L52 12 L44 16 Z"/>
-                <text class="arm-axis-t" x="56" y="16">forward</text>
+                <text class="arm-axis-t" x="56" y="16">{{ _("forward") }}</text>
                 <line class="arm-axis" x1="12" y1="12" x2="12" y2="40"/><path class="arm-axis-head" d="M8 40 L12 48 L16 40 Z"/>
-                <text class="arm-axis-t" x="18" y="48" x-text="v.down"></text>
+                <text class="arm-axis-t" x="18" y="48" x-text="AIO.tr(v.down)"></text>
                 <line class="arm-link" :x1="pt(v.key, 'imu').x" :y1="pt(v.key, 'imu').y" :x2="pt(v.key, 'vehicle').x" :y2="pt(v.key, 'vehicle').y"/>
                 <line class="arm-link" :x1="pt(v.key, 'imu').x" :y1="pt(v.key, 'imu').y" :x2="pt(v.key, 'gnss').x" :y2="pt(v.key, 'gnss').y"/>
                 <rect class="arm-imu" :x="pt(v.key, 'imu').x - 6" :y="pt(v.key, 'imu').y - 6" width="12" height="12" rx="2"/>
                 <circle class="arm-gnss" :cx="pt(v.key, 'gnss').x" :cy="pt(v.key, 'gnss').y" r="6"/>
                 <path class="arm-vehicle" :d="cross(pt(v.key, 'vehicle'))"/>
                 <text class="arm-label" :x="label(v.key, 'imu').x" :y="label(v.key, 'imu').y" :text-anchor="label(v.key, 'imu').a">IMU</text>
-                <text class="arm-label" :x="label(v.key, 'gnss').x" :y="label(v.key, 'gnss').y" :text-anchor="label(v.key, 'gnss').a">Antenna</text>
-                <text class="arm-label" :x="label(v.key, 'vehicle').x" :y="label(v.key, 'vehicle').y" :text-anchor="label(v.key, 'vehicle').a">Rear axle</text>
+                <text class="arm-label" :x="label(v.key, 'gnss').x" :y="label(v.key, 'gnss').y" :text-anchor="label(v.key, 'gnss').a">{{ _("Antenna") }}</text>
+                <text class="arm-label" :x="label(v.key, 'vehicle').x" :y="label(v.key, 'vehicle').y" :text-anchor="label(v.key, 'vehicle').a">{{ _("Rear axle") }}</text>
               </svg>
             </div>
           </template>
-          <figcaption class="small muted">Drawn to scale from the values entered. The car shows the directions (forward is its front,
-            right its right side, down towards the road); it is an example car placed by its rear axle,
-            not your vehicle's size. Check that each point sits where it is on your vehicle.</figcaption>
+          <figcaption class="u-note">{{ _("Drawn to scale from the values entered. The car shows the directions (forward is its front, right its right side, down towards the road); it is an example car placed by its rear axle, not your vehicle's size. Check that each point sits where it is on your vehicle.") }}</figcaption>
         </figure>
       </div>
 
-      <div class="d-flex flex-wrap align-items-center gap-2 mt-3">
-        <template x-if="!confirmRestart">
-          <div class="d-flex flex-wrap align-items-center gap-2">
-            <button type="button" class="btn btn-primary btn-sm" :disabled="!!busy || !dirty() || !valid()" @click="save(false)">
-              <span x-show="busy === 'save'" class="spinner-border spinner-border-sm me-1"></span>Save</button>
-            <button type="button" class="btn btn-outline-danger btn-sm" x-show="canRestart()" :disabled="!!busy || !dirty() || !valid() || info.still !== true"
-                    @click="confirmRestart = true">Save and restart AIO NAV</button>
+      <div class="u-item stack">
+        <div class="u-actions mt-0" x-show="!confirmRestart">
+          <button type="button" class="u-btn" :disabled="!!busy || !dirty() || !valid()" @click="save(false)">
+            <span x-show="busy === 'save'" class="spinner-border spinner-border-sm" aria-hidden="true"></span>{{ _("Save") }}</button>
+          <button type="button" class="u-btn u-btn-quiet" x-show="canRestart()" :disabled="!!busy || !dirty() || !valid() || info.still !== true"
+                  @click="confirmRestart = true">{{ _("Save and restart AIO NAV") }}</button>
+        </div>
+        <div class="u-callout warn" x-show="confirmRestart" x-cloak role="alertdialog" aria-labelledby="arm-ask">
+          <strong id="arm-ask">{{ _("Restart AIO NAV now? It aligns again: keep the vehicle still.") }}</strong>
+          <div class="d-flex flex-wrap gap-2 mt-2">
+            <button type="button" class="u-btn u-btn-sm u-btn-danger" :disabled="!!busy" @click="save(true)">
+              <span x-show="busy === 'restart'" class="spinner-border spinner-border-sm" aria-hidden="true"></span>{{ _("Save and restart") }}</button>
+            <button type="button" class="u-btn u-btn-sm u-btn-quiet" @click="confirmRestart = false">{{ _("Cancel") }}</button>
           </div>
-        </template>
-        <template x-if="confirmRestart">
-          <div class="d-flex flex-wrap align-items-center gap-2" role="alertdialog" aria-labelledby="arm-ask">
-            <span id="arm-ask" class="small fw-semibold">Restart AIO NAV now? It aligns again: keep the vehicle still.</span>
-            <button type="button" class="btn btn-danger btn-sm" :disabled="!!busy" @click="save(true)">
-              <span x-show="busy === 'restart'" class="spinner-border spinner-border-sm me-1"></span>Save and restart</button>
-            <button type="button" class="btn btn-outline-secondary btn-sm" @click="confirmRestart = false">Cancel</button>
-          </div>
-        </template>
-        <span class="small muted" x-text="applyNote()"></span>
+        </div>
+        <p class="u-note" x-text="AIO.tr(applyNote())"></p>
+        <p class="u-result" :class="msgClass" x-show="msg" x-cloak role="status" aria-live="polite" x-text="AIO.tr(msg)"></p>
       </div>
-      <div class="ctl-msg mt-2" :class="msgClass" role="status" aria-live="polite" x-text="msg"></div>
     </div>
   </section>
 </div>

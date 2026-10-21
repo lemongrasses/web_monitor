@@ -1,83 +1,142 @@
-{% from "macros.html" import brand_mark, chip %}
-{#- The one status area of the product pages: state, what is happening, what to do next, and (where
-    AIO NAV may be controlled) Start / Restart / Stop. Getters live in product.js. -#}
-{% macro status_area(controls=True, compact=False) -%}
-<section class="hero{{ ' compact' if compact }}" :class="'hero-' + state" @keydown.escape.window="ctlConfirm = null">
-  <div class="hero-main" role="status" aria-live="polite">
-    <div class="hero-state" x-text="stateLabel">Unknown</div>
-    <div class="hero-text">
-      <div class="hero-title" x-text="stateTitle"></div>
-      <div class="hero-detail" x-show="stateDetail" x-text="stateDetail"></div>
-    </div>
+{#- The user pages. One navy instrument (the status) answers "can I use navigation, and what do I
+    do now?"; on Overview it also carries the start-up steps, elsewhere it is a single line.
+    Getters live in product.js; text goes through _() and AIO.tr() (web/i18n.py). -#}
+
+{% macro brand() -%}
+<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="10.5" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M12 4.5 L16.5 17 L12 14.2 L7.5 17 Z" fill="currentColor"/></svg>
+{%- endmacro %}
+
+{#- Five arcs, one per start-up step (state/health.py _startup_checks), around what to do now. -#}
+{% macro ring() -%}
+{%- set c = 276.46 -%}{%- set seg = c / 5 -%}
+<div class="u-ring" aria-hidden="true">
+  <svg class="arcs" viewBox="0 0 100 100">
+    {%- for i in range(5) %}
+    <circle cx="50" cy="50" r="44" :class="'a-' + arc({{ i }})" stroke-dasharray="{{ '%.2f %.2f' % (seg - 10, c) }}" stroke-dashoffset="{{ '%.2f' % -(i * seg + 5) }}"></circle>
+    {%- endfor %}
+  </svg>
+  <div class="center">
+    <svg x-show="actionIcon() === 'still'" viewBox="0 0 24 24"><path d="M8 13V5.5a1.5 1.5 0 0 1 3 0V11m0-6.5v-1a1.5 1.5 0 0 1 3 0V11m0-5.5a1.5 1.5 0 0 1 3 0V12m0-3.5a1.5 1.5 0 0 1 3 0V15a7 7 0 0 1-7 7h-1.2a7 7 0 0 1-5.4-2.6L3.3 16a1.6 1.6 0 0 1 2.4-2.1L8 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg>
+    <svg x-show="actionIcon() === 'straight'" viewBox="0 0 24 24"><path d="M12 21V4m0 0-6 6m6-6 6 6" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+    <svg x-show="actionIcon() === 'drive'" viewBox="0 0 24 24"><path d="M6 21c0-6 2-9 6-11s6-4 6-7m0 0-4 1m4-1 1 4" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+    <svg x-show="actionIcon() === 'stop'" viewBox="0 0 24 24"><path d="M8.2 2.5h7.6l5.7 5.7v7.6l-5.7 5.7H8.2l-5.7-5.7V8.2z" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/><path d="M12 7.5v6m0 3v.2" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/></svg>
+    <svg x-show="actionIcon() === 'service'" viewBox="0 0 24 24"><path d="M14.7 6.3a4 4 0 0 0 5 5L21 13l-8 8-2.5-2.5 1.3-1.3a4 4 0 0 0-5-5L3 8.4 8.4 3l3 3.8a4 4 0 0 0 3.3-.5z" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/></svg>
+    <span x-show="!actionIcon() && hasHeading()" class="hdg-wrap"><svg class="hdg" :style="'transform: rotate(' + hdgRot + 'deg)'" viewBox="0 0 24 24"><path d="M12 2 L19 20 L12 15.5 L5 20 Z" fill="currentColor"/></svg></span>
+    <svg x-show="!actionIcon() && !hasHeading()" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3.2" fill="currentColor" opacity=".7"/></svg>
   </div>
-  <div class="hero-side">
-    <div class="hero-meta">
-      <span class="hero-badge" x-show="ctl.ros && ctl.ros.mode === 'bag'" x-cloak title="AIO NAV processes a recorded bag, not the live sensors">Bag replay</span>
-      <span x-show="s && s.session_uptime_s != null" x-cloak>Running <span x-text="fmt.duration(s && s.session_uptime_s)"></span></span>
+</div>
+{%- endmacro %}
+
+{% macro controls() -%}
+<div class="u-controls" x-show="ctl.enabled" x-cloak role="group" aria-label="AIO NAV">
+  <template x-if="!ctlConfirm">
+    <div class="u-row">
+      <button type="button" class="u-btn" x-show="ctl.state !== 'running'" :disabled="ctlBusy || !ctl.installed" @click="runCtl('start')">
+        <span x-show="ctlBusy" class="spinner-border spinner-border-sm" aria-hidden="true"></span>
+        <svg x-show="!ctlBusy" viewBox="0 0 16 16" aria-hidden="true"><path d="M4 2.5v11l9-5.5z" fill="currentColor"/></svg>
+        <span x-text="held ? AIO.tr('Resume') : AIO.tr('Start')">{{ _("Start") }}</span>
+      </button>
+      <button type="button" class="u-btn u-btn-ghost" x-show="ctl.state === 'running'" :disabled="ctlBusy" @click="askCtl('restart')">{{ _("Restart") }}</button>
+      <button type="button" class="u-btn u-btn-ghost" x-show="ctl.state === 'running'" :disabled="ctlBusy" @click="askCtl('stop')">
+        <span x-show="ctlBusy" class="spinner-border spinner-border-sm" aria-hidden="true"></span>{{ _("Stop") }}</button>
     </div>
-    {% if controls %}
-    <div class="hero-ctl" x-show="ctl.enabled" x-cloak role="group" aria-label="AIO NAV">
-      <template x-if="!ctlConfirm">
-        <div class="ctl-btns">
-          <button type="button" class="btn btn-start" x-show="ctl.state !== 'running'"
-                  :disabled="ctlBusy || !ctl.installed" @click="runCtl('start')">
-            <span x-show="ctlBusy" class="spinner-border spinner-border-sm" aria-hidden="true"></span>
-            <svg x-show="!ctlBusy" viewBox="0 0 16 16" aria-hidden="true"><path d="M4 2.5v11l9-5.5z" fill="currentColor"/></svg>Start
-          </button>
-          <button type="button" class="btn btn-ctl" x-show="ctl.state === 'running'"
-                  :disabled="ctlBusy" @click="askCtl('restart')">
-            <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M13 8a5 5 0 1 1-1.5-3.55M13 2.5v3h-3" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg>Restart
-          </button>
-          <button type="button" class="btn btn-ctl btn-ctl-stop" x-show="ctl.state === 'running'"
-                  :disabled="ctlBusy" @click="askCtl('stop')">
-            <span x-show="ctlBusy" class="spinner-border spinner-border-sm" aria-hidden="true"></span>
-            <svg x-show="!ctlBusy" viewBox="0 0 16 16" aria-hidden="true"><rect x="3.5" y="3.5" width="9" height="9" rx="1" fill="currentColor"/></svg>Stop
-          </button>
-        </div>
-      </template>
-      <template x-if="ctlConfirm">
-        <div class="hero-confirm" role="alertdialog" aria-labelledby="ctl-ask">
-          <span class="ctl-ask" id="ctl-ask" x-text="ctlConfirm === 'stop' ? 'Stop AIO NAV? Navigation output ends.' : 'Restart AIO NAV? Alignment starts over.'"></span>
-          <div class="ctl-btns">
-            <button type="button" class="btn btn-sm btn-danger" @click="runCtl(ctlConfirm)" x-text="ctlConfirm === 'stop' ? 'Stop now' : 'Restart now'"></button>
-            <button type="button" class="btn btn-sm btn-outline-secondary" id="ctl-cancel" @click="ctlConfirm = null">Cancel</button>
-          </div>
-        </div>
-      </template>
+  </template>
+  <template x-if="ctlConfirm">
+    <div class="u-confirm" role="alertdialog" aria-labelledby="ctl-ask">
+      <p id="ctl-ask" x-text="confirmText()"></p>
+      <div class="u-row">
+        <button type="button" class="u-btn u-btn-danger" @click="runCtl(ctlConfirm)" x-text="ctlConfirm === 'stop' ? AIO.tr('Stop now') : AIO.tr('Restart now')"></button>
+        <button type="button" class="u-btn u-btn-ghost" id="ctl-cancel" @click="ctlConfirm = null">{{ _("Cancel") }}</button>
+      </div>
     </div>
-    {% endif %}
+  </template>
+  <span class="u-meta" x-show="s && s.session_uptime_s != null" x-cloak>{{ _("Running") }} <span x-text="fmt.duration(s && s.session_uptime_s)"></span><span class="ms-2" x-show="ctl.ros && ctl.ros.mode === 'bag'">({{ _("Bag replay") }})</span></span>
+</div>
+{%- endmacro %}
+
+{% macro status(full=True, with_controls=True) -%}
+<section class="u-status{{ '' if full else ' compact' }}" :class="'is-' + tone()" aria-label="{{ _('Navigation status') }}" @keydown.escape.window="ctlConfirm = null">
+  <div class="u-status-head">
+    {{ ring() }}
+    <div role="status" aria-live="polite">
+      {% if full %}
+      <p class="u-state"><strong x-text="stateLabel">{{ _("Unknown") }}</strong><span x-text="sinceText()"></span></p>
+      <h1 class="u-action" x-text="headline()"></h1>
+      <p class="u-what" x-show="whatLine()" x-text="whatLine()"></p>
+      <p class="u-why" x-show="whyLine()" x-text="whyLine()"></p>
+      {% else %}
+      <div class="u-line">
+        <p class="u-state"><strong x-text="stateLabel">{{ _("Unknown") }}</strong></p>
+        <h1 class="u-action" x-text="headline()"></h1>
+        <p class="u-why" x-show="whatLine()" x-text="whatLine()"></p>
+      </div>
+      {% endif %}
+    </div>
+    {% if with_controls %}{{ controls() }}{% endif %}
   </div>
-  <div class="hero-msg" :class="ctlMsgClass" role="status" aria-live="polite" x-text="ctlMsg"></div>
+  {% if full %}
+  <ol class="u-steps" x-show="s && s.checks && s.checks.length" x-cloak aria-label="{{ _('Start-up progress') }}">
+    <template x-for="(c, i) in (s ? s.checks : [])" :key="c.key">
+      <li class="u-step" :class="'s-' + c.level + (openStep === c.key ? ' open' : '')">
+        <button type="button" @click="openStep = openStep === c.key ? null : c.key" :aria-expanded="openStep === c.key ? 'true' : 'false'">
+          <span class="u-mark" aria-hidden="true">
+            <svg x-show="c.level === 'healthy'" viewBox="0 0 16 16"><path d="M3.5 8.5l3 3 6-7" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            <svg x-show="c.level === 'fault'" viewBox="0 0 16 16"><path d="M8 3.5v5.5m0 2.7v.3" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/></svg>
+            <span x-show="c.level !== 'healthy' && c.level !== 'fault'" x-text="i + 1"></span>
+          </span>
+          <span class="u-step-text"><span class="u-step-name" x-text="c.name"></span><span class="u-step-label" x-text="c.label"></span></span>
+        </button>
+      </li>
+    </template>
+  </ol>
+  <template x-for="c in (s ? s.checks : [])" :key="'d' + c.key">
+    <div class="u-step-detail" x-show="openStep === c.key" x-cloak>
+      <dl><template x-for="r in c.rows" :key="r.k"><div><dt x-text="r.k"></dt><dd x-text="r.v"></dd></div></template></dl>
+      <p x-text="c.hint || ''"></p>
+    </div>
+  </template>
+  {% endif %}
+  <p class="u-msg" :class="ctlMsgClass" role="status" aria-live="polite" x-text="ctlMsg"></p>
 </section>
 {%- endmacro %}
 
 <!DOCTYPE html>
-<html lang="en">
+<html lang="{{ lang }}">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>{% block title %}AIO Navigation{% endblock %}</title>
-  <link rel="preload" href="{{ url_for('static', filename='vendor/fonts/barlow-latin-500-normal.woff2') }}" as="font" type="font/woff2" crossorigin>
+  <link rel="preload" href="{{ url_for('static', filename='vendor/fonts/instrument-sans-latin-wdth-wght.woff2') }}" as="font" type="font/woff2" crossorigin>
   <link rel="stylesheet" href="{{ url_for('static', filename='vendor/bootstrap.min.css') }}">
   <link rel="stylesheet" href="{{ url_for('static', filename='vendor/leaflet.css') }}">
-  <link rel="stylesheet" href="{{ url_for('static', filename='css/dashboard.css') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/product.css') }}">
+  <script>window.AIO_LANG = {{ lang|tojson }}; window.AIO_I18N = {{ i18n_js|tojson }};</script>
 </head>
-<body x-data="productPage()">
-  <header class="topbar">
-    <div class="topbar-row">
-      <div class="brand">{{ brand_mark() }}AIO Navigation</div>
-      <nav class="topnav" aria-label="Pages">
-        <a href="/" class="{{ 'active' if page == 'overview' }}" {{ 'aria-current=page' if page == 'overview' }}>Overview</a>
-        <a href="/navigation" class="{{ 'active' if page == 'navigation' }}" {{ 'aria-current=page' if page == 'navigation' }}>Navigation</a>
-        <a href="/data" class="{{ 'active' if page == 'data' }}" {{ 'aria-current=page' if page == 'data' }}>Data</a>
-        <a href="/setup" class="{{ 'active' if page == 'setup' }}" {{ 'aria-current=page' if page == 'setup' }}>Setup</a>
-      </nav>
-      {% if fake_mode %}<span class="fake-tag" title="Subsystem state comes from dev/fake_state.json">Fake data</span>{% endif %}
+<body x-data="productPage()" class="u lang-{{ lang }}">
+  <header class="u-top">
+    <a class="u-brand" href="/">{{ brand() }}AIO Navigation</a>
+    <nav class="u-tabs" aria-label="{{ _('Pages') }}">
+      {% for key, href, label in [('overview', '/', 'Overview'), ('navigation', '/navigation', 'Navigation'),
+                                  ('data', '/data', 'Data'), ('setup', '/setup', 'Setup'),
+                                  ('settings', '/settings', 'Settings')] %}
+      <a href="{{ href }}" class="{{ 'active' if page == key }}" {{ 'aria-current=page' if page == key }}>{{ _(label) }}</a>
+      {% endfor %}
+    </nav>
+    <div class="u-top-end">
+      {% if fake_mode %}<span class="u-demo" title="{{ _('Subsystem state comes from dev/fake_state.json') }}">{{ _("Fake data") }}</span>{% endif %}
+      <label class="u-lang">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M3 12h18M12 3c3 3.2 3 14.8 0 18M12 3c-3 3.2-3 14.8 0 18" fill="none" stroke="currentColor" stroke-width="1.6"/></svg>
+        <span class="visually-hidden">{{ _("Language") }}</span>
+        <select onchange="AIO.setLang(this.value)">
+          {% for code, name in langs %}<option value="{{ code }}" {{ 'selected' if code == lang }}>{{ name }}</option>{% endfor %}
+        </select>
+      </label>
     </div>
   </header>
-  {{ status_area(controls=(page not in ('data', 'setup')), compact=(page in ('data', 'setup'))) }}
 
-  <main class="container-fluid px-3 px-md-4 py-3">
+  {{ status(full=(page == 'overview'), with_controls=(page in ('overview', 'navigation'))) }}
+
+  <main class="u-main">
     {% block content %}{% endblock %}
   </main>
 
