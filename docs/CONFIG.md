@@ -71,6 +71,24 @@ cd ~/web_monitor && sudo deploy/install.sh --user jetson
 Updating the code (`git pull`, then running the installer without `--reset-config`)
 never overwrites your installed config.
 
+### What the installer changes on the system
+
+Besides `/opt/aio-dashboard` and its service, `install.sh` makes the device run unattended
+(the optional parts and the installer's options are in the README, *Deployment*):
+
+| Change | File | Why |
+|--------|------|-----|
+| System clock from GNSS time | `/etc/chrony/conf.d/aio-gnss.conf` (`refclock SHM 2`; only if chrony is installed) | The device keeps no time over a power-off and has no NTP in the field (section 4.2d). |
+| Reboot 10 s after a kernel panic | `/etc/sysctl.d/90-aio-unattended.conf` (`kernel.panic = 10`) | Instead of waiting 2 minutes for the hardware watchdog. |
+| systemd watchdog for the dashboard | `aio-dashboard.service` (`WatchdogSec=60`, `Restart=always`) | A dashboard that stops answering for 60 s is restarted; AIO NAV keeps running. |
+| The dashboard survives an out-of-memory kill | `aio-dashboard.service` (`OOMPolicy=continue`) | When the kernel kills AIO NAV or DSO, the automatic start and the DSO watchdog bring them back. |
+| Lingering for the service user | `loginctl enable-linger` | The sensor drivers (a user unit) can start at power-on with nobody logged in (`autostart.start_services`). |
+| Restart permission | `/etc/sudoers.d/aio-dashboard` | Only `systemctl restart` of the `restartable` units. |
+| Wi-Fi / hotspot permission (parts `wifi`, `hotspot`) | polkit rule `50-aio-dashboard-wifi` | The service user may manage NetworkManager (section 4.5a). |
+
+`sudo deploy/uninstall.sh` removes all of these except lingering (the kernel-panic setting returns
+to the default at the next boot).
+
 ## 3. YAML rules that matter
 
 - Indent with **spaces**, never tabs. Children are indented under their parent.

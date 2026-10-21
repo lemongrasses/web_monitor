@@ -83,7 +83,7 @@ stateDiagram-v2
   READY --> FAULT: AIO NAV stopped by itself
   CHECKING --> FAULT: prerequisites missing 120 s
   NAV_STARTING --> FAULT: no output in 60 s
-  FAULT --> NAV_STARTING: Start or automatic retry
+  FAULT --> NAV_STARTING: Start or automatic retry (after READY: vehicle still)
   READY --> MAINTENANCE: operator Stop
 ```
 
@@ -94,7 +94,7 @@ stateDiagram-v2
 | READY | NONE | inhibit_flags = 0 |
 | DEGRADED | SAFE_STOP | only after READY in this AIO NAV run |
 | FAULT | SERVICE_REQUIRED, or SAFE_STOP after READY | also: AIO NAV running twice, or `aio-nav.service` enabled with automatic start (OWNERSHIP_CONFLICT) |
-| MAINTENANCE | MAINTENANCE_HOLD | operator Stop (kept on disk) or nobody asked it to run |
+| MAINTENANCE | MAINTENANCE_HOLD | operator Stop (until Resume or the next power-on) or nobody asked it to run |
 
 ## 4. Automatic start (every 1 s)
 
@@ -105,29 +105,36 @@ failing never restarts a working AIO NAV.
 flowchart TD
   T(["tick"]) --> E{"enabled?"}
   E -- no --> X0["disabled"]
-  E -- yes --> H{"operator hold?"}
-  H -- yes --> X1["held"]
-  H -- no --> R{"READY reached<br/>this boot?"}
-  R -- yes --> X2["done / ready_this_boot<br/>never restarts until the next power-on"]
-  R -- no --> U{"AIO NAV running?"}
-  U -- yes --> F{"FAULT: no output<br/>or output stopped?"}
+  E -- yes --> RD["READY now: remember it for this boot,<br/>attempts = 0"]
+  RD --> H{"operator hold?"}
+  H -- yes --> X1["held<br/>until Start / Resume or the next power-on"]
+  H -- no --> U{"AIO NAV running?"}
+  U -- yes --> F{"no output, or<br/>output stopped?"}
   F -- no --> X3["running"]
-  F -- yes --> A1{"attempts < 5?"}
-  A1 -- yes --> S1["stop it, retry later<br/>5, 15, 30, 60 s"]
-  A1 -- no --> X4["gave_up<br/>left running for the logs"]
-  U -- no --> A2{"attempts < 5?"}
-  A2 -- no --> X4
-  A2 -- yes --> W{"retry wait over?"}
+  F -- yes --> I{"an input missing?<br/>(no IMU, no valid time)"}
+  I -- yes --> X7["waiting_inputs<br/>left running: may resume"]
+  I -- no --> G{"stale_grace_s over?<br/>(10 s; 0 s when no output at all)"}
+  G -- no --> X8["recovering"]
+  G -- yes --> A1{"max_attempts reached?<br/>(0 = never)"}
+  A1 -- yes --> X4["gave_up<br/>left running for the logs"]
+  A1 -- no --> S1["stop it, retry later<br/>5, 15, 30, 60, 60 … s"]
+  U -- no --> A2{"max_attempts reached?"}
+  A2 -- yes --> X4
+  A2 -- no --> W{"retry wait over?"}
   W -- no --> X5["retry_wait"]
-  W -- yes --> SV["start_services<br/>(drivers, at most every 30 s)"]
-  SV --> P{"prerequisites<br/>stable 2 s?"}
-  P -- no --> X6["waiting<br/>prereq_timeout after 120 s, keeps waiting"]
+  W -- yes --> SV["start_services: drivers not running,<br/>not stopped by an operator,<br/>manager answers (at most every 30 s)"]
+  SV --> P{"prerequisites stable 2 s,<br/>clock matches GNSS time (≤ 120 s),<br/>vehicle still 5 s?"}
+  P -- no --> X6["waiting<br/>prereq_timeout after 120 s<br/>(missing inputs only), keeps waiting"]
   P -- yes --> L["attempts + 1<br/>start AIO NAV and DSO"]
 ```
 
-- `ready_this_boot` is stored with `/proc/sys/kernel/random/boot_id`; a dashboard restart in the
-  same boot does not start AIO NAV again.
-- An operator Stop sets the hold (`state/autostart.json`); Start / Resume clears it.
+- The hold, the attempt count and "READY reached" are stored with
+  `/proc/sys/kernel/random/boot_id` (`state/autostart.json`, or `/dev/shm` if `state/` cannot be
+  written): a dashboard restart keeps them, the next power-on starts afresh.
+- After READY the same path restarts AIO NAV; meanwhile readiness says FAULT / SAFE_STOP, and the
+  start waits for the vehicle to be still.
+- An operator Stop sets the hold; Start / Resume clears it and resets the attempts. A busy process
+  slot (the DSO watchdog starting DSO) is not an attempt: it tries again in 2 s.
 
 ## 5. Wi-Fi change
 

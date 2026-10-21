@@ -790,7 +790,8 @@ another network at the same time.
   packet (0x04) and status packet (0x05) on **UDP port 9000**, in the format of section 6. The
   vehicle's output is unchanged. The switch *Send the NAV and status packets to the devices on the
   hotspot* turns this off and on (kept across restarts); the line under it shows which devices get
-  them and how many packets were sent.
+  them and how many packets were sent. The copies and the device count need the `iw` tool on the
+  device (`sudo apt install iw`; the installer does not add it): without it no device is found.
 - Starting and stopping need the maintenance password and a browser connected by cable (or the
   device itself): a phone on the hotspot cannot switch it off. The user Settings page shows the
   hotspot but cannot change it.

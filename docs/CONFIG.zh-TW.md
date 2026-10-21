@@ -55,6 +55,22 @@ cd ~/web_monitor && sudo deploy/install.sh --user jetson
 
 更新程式碼（`git pull` 後執行安裝程式，不加 `--reset-config`）永遠不會覆蓋您已安裝的設定。
 
+### 安裝程式對系統做的變更
+
+除了 `/opt/aio-dashboard` 與其服務之外，`install.sh` 還會讓裝置可以無人值守運作（選配部分與安裝程式的選項見 README 的 *Deployment*）：
+
+| 變更 | 檔案 | 原因 |
+|------|------|------|
+| 以 GNSS 時間設定系統時鐘 | `/etc/chrony/conf.d/aio-gnss.conf`（`refclock SHM 2`；只在有安裝 chrony 時） | 裝置斷電後不保留時間，野外也沒有 NTP（第 4.2d 節）。 |
+| 核心 panic 後 10 秒重開機 | `/etc/sysctl.d/90-aio-unattended.conf`（`kernel.panic = 10`） | 不必等硬體 watchdog 的 2 分鐘。 |
+| 儀表板的 systemd watchdog | `aio-dashboard.service`（`WatchdogSec=60`、`Restart=always`） | 儀表板 60 秒沒有回應就重新啟動；AIO NAV 繼續執行。 |
+| 記憶體不足時儀表板不受影響 | `aio-dashboard.service`（`OOMPolicy=continue`） | 核心終止 AIO NAV 或 DSO 時，由自動啟動與 DSO watchdog 把它們帶回來。 |
+| 服務使用者的 lingering | `loginctl enable-linger` | 感測器驅動（user unit）在沒有人登入時也能於上電時啟動（`autostart.start_services`）。 |
+| 重新啟動的權限 | `/etc/sudoers.d/aio-dashboard` | 只允許 `restartable` 服務的 `systemctl restart`。 |
+| Wi-Fi／熱點權限（`wifi`、`hotspot` 部分） | polkit 規則 `50-aio-dashboard-wifi` | 服務使用者可以管理 NetworkManager（第 4.5a 節）。 |
+
+`sudo deploy/uninstall.sh` 會移除以上全部，lingering 除外（核心 panic 的設定在下次開機時回到預設）。
+
 ## 3. 需要注意的 YAML 規則
 
 - 一律用**空白**縮排，不可使用 Tab。子項目要縮排在上層項目之下。
