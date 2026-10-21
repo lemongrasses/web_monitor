@@ -103,7 +103,7 @@ class WifiManager:
         self._run, self._clock, self._sleep = runner, clock, sleep
         self._lock = threading.Lock()
         self.last_result: Optional[Dict] = None
-        self._restored = ""
+        self._restored, self._kept = "", False
         self.fake = bool(getattr(cfg, "fake", False))
         self._fake_connected = "lab-wifi"
 
@@ -256,21 +256,26 @@ class WifiManager:
             why, code = f"no IPv4 address within {self.ip_timeout_s:.0f} s", "no_ip"
         else:
             why, code = self._why(out, "connection failed"), failure_code(out)
-        restored = self._rollback(created, previous)
+        restored = self._rollback(created, previous, dev)
         return {"success": False, "stages": stages, "device": dev, "code": code,
-                "restored": self._restored, "summary": f"{why}; {restored}"}
+                "restored": self._restored, "kept": self._kept, "summary": f"{why}; {restored}"}
 
-    def _rollback(self, created: List[str], previous: Optional[str]) -> str:
-        """Delete only the Wi-Fi profiles this attempt created; bring the previous one back."""
+    def _rollback(self, created: List[str], previous: Optional[str], dev: str) -> str:
+        """Delete only the Wi-Fi profiles this attempt created; bring the previous one back if it was left."""
         wifi = self._wifi_profiles()
-        self._restored = ""                               # the network it is back on, for the pages
+        self._restored, self._kept = "", False            # the network it is (back) on, for the pages
         for uuid in created:
             if uuid in wifi:                              # never a wired or other profile
                 self.nm("connection", "delete", "uuid", uuid)
         if previous:
+            name = wifi.get(previous, previous)
+            if self._active_wifi(dev) == previous:
+                # Never left (e.g. the network was not found): "connection up" would drop it and
+                # join again, cutting Wi-Fi for ~10 s (measured on the Jetson, 2026-10-21).
+                self._restored, self._kept = name, True
+                return f"still on {name}"
             rc, out = self.nm("--wait", str(int(self.connect_timeout_s)), "connection", "up", "uuid", previous,
                               timeout=self.connect_timeout_s + 10)
-            name = wifi.get(previous, previous)
             self._restored = name if rc == 0 else ""
             return f"back on {name}" if rc == 0 else f"could not reconnect to {name}: {self._why(out, 'error')}"
         return "Wi-Fi left disconnected (it was not connected before)"

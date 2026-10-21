@@ -16,17 +16,18 @@ SECRET = "correct-horse-9"
 
 DEVICES = "enp6s0:ethernet:connected:Wired connection 1\nwlan0:wifi:connected:office\nlo:loopback:unmanaged:\n"
 PROFILES = "u-wired:802-3-ethernet:Wired connection 1\nu-office:802-11-wireless:office\n"
-ACTIVE = "u-wired:802-3-ethernet:enp6s0\nu-office:802-11-wireless:wlan0\n"
 SCAN = ("*:office:70:WPA2\n :field\\:router:55:WPA2 WPA3\n :field\\:router:80:WPA2 WPA3\n"
         " ::40:WPA2\n :guest:20:\n")
 
 
 class FakeNM:
-    """Answers nmcli calls; ``connect`` decides how the connection attempt goes."""
+    """Answers nmcli calls; ``connect`` decides how the connection attempt goes. Like NetworkManager,
+    an attempt that reaches a network drops the active Wi-Fi first; one refused up front does not."""
 
     def __init__(self, connect="ok", ip_after=0):
         self.calls, self.connect, self.ip_after = [], connect, ip_after
         self.profiles = PROFILES
+        self.active = "u-office"                      # the Wi-Fi profile active on wlan0
         self.ip_polls = 0
 
     def __call__(self, argv, timeout):
@@ -37,20 +38,27 @@ class FakeNM:
         if a[:5] == ["-t", "-f", "UUID,TYPE,NAME", "connection", "show"]:
             return 0, self.profiles
         if a[:6] == ["-t", "-f", "UUID,TYPE,DEVICE", "connection", "show", "--active"]:
-            return 0, ACTIVE
+            return 0, "u-wired:802-3-ethernet:enp6s0\n" + (f"{self.active}:802-11-wireless:wlan0\n" if self.active else "")
         if "wifi" in a and "list" in a:
             return 0, SCAN
         if "connect" in a:
-            self.profiles = PROFILES + "u-new:802-11-wireless:lab\n"       # nmcli saves a profile even on failure
-            if self.connect == "ok":
-                return 0, "Device 'wlan0' successfully activated with 'u-new'."
             if self.connect == "denied":
                 return 1, "Error: Not authorized to control networking."
+            if self.connect == "not_found":
+                return 10, "Error: No network with SSID 'lab' found."
+            self.profiles = PROFILES + "u-new:802-11-wireless:lab\n"       # nmcli saves a profile even on failure
+            self.active = "u-new" if self.connect == "ok" else None
+            if self.connect == "ok":
+                return 0, "Device 'wlan0' successfully activated with 'u-new'."
             return 4, f"Error: Connection activation failed: Secrets were required, but not provided ({SECRET})."
         if a[:2] == ["-g", "IP4.ADDRESS"]:
             self.ip_polls += 1
             return 0, "192.0.2.50/24\n" if self.ip_polls > self.ip_after else ""
-        if "delete" in a or "up" in a:
+        if "delete" in a:
+            self.active = None if self.active == a[-1] else self.active
+            return 0, ""
+        if "up" in a:
+            self.active = a[-1]
             return 0, ""
         return 1, "unexpected call"
 
@@ -118,7 +126,7 @@ class ConnectTest(unittest.TestCase):
         self.assertIn(["nmcli", "connection", "delete", "uuid", "u-new"], nm.calls)
         self.assertTrue(any(c[-3:] == ["up", "uuid", "u-office"] for c in nm.calls))
         self.assertIn("back on office", r["summary"])
-        self.assertEqual((r["code"], r["restored"]), ("wrong_password", "office"))
+        self.assertEqual((r["code"], r["restored"], r["kept"]), ("wrong_password", "office", False))
         self.assertFalse(any(c[-1] in ("u-wired",) and "delete" in c for c in nm.calls))   # wired untouched
         self.assert_secret_nowhere(r, nm)                           # nmcli echoed it; scrubbed
 
@@ -130,6 +138,16 @@ class ConnectTest(unittest.TestCase):
         self.assertIn("no IPv4 address within 5 s", r["summary"])
         self.assertEqual(r["code"], "no_ip")
         self.assertIn(["nmcli", "connection", "delete", "uuid", "u-new"], nm.calls)
+        self.assertEqual(nm.active, "u-office")                     # the new network was joined: back
+
+    def test_a_network_not_found_leaves_the_current_one_alone(self):
+        # Seen on the Jetson: "connection up" of the still active network dropped Wi-Fi for ~10 s.
+        nm = FakeNM(connect="not_found")
+        r = self.mgr(nm).connect("lab", SECRET)
+        self.assertFalse(r["success"])
+        self.assertEqual((r["code"], r["restored"], r["kept"]), ("not_found", "office", True))
+        self.assertIn("still on office", r["summary"])
+        self.assertFalse(any("up" in c or "delete" in c for c in nm.calls))
 
     def test_missing_permission_names_the_one_time_setup(self):
         r = self.mgr(FakeNM(connect="denied")).connect("lab", SECRET)

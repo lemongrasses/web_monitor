@@ -302,7 +302,8 @@
           this.password = ""; this.choice = "";
         } else {
           const why = j.code ? tr(WIFI_FAIL[j.code] || "Could not connect.") : (j.summary || tr("Could not connect."));
-          const back = j.code ? SP + (j.restored ? trf("Back on {0}.", j.restored) : tr("Wi-Fi is not connected now.")) : "";
+          const back = j.code ? SP + (!j.restored ? tr("Wi-Fi is not connected now.") :
+                                      j.kept ? trf("Still on {0}.", j.restored) : trf("Back on {0}.", j.restored)) : "";
           this.result = why + back; this.resultClass = "bad";
         }
         await this.loadWifi();

@@ -103,7 +103,7 @@ ZH = {
     "Change Wi-Fi now?": "現在要變更 Wi-Fi 嗎？", "Change Wi-Fi": "變更 Wi-Fi",
     "strong": "訊號強", "medium": "訊號中", "weak": "訊號弱", "no password": "不需密碼", "connected": "已連線",
     "Could not search for networks.": "無法搜尋網路。", "Could not connect.": "無法連線。",
-    "Back on {0}.": "已回到 {0}。", "Wi-Fi is not connected now.": "目前沒有連線 Wi-Fi。",
+    "Back on {0}.": "已回到 {0}。", "Still on {0}.": "仍連線在 {0}。","Wi-Fi is not connected now.": "目前沒有連線 Wi-Fi。",
     "The password was not accepted.": "密碼不正確。",
     "The network was not found. Move closer or check the name.": "找不到此網路。請靠近一點或檢查名稱。",
     "Joined the network, but it gave this device no address.": "已加入網路，但沒有取得位址。",
