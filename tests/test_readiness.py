@@ -322,6 +322,25 @@ class EngineTest(unittest.TestCase):
         r = self.run_for(eng, 4)
         self.assertEqual((r["state"], r["requested_action"]), ("KEEP_STILL", "HOLD_STILL"))
 
+    def test_a_power_off_while_running_is_no_crash_at_the_next_power_on(self):
+        """Seen on the device (2026-10-21): AIO NAV ran at power-off, so it was still "wanted" at
+        the next power-on: the pages said FAULT "AIO NAV stopped unexpectedly" until the automatic
+        start, and the vehicle got FAULT for a second when it began."""
+        from aio_system_dashboard.actions import process_control
+        eng = self.engine()
+        process_control.set_wanted(self.cfg, "aio_nav", True)          # running at power-off
+        self.stop_process()
+        eng.autostart_status = lambda: {"enabled": True, "state": "waiting", "hold": False,
+                                        "ready_this_boot": False, "detail": "Waiting for IMU data"}
+        self.clock.t += 100
+        with mock.patch.object(process_control, "_boot_id", lambda: "the-next-boot"):
+            r = self.run_for(eng, 4)
+            self.assertEqual((eng.product.level, r["state"]), ("STOPPED", "CHECKING"))
+            self.assertNotIn(("health", "AIO NAV state FAULT"), self.events.items)
+        with mock.patch.object(process_control, "wanted_age_s", lambda _c, _k: 100.0):
+            self.run_for(eng, 4)                                        # the same boot: a crash
+        self.assertEqual(eng.product.level, "FAULT")
+
     def test_crash_after_ready_survives_a_dashboard_restart(self):
         """Seen on the device: after a dashboard restart the per-process latch was gone and the
         vehicle was told SERVICE_REQUIRED ("press Start") instead of SAFE_STOP."""

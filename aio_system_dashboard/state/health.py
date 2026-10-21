@@ -288,9 +288,11 @@ class HealthEngine:
         elif self._fresh_since is None:
             self._fresh_since = now
 
-        # Product state (debounced); reasons follow the displayed state.
+        # Product state (debounced); reasons follow the displayed state. Wanted: started in this
+        # power-on only. Switching the vehicle off with AIO NAV running is no crash; seen 2026-10-21:
+        # every power-on said "AIO NAV stopped unexpectedly" until the automatic start.
         run = {"running": bool(nav_svc.get("pids")), "service_state": service_state,
-               "wanted": process_control.wanted(self.cfg, ncfg["service"]),
+               "wanted": process_control.wanted(self.cfg, ncfg["service"], this_boot=True),
                "wanted_age_s": process_control.wanted_age_s(self.cfg, ncfg["service"]),
                "run_age_s": (now - self._run_since) if self._run_since is not None else None,
                "in_grace": in_grace}
@@ -546,7 +548,7 @@ class HealthEngine:
             "ever_output": bool(latest), "ever_ready": ever_ready, "booting": in_grace,
             "conditions": conditions, "hold": bool(auto.get("hold")), "autostart": auto,
             "nav_required_flags": [f for f in self.cfg["nav"]["ready_requires"] if f in ALIGN_LAMPS],
-            "wanted": process_control.wanted(self.cfg, self.cfg["nav"]["service"]),
+            "wanted": process_control.wanted(self.cfg, self.cfg["nav"]["service"], this_boot=True),
             "unknown_required": unknown_required,
             "ownership": self._ownership(now, nav_svc, bool(auto.get("enabled"))),
             "needs_service": shown == PRODUCT_FAULT and self._product_reasons[:1] and
