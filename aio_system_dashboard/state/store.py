@@ -13,6 +13,9 @@ from typing import Any, Dict, List, Optional
 logger = logging.getLogger(__name__)
 
 EVENT_LOG_MAX_BYTES = 5 * 1024 * 1024
+# Before 2020 is not a real time: the Jetson keeps no time over a power-off, and each power-on
+# starts at 1970 until GNSS time or NTP sets the clock.
+CLOCK_VALID_FROM = 1577836800.0
 
 
 class StateStore:
@@ -42,18 +45,21 @@ class StateStore:
 class EventLog:
     """Recent events in memory plus an append-only JSONL file (one rotation)."""
 
-    def __init__(self, log_file: Optional[Path], max_memory: int = 500):
+    def __init__(self, log_file: Optional[Path], max_memory: int = 500, clock=time.time, mono=time.monotonic):
         self._lock = threading.Lock()
         self._events: deque = deque(maxlen=max_memory)
         self._ids = itertools.count(1)
         self._file = log_file
+        self._clock, self._mono = clock, mono
+        self._mono_of: Dict[int, float] = {}            # id -> monotonic time, for events stamped 1970
         if log_file:
             log_file.parent.mkdir(parents=True, exist_ok=True)
 
     def add(self, level: str, category: str, title: str, detail: str = "", **extra) -> Dict:
+        ts = self._clock()
         event = {
             "id": next(self._ids),
-            "ts": time.time(),
+            "ts": ts,
             "level": level,          # info | success | warning | fault
             "category": category,    # health | action | diagnostic | ...
             "title": title,
@@ -62,14 +68,26 @@ class EventLog:
         }
         with self._lock:
             self._events.append(event)
+            if ts < CLOCK_VALID_FROM:
+                self._mono_of[event["id"]] = self._mono()
             self._write(event)
         log = logger.warning if level in ("warning", "fault") else logger.info
         log("event [%s/%s] %s %s", category, level, title, detail)
         return event
 
     def recent(self, limit: int = 100) -> List[Dict]:
+        """Newest first. Events of a power-on's first minute were stamped 1970 (seen 2026-10-21: the
+        Maintenance page said "08:00:40"); once the clock is set they get their real time, from the
+        monotonic clock, which does not jump."""
         with self._lock:
             items = list(self._events)[-limit:]
+            if self._mono_of and self._clock() >= CLOCK_VALID_FROM:
+                offset = self._clock() - self._mono()
+                for e in self._events:
+                    m = self._mono_of.pop(e["id"], None)
+                    if m is not None:
+                        e["ts"] = m + offset
+                self._mono_of.clear()                   # those that left the memory
         return list(reversed(items))
 
     def _write(self, event: Dict) -> None:
