@@ -389,6 +389,11 @@ h1, h2, h3 { font-family: var(--cond); font-weight: 600; letter-spacing: .005em;
 .arm-views figcaption { grid-column: 1 / -1; }
 .arm-view { background: #f6f8fa; border: 1px solid var(--rule-soft); border-radius: 2px; padding: .3rem .4rem; }
 .arm-view svg { width: 100%; height: auto; overflow: visible; display: block; }
+.arm-car { fill: #eef2f6; stroke: #a9b6c2; stroke-width: 1.5; stroke-linejoin: round; }
+.arm-glass { fill: #d9e2ea; }
+.arm-wheel { fill: #a9b6c2; }
+.arm-ground { stroke: #a9b6c2; stroke-width: 1.5; }
+.arm-car-t { fill: #8796a5; font-size: 9px; font-weight: 700; letter-spacing: .08em; }
 .arm-axis { stroke: var(--muted); stroke-width: 1.4; }
 .arm-axis-head { fill: var(--muted); }
 .arm-axis-t { fill: var(--muted); font-size: 11px; }

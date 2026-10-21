@@ -41,6 +41,19 @@
             <div class="arm-view">
               <div class="small muted" x-text="v.title"></div>
               <svg viewBox="0 0 320 170" role="img" :aria-label="v.title + ' of the IMU, antenna and reference point'">
+                <!-- a typical car, to scale, its rear axle at the vehicle reference point: front to the right;
+                     seen from above, its right side at the bottom -->
+                <g aria-hidden="true">
+                  <line class="arm-ground" x1="14" x2="306" :y1="groundY()" :y2="groundY()" x-show="v.key === 'side'"/>
+                  <path class="arm-wheel" :d="wheelPath(v.key)" x-show="v.key === 'top'"/>
+                  <path class="arm-car" :d="carPath(v.key)"/>
+                  <path class="arm-glass" :d="glassPath(v.key)"/>
+                  <path class="arm-wheel" :d="wheelPath(v.key)" x-show="v.key === 'side'"/>
+                  <text class="arm-car-t" :x="carLabel(v.key, 'front').x" :y="carLabel(v.key, 'front').y" text-anchor="start">FRONT</text>
+                  <text class="arm-car-t" :x="carLabel(v.key, 'rear').x" :y="carLabel(v.key, 'rear').y" text-anchor="end">REAR</text>
+                  <text class="arm-car-t" x-show="v.key === 'top'" :x="carLabel(v.key, 'left').x" :y="carLabel(v.key, 'left').y" text-anchor="middle">LEFT SIDE</text>
+                  <text class="arm-car-t" x-show="v.key === 'top'" :x="carLabel(v.key, 'right').x" :y="carLabel(v.key, 'right').y" text-anchor="middle">RIGHT SIDE</text>
+                </g>
                 <line class="arm-axis" x1="12" y1="12" x2="44" y2="12"/><path class="arm-axis-head" d="M44 8 L52 12 L44 16 Z"/>
                 <text class="arm-axis-t" x="56" y="16">forward</text>
                 <line class="arm-axis" x1="12" y1="12" x2="12" y2="40"/><path class="arm-axis-head" d="M8 40 L12 48 L16 40 Z"/>
@@ -50,13 +63,15 @@
                 <rect class="arm-imu" :x="pt(v.key, 'imu').x - 6" :y="pt(v.key, 'imu').y - 6" width="12" height="12" rx="2"/>
                 <circle class="arm-gnss" :cx="pt(v.key, 'gnss').x" :cy="pt(v.key, 'gnss').y" r="6"/>
                 <path class="arm-vehicle" :d="cross(pt(v.key, 'vehicle'))"/>
-                <text class="arm-label" :x="pt(v.key, 'imu').x + 9" :y="pt(v.key, 'imu').y - 8">IMU</text>
-                <text class="arm-label" :x="pt(v.key, 'gnss').x + 9" :y="pt(v.key, 'gnss').y - 8">Antenna</text>
-                <text class="arm-label" :x="pt(v.key, 'vehicle').x + 9" :y="pt(v.key, 'vehicle').y + 16">Reference</text>
+                <text class="arm-label" :x="label(v.key, 'imu').x" :y="label(v.key, 'imu').y" :text-anchor="label(v.key, 'imu').a">IMU</text>
+                <text class="arm-label" :x="label(v.key, 'gnss').x" :y="label(v.key, 'gnss').y" :text-anchor="label(v.key, 'gnss').a">Antenna</text>
+                <text class="arm-label" :x="label(v.key, 'vehicle').x" :y="label(v.key, 'vehicle').y" :text-anchor="label(v.key, 'vehicle').a">Reference</text>
               </svg>
             </div>
           </template>
-          <figcaption class="small muted">Drawn from the values entered, to scale. Check the antenna is above and the points are where they are on the vehicle.</figcaption>
+          <figcaption class="small muted">Drawn to scale from the values entered. The car shows the directions (forward is its front,
+            right its right side, down towards the road); it is an example car with its rear axle at the reference point,
+            not your vehicle's size. Check that each point sits where it is on your vehicle.</figcaption>
         </figure>
       </div>
 
