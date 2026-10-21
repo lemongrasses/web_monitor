@@ -236,6 +236,10 @@ class WifiManager:
                     "ipv4.method", "shared", "ipv4.addresses", self.hotspot_address, "ipv6.method", "ignore",
                     "wifi-sec.key-mgmt", "wpa-psk", "wifi-sec.proto", "rsn",
                     "wifi-sec.pairwise", "ccmp", "wifi-sec.group", "ccmp", "wifi-sec.psk", password,
+                    # Plain WPA2. Otherwise NetworkManager 1.36 runs the access point as WPA2/WPA3
+                    # (SAE) without management-frame protection, which WPA3 requires: laptops still
+                    # list it, iPhones do not (seen 2026-10-21 with an iPhone 16, iOS 26).
+                    "wifi-sec.pmf", "disable",
                     # back at every power-on, ahead of the saved networks, until it is stopped
                     "connection.autoconnect", "yes", "connection.autoconnect-priority", "100"]
         if existing:

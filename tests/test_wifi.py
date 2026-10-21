@@ -137,6 +137,7 @@ class HotspotTest(unittest.TestCase):
         add = next(c for c in nm.calls if "add" in c)
         for key, value in (("802-11-wireless.mode", "ap"), ("802-11-wireless.band", "bg"), ("ipv4.method", "shared"),
                            ("ipv4.addresses", "10.42.0.1/24"), ("wifi-sec.key-mgmt", "wpa-psk"),
+                           ("wifi-sec.pmf", "disable"),                  # plain WPA2: iPhones list it
                            ("connection.autoconnect", "yes")):
             self.assertEqual(add[add.index(key) + 1], value, key)
         self.assertIn("http://10.42.0.1:8080", r["summary"])
