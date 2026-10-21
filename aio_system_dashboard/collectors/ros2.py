@@ -128,6 +128,20 @@ def stale_after_s(expected_hz: Optional[float]) -> float:
     return 3.0
 
 
+# A publisher just discovered has had no chance to send yet: DDS discovery comes before the first
+# message, and a sampled topic waits for its next listening window (up to period + window).
+NEW_PUBLISHER_GRACE_S = 10.0
+
+
+def settle_new_topic(state: str, age_s: Optional[float], since_present_s: float) -> str:
+    """Nothing received yet from a publisher found less than NEW_PUBLISHER_GRACE_S ago: "missing"
+    (no data yet), not "stale". Seen 2026-10-21: a "stale" warning 2 s before "healthy" at every
+    dashboard start, power-on and driver restart."""
+    if state == TOPIC_STALE and age_s is None and since_present_s < NEW_PUBLISHER_GRACE_S:
+        return TOPIC_MISSING
+    return state
+
+
 def classify_topic(present: bool, publishers: int, age_s: Optional[float],
                    rate_hz: float, expected_hz: Optional[float]) -> str:
     if not present or publishers == 0:
@@ -499,6 +513,10 @@ class Ros2Collector:
             subs = node.count_subscribers(name) if types else 0
             sampled = self._sampling_on(t)
             if types and pubs:
+                self._first_seen.setdefault(name, time.monotonic())
+            else:
+                self._first_seen.pop(name, None)
+            if types and pubs:
                 if sampled:
                     self._sampled.setdefault(name, {"type": t.get("type") or types[0]})
                 else:
@@ -514,6 +532,8 @@ class Ros2Collector:
             else:
                 rate, age = self._stats[name].read() if name in self._stats else (0.0, None)
             entry = self._topic_entry(t, bool(types), pubs, subs, rate, age)
+            entry["state"] = settle_new_topic(entry["state"], age,
+                                              time.monotonic() - self._first_seen.get(name, time.monotonic()))
             if name in self._stats and entry["state"] == TOPIC_HEALTHY:
                 entry["time_ok"], entry["time_why"] = self._stats[name].time_status()
                 if self._stats[name].imu:

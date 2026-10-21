@@ -186,3 +186,14 @@ class ClockFeedTest(unittest.TestCase):
         s.tick(b"\x00\x01")                                   # unreadable: not passed on
         self.assertEqual(len(got), 1)
         self.assertEqual(got[0][1], 1792481513.0)
+
+
+class NewPublisherTest(unittest.TestCase):
+    def test_a_publisher_just_found_is_not_stale_before_it_could_send(self):
+        """Seen 2026-10-21: "Topic /openrtk330/imu/data_raw stale", then "healthy" 2 s later, at
+        every dashboard start, power-on and driver restart."""
+        stale = ros2.classify_topic(True, 1, None, 0.0, 100.0)
+        self.assertEqual(stale, ros2.TOPIC_STALE)
+        self.assertEqual(ros2.settle_new_topic(stale, None, 2.0), ros2.TOPIC_MISSING)   # no data yet
+        self.assertEqual(ros2.settle_new_topic(stale, None, 30.0), ros2.TOPIC_STALE)    # never sends
+        self.assertEqual(ros2.settle_new_topic(stale, 5.0, 2.0), ros2.TOPIC_STALE)      # sent, then stopped
