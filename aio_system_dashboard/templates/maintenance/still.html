@@ -1,0 +1,108 @@
+{% extends "maintenance/base.html" %}
+{% from "macros.html" import annun %}
+{% block title %}Still detection{% endblock %}
+{% block heading %}Still detection{% endblock %}
+{% block content %}
+<div x-data="stillPage()" x-init="stillInit()">
+  <p class="muted small mb-3" style="max-width: 52rem">
+    After a failure, AIO NAV is started again by itself only when the vehicle stands still
+    (its alignment needs it). The IMU decides, from how much the vehicle rotates and shakes, and
+    while the receiver has a GNSS position, its speed too. Every vehicle shakes differently with the
+    engine running: measure the limits on this vehicle once, and again if the device is moved.
+  </p>
+
+  <div class="row g-3">
+    <!-- now -->
+    <div class="col-lg-6">
+      <section class="panel h-100" aria-labelledby="still-now">
+        <div class="panel-h"><strong id="still-now">Now</strong>
+          <span class="small muted" x-text="limitsSource()"></span></div>
+        <div class="panel-b">
+          <div class="annun-row mb-3">{{ annun("Vehicle", "vehicleLamp()") }}</div>
+          <template x-for="k in keys" :key="k">
+            <div class="still-row">
+              <div class="still-name"><span x-text="NAMES[k]"></span>
+                <span class="muted small" x-show="k === 'speed_m_s' && !speedUsed()" x-text="'not used: ' + speedNote()"></span></div>
+              <div class="still-meter" :title="meterTitle(k)" aria-hidden="true">
+                <span class="still-fill" :class="over(k) ? 'over' : ''" :style="'width:' + meterPct(k) + '%'"></span>
+                <span class="still-limit"></span>
+              </div>
+              <div class="still-val"><span x-text="nowText(k)"></span>
+                <span class="muted small" x-text="' / limit ' + num(limit(k)) + ' ' + UNITS[k]"></span></div>
+            </div>
+          </template>
+          <p class="small muted mt-2 mb-0">
+            Still means all of them under their limit for <span x-text="s ? s.hold_s : '-'"></span> s.
+            <span x-show="s && !s.require_still">The automatic start does not wait for it (autostart.require_still is off).</span>
+            The bar's mark is the limit.
+          </p>
+        </div>
+      </section>
+    </div>
+
+    <!-- measure -->
+    <div class="col-lg-6">
+      <section class="panel h-100" aria-labelledby="still-measure">
+        <div class="panel-h"><strong id="still-measure">Measure on this vehicle</strong></div>
+        <div class="panel-b">
+          <ol class="still-steps">
+            <li>
+              <strong>Parked, engine running.</strong> Nobody gets in or out. Press Measure; it takes
+              <span x-text="s ? s.durations.still : 60"></span> s.
+              <div class="mt-1"><button type="button" class="btn btn-sm btn-primary" :disabled="running() || !!busy" @click="measure('still')">Measure still</button></div>
+            </li>
+            <li>
+              <strong>Optional: drive slowly</strong> (walking pace) and press Check while driving
+              (<span x-text="s ? s.durations.moving : 30"></span> s). It shows whether the limits tell driving from standing.
+              <div class="mt-1"><button type="button" class="btn btn-sm btn-outline-primary" :disabled="running() || !!busy" @click="measure('moving')">Check while driving</button></div>
+            </li>
+            <li><strong>Apply</strong> the proposed limits below.</li>
+          </ol>
+
+          <div class="still-progress" x-show="running()" x-cloak role="status" aria-live="polite">
+            <div class="d-flex justify-content-between small">
+              <span x-text="cal.kind === 'still' ? 'Measuring, keep the vehicle still…' : 'Checking while driving…'"></span>
+              <span x-text="Math.round(cal.elapsed_s) + ' / ' + cal.duration_s + ' s, ' + cal.readings + ' readings'"></span>
+            </div>
+            <div class="progress mt-1" style="height: .5rem"><div class="progress-bar" :style="'width:' + progressPct() + '%'"></div></div>
+            <div class="small muted mt-1" x-show="cal.last" x-text="lastText()"></div>
+            <button type="button" class="btn btn-sm btn-outline-secondary mt-2" @click="cancel()">Cancel</button>
+          </div>
+          <p class="small mb-0 mt-2" x-show="!running() && cal.message" :class="resultClass()" x-text="cal.message" role="status"></p>
+          <div class="ctl-msg bad mt-2" role="alert" x-text="mmsg"></div>
+        </div>
+      </section>
+    </div>
+  </div>
+
+  <!-- limits -->
+  <section class="panel mt-3" aria-labelledby="still-limits">
+    <div class="panel-h"><strong id="still-limits">Limits</strong>
+      <span class="small muted" x-text="formFrom"></span></div>
+    <div class="panel-b">
+      <div class="still-form">
+        <template x-for="k in keys" :key="k">
+          <label class="still-field">
+            <span x-text="NAMES[k] + ' (' + UNITS[k] + ')'"></span>
+            <input type="number" class="form-control form-control-sm" step="any" :min="range(k)[0]" :max="range(k)[1]"
+                   x-model.number="form[k]" @input="msg = ''">
+            <span class="small muted" x-text="fieldNote(k)"></span>
+          </label>
+        </template>
+      </div>
+      <div class="d-flex flex-wrap align-items-center gap-2 mt-3">
+        <button type="button" class="btn btn-sm btn-primary" :disabled="!!busy || !formChanged()" @click="apply()">
+          <span x-show="busy === 'apply'" class="spinner-border spinner-border-sm me-1"></span>Apply these limits</button>
+        <button type="button" class="btn btn-sm btn-outline-secondary" :disabled="!!busy || !s || s.limits.how === 'default'" @click="resetDefaults()">Back to defaults</button>
+        <span class="small muted">They apply at once, are kept across restarts, and need the maintenance password.
+          Allowed: rotation <span x-text="rangeText('gyro_rad_s')"></span>, shake <span x-text="rangeText('accel_std')"></span>,
+          speed <span x-text="rangeText('speed_m_s')"></span>.</span>
+      </div>
+      <div class="ctl-msg mt-2" :class="msgClass" role="status" aria-live="polite" x-text="msg"></div>
+    </div>
+  </section>
+</div>
+{% endblock %}
+{% block scripts %}
+<script src="{{ url_for('static', filename='js/still.js') }}"></script>
+{% endblock %}

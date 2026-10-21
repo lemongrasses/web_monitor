@@ -93,7 +93,11 @@ DEFAULTS: Dict[str, Any] = {
                   # "Vehicle still" from the IMU (2 s of samples): largest rotation rate and the
                   # spread of the acceleration magnitude. Parked with the engine on: < 0.035 rad/s,
                   # < 0.16 m/s2; driving: > 0.17 rad/s, > 0.6 m/s2 (recorded drive, 2026-09-23).
-                  "still_gyro_rad_s": 0.05, "still_accel_std": 0.15},
+                  # Plus, while the receiver has a GNSS position, its speed (still_speed_topic: the
+                  # OpenRTK330's INS odometry; "" = IMU only). These are the defaults: limits measured
+                  # on the vehicle (Maintenance > Still detection) replace them (state/still.py).
+                  "still_gyro_rad_s": 0.05, "still_accel_std": 0.15, "still_speed_m_s": 0.3,
+                  "still_speed_topic": "/openrtk330/odometry"},
     # Run AIO NAV (+ DSO, the nav.control_group) without an operator: start after power-on, restart
     # after failures, never give up (actions/autostart.py). Needs nav.allow_control.
     "autostart": {"enabled": True,

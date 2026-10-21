@@ -357,3 +357,23 @@ h1, h2, h3 { font-family: var(--cond); font-weight: 600; letter-spacing: .005em;
 .rd-panel .vrow .k { flex: none; }
 .rd-panel .vrow .v { font-size: var(--t-s); white-space: normal; text-align: right; overflow-wrap: anywhere; min-width: 0; }
 .rd-panel .vrow .v.mono { font-size: var(--t-xs); }
+
+/* Maintenance > Still detection: value against its limit (the mark at two thirds of the bar) */
+.still-row { display: grid; grid-template-columns: minmax(7rem, 1fr) minmax(6rem, 1.4fr) minmax(9rem, 1.2fr); gap: .3rem .8rem;
+             align-items: center; padding: .35rem 0; border-bottom: 1px solid var(--rule-soft); }
+.still-row:last-of-type { border-bottom: 0; }
+.still-name { font-weight: 500; }
+.still-name .small { display: block; font-weight: 400; }
+.still-meter { position: relative; height: .55rem; background: #e4e9ee; border-radius: 2px; overflow: hidden; }
+.still-fill { position: absolute; inset: 0 auto 0 0; background: var(--go); }
+.still-fill.over { background: var(--caution); }
+.still-limit { position: absolute; top: -1px; bottom: -1px; left: 66.67%; width: 2px; background: var(--ink); }
+.still-val { text-align: right; white-space: nowrap; }
+.still-steps { padding-left: 1.2rem; margin-bottom: .2rem; }
+.still-steps li + li { margin-top: .6rem; }
+.still-form { display: grid; grid-template-columns: repeat(auto-fit, minmax(12rem, 1fr)); gap: .8rem 1.2rem; }
+.still-field { display: flex; flex-direction: column; gap: .2rem; }
+@media (max-width: 575px) {
+  .still-row { grid-template-columns: 1fr auto; }
+  .still-meter { grid-column: 1 / -1; grid-row: 2; }
+}

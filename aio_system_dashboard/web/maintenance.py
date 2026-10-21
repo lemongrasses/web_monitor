@@ -10,6 +10,7 @@ from ..actions import process_control
 from ..actions.registry import ActionError
 from ..media.tap import PreviewError, meta_header
 from .common import json_body, create_base_app
+from .still import register_still
 from .tools import register_tools
 
 logger = logging.getLogger(__name__)
@@ -18,7 +19,8 @@ PAGES = ("overview", "system", "ros", "camera", "lidar", "network", "diagnostics
 NAV = [("overview", "Overview", "/"), ("system", "System", "/system"), ("ros", "ROS 2", "/ros"),
        ("camera", "Camera", "/camera"), ("lidar", "LiDAR", "/lidar"),
        ("network", "Network", "/network"), ("diagnostics", "Diagnostics", "/diagnostics"),
-       ("config", "AIO NAV config", "/config"), ("terminal", "Terminal", "/terminal")]
+       ("still", "Still detection", "/still"), ("config", "AIO NAV config", "/config"),
+       ("terminal", "Terminal", "/terminal")]
 
 
 def create_maintenance_app(ctx):
@@ -121,6 +123,7 @@ def create_maintenance_app(ctx):
             return jsonify({"success": False, "summary": str(e)}), e.status
 
     register_tools(ctx, app, page_context)        # config editor + terminal (password protected)
+    register_still(ctx, app, page_context)        # still limits: measuring and changing need the password
     guard = ctx.guard
 
     # maintenance.lock: "all" (default) = the whole Maintenance site needs the password;

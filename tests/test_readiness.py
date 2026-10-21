@@ -8,6 +8,7 @@ from unittest import mock
 
 from aio_system_dashboard.config import DEFAULTS, Config
 from aio_system_dashboard.state import readiness as rd
+from aio_system_dashboard.state import still
 from aio_system_dashboard.state.health import HealthEngine
 from aio_system_dashboard.state.store import StateStore
 
@@ -374,6 +375,30 @@ class EngineTest(unittest.TestCase):
         self.assertFalse(self.run_for(eng, 1)["motion"]["still"])
         imu.pop("motion")
         self.assertIsNone(self.run_for(eng, 1)["motion"]["still"])          # unknown is not still
+
+    def test_vehicle_still_uses_measured_limits_and_gnss_speed(self):
+        """Measured limits replace the settings; with a GNSS position the receiver's speed counts too
+        (an IMU alone cannot tell standing from driving straight at a steady speed)."""
+        eng = self.engine()
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        eng.still_limits = still.StillLimits(eng.cfg, Path(tmp.name) / "still_limits.json")
+        imu = {"name": "/openrtk330/imu/data_raw", "label": "INS IMU", "group": "nav", "state": "healthy",
+               "rate_hz": 100.0, "age_s": 0.01, "motion": {"gyro_max": 0.01, "accel_std": 0.2}}
+        self.store.set("ros", {"available": True, "watched": [imu]})
+        self.assertFalse(self.run_for(eng, 1)["motion"]["still"])           # 0.2 > the 0.15 default
+        eng.still_limits.apply({"gyro_rad_s": 0.05, "accel_std": 0.3, "speed_m_s": 0.3}, "measured")
+        self.assertTrue(self.run_for(eng, 1)["motion"]["still"])            # this vehicle shakes more
+        self.store.set("speed", {"available": True, "speed_max": 2.5, "frozen": False, "age_s": 0.3})
+        self.store.set("gnss", {"quality": "none"})
+        m = self.run_for(eng, 1)["motion"]
+        self.assertTrue(m["still"])                                          # no GNSS position: not used
+        self.assertFalse(m["speed_used"])
+        self.store.set("gnss", {"quality": "spp"})
+        m = self.run_for(eng, 1)["motion"]
+        self.assertEqual((m["still"], m["reason"]), (False, "moving: GNSS speed 2.50 m/s"))
+        self.store.set("speed", {"available": True, "speed_max": 2.5, "frozen": True, "age_s": 0.3})
+        self.assertTrue(self.run_for(eng, 1)["motion"]["still"])            # frozen: not a measurement
 
     def test_new_run_is_not_degraded_while_the_process_list_lags(self):
         """Seen on the device: right after an automatic restart (READY earlier in this power-on) the

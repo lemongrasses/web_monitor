@@ -14,6 +14,7 @@ from unittest import mock
 from aio_system_dashboard.actions import aionav_config as ac
 from aio_system_dashboard.actions.terminal import TerminalManager
 from aio_system_dashboard.config import DEFAULTS, Config
+from aio_system_dashboard.state import still
 
 LIVE = """# comment at the top
 aio_nav_node:
@@ -301,10 +302,15 @@ class GuardWebTest(unittest.TestCase):
             p.start()
             self.addCleanup(p.stop)
         self.events = []
-        ctx = SimpleNamespace(cfg=Config(data, None), modules=[], store=SimpleNamespace(get=lambda k, d=None: d),
+        cfg = Config(data, None)
+        events = SimpleNamespace(add=lambda *a, **k: self.events.append(a[2]), recent=lambda n: [])
+        limits = still.StillLimits(cfg, base / "state" / "still_limits.json", events)
+        self.motion = {"gyro_max": 0.004, "accel_std": 0.01, "samples": 150, "age_s": 0.2}
+        inputs = lambda: (self.motion, None, None)
+        ctx = SimpleNamespace(cfg=cfg, modules=[], store=SimpleNamespace(get=lambda k, d=None: d),
                               actions=SimpleNamespace(describe=lambda: []), preview=SimpleNamespace(describe=lambda: {}),
-                              events=SimpleNamespace(add=lambda *a, **k: self.events.append(a[2]),
-                                                     recent=lambda n: []))
+                              events=events, health=SimpleNamespace(motion_inputs=inputs), still_limits=limits,
+                              still_calibration=still.StillCalibration(inputs, limits))
         self.ctx = ctx
         self.app = create_maintenance_app(ctx)
         self.addCleanup(lambda: ctx.terminals.shutdown())
@@ -313,6 +319,29 @@ class GuardWebTest(unittest.TestCase):
 
     def post(self, url, body):
         return self.c.post(url, json=body, headers=self.h)
+
+    def test_still_page_measure_apply_reset(self):
+        values = {"gyro_rad_s": 0.07, "accel_std": 0.3, "speed_m_s": 0.2}
+        for url, body in (("/api/maint/still/measure", {"kind": "still"}), ("/api/maint/still/apply", {"values": values}),
+                          ("/api/maint/still/reset", {})):
+            self.assertEqual(self.post(url, body).status_code, 401, url)          # password first
+        self.post("/api/maint/auth/unlock", {"password": "right-password"})
+        self.assertEqual(self.c.get("/still").status_code, 200)
+        j = self.c.get("/api/maint/still").get_json()
+        self.assertEqual((j["limits"]["how"], j["now"]["still"]), ("default", True))
+        self.assertEqual(self.c.post("/api/maint/still/apply", data="x", headers=self.h).status_code, 400)
+        for bad in ({"values": dict(values, gyro_rad_s=0.9)}, {"values": [1]}, {"values": None}, []):
+            self.assertEqual(self.post("/api/maint/still/apply", bad).status_code, 422, bad)
+        r = self.post("/api/maint/still/apply", {"values": values}).get_json()
+        self.assertEqual((r["success"], r["limits"]["how"], r["limits"]["accel_std"]), (True, "typed", 0.3))
+        self.assertIn("Still limits changed", self.events)
+        self.assertEqual(self.c.get("/api/maint/still").get_json()["limits"]["accel_std"], 0.3)
+        self.assertEqual(self.post("/api/maint/still/measure", {"kind": "sideways"}).status_code, 400)
+        self.assertEqual(self.post("/api/maint/still/measure", {"kind": "still"}).status_code, 200)
+        self.assertEqual(self.post("/api/maint/still/measure", {"kind": "moving"}).status_code, 409)
+        self.assertTrue(self.post("/api/maint/still/cancel", {}).get_json()["success"])
+        r = self.post("/api/maint/still/reset", {}).get_json()
+        self.assertEqual((r["success"], r["limits"]["how"]), (True, "default"))
 
     def test_locked_until_the_right_password(self):
         save = {"form": {"output_rate": 50}}

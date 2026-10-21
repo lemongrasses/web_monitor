@@ -15,6 +15,7 @@ from aio_dashboard_replay import bags, player
 from aio_dashboard_replay.player import OptionError, Player, Progress, command_text, play_args, validate
 from aio_system_dashboard import modules
 from aio_system_dashboard.config import DEFAULTS, Config
+from aio_system_dashboard.state import still
 
 META = textwrap.dedent("""\
     rosbag2_bagfile_information:
@@ -278,9 +279,13 @@ class ModulePlumbingTest(unittest.TestCase):
             cfg = Config(data, None)
             with mock.patch.object(Config, "state_file", lambda _s, n: Path(tmp) / "state" / n):
                 for mods, has in (([], False), ([aio_dashboard_replay], True)):
+                    limits = still.StillLimits(cfg, Path(tmp) / "state" / "still_limits.json")
                     ctx = SimpleNamespace(cfg=cfg, modules=mods, store=SimpleNamespace(get=lambda k, d=None: d),
                                           actions=SimpleNamespace(describe=lambda: []),
-                                          preview=SimpleNamespace(describe=lambda: {}), events=None)
+                                          preview=SimpleNamespace(describe=lambda: {}), events=None,
+                                          health=SimpleNamespace(motion_inputs=lambda: (None, None, None)),
+                                          still_limits=limits,
+                                          still_calibration=still.StillCalibration(lambda: (None, None, None), limits))
                     c = create_maintenance_app(ctx).test_client()
                     self.assertEqual(c.get("/replay").status_code, 200 if has else 404)
                     self.assertEqual("Replay" in c.get("/system").get_data(as_text=True), has)

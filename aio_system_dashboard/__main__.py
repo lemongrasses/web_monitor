@@ -22,6 +22,7 @@ from .collectors.fake import FakeState
 from .actions import process_control
 from .collectors.dso_watchdog import DsoWatchdog
 from .collectors.gnss_monitor import GnssMonitor
+from .collectors.speed import SpeedMonitor
 from .collectors.nav_udp import NavUdpCollector
 from .collectors.ros_guard import RosIsolationGuard
 from .collectors.network import NetworkCollector
@@ -33,6 +34,7 @@ from . import modules
 from .config import fallback_config, load_config_safely, remember_good, resolve_path
 from .data_access.files import DataRoots
 from .media.tap import PreviewTap
+from .state import still
 from .state.health import HealthEngine
 from .state.store import EventLog, StateStore
 from .web.server import BoundedWSGIServer
@@ -71,6 +73,7 @@ class DashboardContext:
             memory_mb=lambda: process_control.memory_mb(cfg, dso),
             total_memory_mb=process_control.total_memory_mb())
         self.gnss = GnssMonitor(cfg, self.store)
+        self.speed = SpeedMonitor(cfg, self.store)
         gt = cfg["gnss_time"]
         self.gnss_clock = (GnssClockFeeder(float(gt["latency_ms"]) / 1000.0, ChronyShm(int(gt["shm_unit"])))
                            if gt["enabled"] and not cfg.fake else None)
@@ -80,9 +83,13 @@ class DashboardContext:
             driver_pids=lambda: process_control.running_pids(cfg, drivers) if drivers else [],
             restart=self.request_restart, state_file=cfg.state_file("ros_self_restart.json"))
         self.ros = Ros2Collector(self.store, cfg, self.fake, self.preview,
-                                 watchers=[self.dso_watchdog, self.gnss] if not cfg.fake else [],
+                                 watchers=[self.dso_watchdog, self.gnss, self.speed] if not cfg.fake else [],
                                  guard=None if cfg.fake else self.guard, clock_feeder=self.gnss_clock)
+        self.speed.window_open = self.ros.sampling_window_open     # listen together with the IMU
         self.health = HealthEngine(cfg, self.store, self.nav, self.events)
+        self.still_limits = still.StillLimits(cfg, cfg.state_file("still_limits.json"), self.events)
+        self.health.still_limits = self.still_limits
+        self.still_calibration = still.StillCalibration(self.health.motion_inputs, self.still_limits)
         self.actions = ActionRegistry(cfg, self.store, self.events, self.network.check_device,
                                       self.fake)
         self.data = DataRoots(cfg["data"]["roots"])

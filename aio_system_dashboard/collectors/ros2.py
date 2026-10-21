@@ -312,7 +312,14 @@ class Ros2Collector:
                         base *= 0.3
                     rate = base * random.uniform(0.97, 1.03)
                     age, pubs = 1.0 / max(rate, 0.1), 1
-                topics.append(self._topic_entry(t, pubs > 0, pubs, 1 if pubs else 0, rate, age))
+                entry = self._topic_entry(t, pubs > 0, pubs, 1 if pubs else 0, rate, age)
+                if entry["state"] == TOPIC_HEALTHY and (t.get("type") or _fake_type(t["name"])) == IMU_TYPE:
+                    entry["motion"] = self._fake_motion()
+                topics.append(entry)
+            moving = self.fake.get().get("vehicle") == "moving"
+            self.store.set("speed", {"available": True, "frozen": False, "age_s": 0.2, "samples": 150,
+                                     "speed_max": round(random.uniform(4.0, 6.0) if moving else random.uniform(0.01, 0.05), 3),
+                                     "topic": "(fake)", "messages": 0, "reason": ""})
             nodes = [{"name": n, "present": self.fake.node_present(n)} for n in self.nodes_cfg]
             q = self.fake.get().get("gnss", "fixed")   # fixed | float | spp | none
             self.store.set("gnss", {"available": True, "quality": q,
@@ -329,6 +336,13 @@ class Ros2Collector:
                           for t, e in zip(self.watched, topics)],
             })
             self._stop.wait(float(self.rcfg["graph_interval_s"]))
+
+    def _fake_motion(self) -> Dict:
+        """IMU motion for fake mode: parked with the engine on, or driving (fake state "vehicle")."""
+        moving = self.fake.get().get("vehicle") == "moving"
+        return {"gyro_max": round(random.uniform(0.2, 0.4) if moving else random.uniform(0.003, 0.02), 4),
+                "accel_std": round(random.uniform(0.6, 1.5) if moving else random.uniform(0.01, 0.06), 4),
+                "samples": random.randint(140, 160), "age_s": 0.1}
 
     # ---------------------------------------------------------------- rclpy
     def _run_rclpy(self) -> None:
@@ -437,6 +451,15 @@ class Ros2Collector:
         info["sub"] = None
         if name in self._stats:
             self._stats[name].end_window()
+
+    def sampling_window_open(self):
+        """None when sampling is off (listen all the time), else whether the listening window of
+        the sampled topics is open now. Other subscribers (collectors/speed.py) listen together
+        with the IMU, so "vehicle still" judges speed and motion of the same moments."""
+        s = self.rcfg.get("sampling") or {}
+        if not s.get("enabled"):
+            return None
+        return in_sampling_window(time.monotonic(), self._t0, float(s["period_s"]), float(s["window_s"]))
 
     def _sample_tick(self) -> None:
         """Open or close the listening window of every sampled topic (timer, executor thread)."""

@@ -20,6 +20,7 @@ from typing import Dict, List, Optional, Tuple
 
 from ..actions import process_control
 from . import readiness as rd
+from . import still
 from .indicator import DebouncedStatus, FAULT, HEALTHY, UNKNOWN, WARNING
 
 logger = logging.getLogger(__name__)
@@ -185,6 +186,7 @@ class HealthEngine:
         self._rd_since = clock()
         self.autostart_status = None                   # callable -> dict, set by the app
         self.clock_status = None                       # callable -> dict: GNSS time vs the system clock
+        self.still_limits = None                       # state/still.StillLimits, set by the app
         self.last_step: Optional[float] = None         # monotonic time of the last step (watchdog)
         self.status_publisher = None                   # 0x05 sender, set by the app
         self._stop = threading.Event()
@@ -409,20 +411,18 @@ class HealthEngine:
         return {"gnss_source": bool(st.get("chrony")), "offset_s": off if known else None,
                 "matches": (abs(off) <= tol) if known else None, "reason": st.get("reason", "")}
 
-    def _motion(self) -> Dict:
-        """Is the vehicle still? From the IMU topic's samples (collectors/ros2.py)."""
+    def motion_inputs(self) -> Tuple[Optional[Dict], Optional[Dict], Optional[Dict]]:
+        """(IMU motion, receiver speed, GNSS quality) for "vehicle still" (state/still.py)."""
         ros = self.store.get("ros", {}) or {}
         t = self._imu_topic(ros) if ros.get("available") else None
         m = (t or {}).get("motion") if (t or {}).get("state") == "healthy" else None
-        if not m:
-            return {"still": None, "reason": "no IMU data"}
-        rcfg = self.cfg["readiness"]
-        g_ok = m["gyro_max"] < float(rcfg["still_gyro_rad_s"])
-        a_ok = m["accel_std"] < float(rcfg["still_accel_std"])
-        reason = "" if g_ok and a_ok else (f"moving: rotation {m['gyro_max']:.2f} rad/s" if not g_ok
-                                           else f"moving: acceleration varies {m['accel_std']:.2f} m/s2")
-        return {"still": g_ok and a_ok, "reason": reason, "gyro_max": m["gyro_max"],
-                "accel_std": m["accel_std"], "age_s": m.get("age_s")}
+        return m or None, self.store.get("speed", {}) or None, self.store.get("gnss", {}) or None
+
+    def _motion(self) -> Dict:
+        """Is the vehicle still? IMU samples (collectors/ros2.py) and, with a GNSS position, the
+        receiver's speed (collectors/speed.py), against the limits in use (state/still.py)."""
+        limits = self.still_limits.get() if self.still_limits is not None else still.defaults(self.cfg)
+        return still.judge(*self.motion_inputs(), limits)
 
     def _condition_inputs(self, gq: Dict) -> Dict[str, Tuple[Optional[bool], str]]:
         """(holds now, why not) for every optional READY condition, required or not (the health

@@ -121,7 +121,7 @@
         return this.lvl(l, { healthy: "OK", warning: "Warning", fault: "Fault" }[l]);
       },
       pageLevel(page) {
-        if (["config", "terminal", "replay"].includes(page)) return "idle";   // tools, not health
+        if (["config", "terminal", "replay", "still"].includes(page)) return "idle";   // tools, not health
         if (!this.d) return "unknown";
         if (page === "overview") return { READY: "healthy", FAULT: "fault", INITIALIZING: "warning", DEGRADED: "warning" }[this.productState] || "unknown";
         const rel = this.issues.filter((i) => page === "diagnostics" || i.link === page ||
