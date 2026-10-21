@@ -49,11 +49,22 @@ def samples(base: str, since: float, until: float) -> List[Dict]:
     return sorted(out, key=lambda s: s.get("t", 0))
 
 
-def events(base: str, since: float, until: float, kinds: Optional[List[str]] = None) -> List[Dict]:
+def when(e: Dict) -> str:
+    """The time of a record, from its number: its text was written with the clock of that moment, and
+    a clock not set yet gave "1970-01-01 08:00:38" (fmt_ts says so instead)."""
+    t = e.get("t")
+    return fmt_ts(t) if isinstance(t, (int, float)) and t else str(e.get("ts") or "-")
+
+
+def events(base: str, since: float, until: float, kinds: Optional[List[str]] = None,
+           unknown_time: bool = False) -> List[Dict]:
+    """unknown_time: also the records written while the clock was not set (before MIN_VALID_TS),
+    whatever the window: their time says nothing, and hiding them hid an unclean stop."""
     files = sorted(glob.glob(os.path.join(base, "events-*.jsonl.gz"))) + [os.path.join(base, "events.jsonl")]
     out = []
     for p in files:
-        out += [e for e in _lines(p) if since <= e.get("t", 0) <= until and (not kinds or e.get("kind") in kinds)]
+        out += [e for e in _lines(p) if (since <= e.get("t", 0) <= until or (unknown_time and e.get("t", 0) < MIN_VALID_TS))
+                and (not kinds or e.get("kind") in kinds)]
     return sorted(out, key=lambda e: e.get("t", 0))
 
 
@@ -108,6 +119,22 @@ def last_unclean(base: str) -> Optional[Dict]:
     for p in files:
         for e in _lines(p):
             if e.get("kind") == "unclean_stop":
+                last = e
+    return last
+
+
+END_KINDS = ("stop", "unclean_stop", "recorder_killed")
+
+
+def last_end(base: str) -> Optional[Dict]:
+    """How the run before this one ended: the newest clean stop, unclean stop or killed recorder, by
+    the order written (as last_unclean). An unclean stop is written when the next run starts, so the
+    newest of the three is about the run that ended last."""
+    files = sorted(glob.glob(os.path.join(base, "events-*.jsonl.gz"))) + [os.path.join(base, "events.jsonl")]
+    last = None
+    for p in files:
+        for e in _lines(p):
+            if e.get("kind") in END_KINDS:
                 last = e
     return last
 

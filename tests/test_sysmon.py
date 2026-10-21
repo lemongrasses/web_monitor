@@ -287,6 +287,41 @@ class DaemonTest(TmpTest):
         self.assertIn("unclean_stop", kinds)
         self.assertTrue(report.last_unclean(self.dir))
         self.assertTrue(any(f.endswith("postmortem.json.gz") for f in os.listdir(os.path.join(self.dir, "snapshots"))))
+        self.assertEqual(report.last_end(self.dir)["kind"], "unclean_stop")
+
+    def test_last_crash_says_first_how_the_previous_run_ended(self):
+        """Seen after a clean reboot (2026-10-21): last-crash showed an old unclean stop, stamped
+        "1970-01-01 08:00:38" (written before that boot's clock was set), as if the reboot had crashed."""
+        import contextlib, io
+        from types import SimpleNamespace
+        from aio_sysmon import __main__ as cli
+        args = SimpleNamespace(dir=self.dir, config=None, rows=5)
+
+        def last_crash():
+            out = io.StringIO()
+            with contextlib.redirect_stdout(out):
+                cli.cmd_last_crash(args)
+            return out.getvalue()
+
+        self.assertIn("no unclean stop has been recorded", last_crash())
+        d1 = self.make()
+        d1.boot_analysis()
+        d1.tick()
+        d1.ring.append_many(d1._pending)
+        d1.ring.sync()                                         # then the power goes: no clean stop
+        d2 = self.make()
+        d2.boot_id = "another-boot-id"
+        with mock.patch.object(d2.store, "clock", lambda: 38.0):   # this boot's clock is not set yet
+            d2.boot_analysis()
+        text = last_crash()
+        self.assertTrue(text.startswith("unclean stop recorded at 1970-"), text)
+        self.assertIn("clock not set yet", text)
+        d2.shutdown()                                          # a clean reboot follows
+        text = last_crash()
+        self.assertTrue(text.startswith("the previous run ended cleanly"), text)
+        self.assertIn("the newest unclean stop of the machine on record is older", text)
+        self.assertEqual([e["kind"] for e in report.events(self.dir, time.time() - 60, float("inf"), ["unclean_stop"],
+                                                           unknown_time=True)], ["unclean_stop"])
 
     def test_a_trigger_writes_an_event_a_snapshot_and_starts_a_burst(self):
         d = self.make()

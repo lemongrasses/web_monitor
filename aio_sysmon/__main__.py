@@ -68,21 +68,32 @@ def cmd_report(args) -> int:
                               ("disk_busy_max", "disk% max", 9), ("free_min_mb", "free MB", 8)]))
     else:
         print("no samples in this window")
-    notable = rp.events(base, since, until, ["anomaly", "unclean_stop", "recorder_killed", "kernel", "tick_gap", "clock_step", "start"])
+    notable = rp.events(base, since, until, ["anomaly", "unclean_stop", "recorder_killed", "kernel", "tick_gap", "clock_step", "start"],
+                        unknown_time=True)
     print(f"\nnotable events ({len(notable)}):")
     for e in notable[-60:]:
         extra = e.get("msg") or e.get("summary") or e.get("gap_s") or e.get("jump_s") or ""
-        print(f"  {e['ts']}  {e['kind']:15s} {str(e.get('trigger', '')):16s} {extra}"[:170])
+        print(f"  {rp.when(e)}  {e['kind']:15s} {str(e.get('trigger', '')):16s} {extra}"[:170])
     return 0
 
 
 def cmd_last_crash(args) -> int:
     base = _base(args)
+    end = rp.last_end(base)
     e = rp.last_unclean(base)
-    if not e:
+    if end is not None and end.get("kind") != "unclean_stop":
+        # Say first how the last run ended: an old unclean stop alone read as if the last reboot crashed.
+        how = ("ended cleanly (stopped" if end["kind"] == "stop"
+               else "was killed while the machine kept running (noticed")
+        print(f"the previous run {how} at {rp.when(end)})")
+        if not e:
+            print("no unclean stop of the machine has been recorded")
+            return 0
+        print("\nthe newest unclean stop of the machine on record is older:")
+    elif not e:
         print("no unclean stop has been recorded (every previous run ended cleanly)")
         return 0
-    print(f"unclean stop recorded at {e['ts']}\n")
+    print(f"unclean stop recorded at {rp.when(e)}\n")
     print(f"verdict:  {e.get('summary')}")
     print(f"last record before the stop: {e.get('last_record')}   (previous boot {e.get('previous_boot')})")
     lm = e.get("last_minute") or {}
@@ -118,11 +129,11 @@ def cmd_ring(args) -> int:
 def cmd_events(args) -> int:
     since = time.time() - args.hours * 3600
     # no upper bound: records written while the clock ran ahead (just after a boot) still show
-    for e in rp.events(_base(args), since, float("inf"), [args.kind] if args.kind else None)[-args.rows:]:
+    for e in rp.events(_base(args), since, float("inf"), [args.kind] if args.kind else None, unknown_time=True)[-args.rows:]:
         text = e.get("msg") or e.get("summary") or ""
         if not text:
             text = ", ".join(f"{k}={v}" for k, v in e.items() if k not in ("t", "ts", "kind", "light", "capacity", "limits"))
-        print(f"{e['ts']}  {e['kind']:15s} {str(e.get('trigger', '')):16s} {text}"[:200])
+        print(f"{rp.when(e)}  {e['kind']:15s} {str(e.get('trigger', '')):16s} {text}"[:200])
     return 0
 
 
