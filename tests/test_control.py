@@ -111,6 +111,22 @@ class ControlActionsTest(unittest.TestCase):
         process_control.set_wanted(cfg, "dso", False)                 # programs' start times
         self.assertLess(process_control.wanted_age_s(cfg, "aio_nav"), 5)
 
+    def test_a_start_from_an_earlier_boot_does_not_count_for_this_boot(self):
+        """Seen at a reboot (2026-10-21): DSO was wanted at power-off, and its watchdog started it on
+        its own 30 s after the dashboard, ahead of the start-up coordinator's AIO NAV + DSO."""
+        cfg = make()
+        process_control.set_wanted(cfg, "dso", True)
+        self.assertTrue(process_control.wanted(cfg, "dso", this_boot=True))
+        with mock.patch.object(process_control, "_boot_id", lambda: "next-boot"):
+            self.assertTrue(process_control.wanted(cfg, "dso"))                  # still on record ...
+            self.assertFalse(process_control.wanted(cfg, "dso", this_boot=True))  # ... but from before
+            process_control.set_wanted(cfg, "aio_nav", True)                     # AIO NAV started now:
+            self.assertFalse(process_control.wanted(cfg, "dso", this_boot=True))  # DSO's start stays old
+            self.assertEqual(process_control.wanted_age_s(cfg, "dso"), float("inf"))
+            self.assertTrue(process_control.adopt(cfg, "dso"))                    # running now: this boot
+            self.assertTrue(process_control.wanted(cfg, "dso", this_boot=True))
+            self.assertLess(process_control.wanted_age_s(cfg, "dso"), 5)
+
     def test_unlisted_target_rejected(self):
         reg = ActionRegistry(make(), {}, FakeEvents(), lambda d: {})
         with self.assertRaises(ActionError):

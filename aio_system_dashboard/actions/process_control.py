@@ -124,11 +124,21 @@ def _wanted_file(cfg) -> Path:
     return cfg.state_file("processes.json")
 
 
-def wanted(cfg, key: str) -> bool:
+def _start_boot(data: Dict, key: str) -> Optional[str]:
+    """The boot in which the program was last asked to start (files from before 2026-10-21 have only
+    the shared boot_id)."""
+    return data.get(f"{key}@boot", data.get("boot_id"))
+
+
+def wanted(cfg, key: str, this_boot: bool = False) -> bool:
     """Should this program be running? True after a start, False after a stop (kept on disk, so
-    it survives a dashboard restart). The DSO watchdog uses it to tell a crash from a stop."""
+    it survives a dashboard restart). The DSO watchdog uses it to tell a crash from a stop.
+    this_boot: only a start asked for since this power-on counts. At power-on the start-up
+    coordinator starts AIO NAV and DSO together; seen 2026-10-21: the DSO watchdog started DSO on
+    its own 30 s after the dashboard, from a start of the boot before."""
     try:
-        return bool(json.loads(_wanted_file(cfg).read_text(encoding="utf-8")).get(key))
+        data = json.loads(_wanted_file(cfg).read_text(encoding="utf-8"))
+        return bool(data.get(key)) and (not this_boot or _start_boot(data, key) == _boot_id())
     except (OSError, ValueError, AttributeError):
         return False
 
@@ -158,7 +168,7 @@ def wanted_age_s(cfg, key: str) -> Optional[float]:
         if not data.get(key):
             return None
         mono = data.get(f"{key}@mono")
-        if mono is not None and data.get("boot_id") == _boot_id():
+        if mono is not None and _start_boot(data, key) == _boot_id():
             return max(0.0, time.monotonic() - float(mono))
         return float("inf") if data.get(f"{key}@") else None
     except (OSError, ValueError, AttributeError, TypeError, KeyError):
@@ -180,13 +190,15 @@ def set_wanted(cfg, key: str, value: bool, restamp: bool = True) -> None:
                 data = json.loads(f.read_text(encoding="utf-8"))
             except (OSError, ValueError):
                 data = {}
-            if bool(data.get(key)) == value and not restamp:
+            # A start asked for in an earlier boot is stamped again even without restamp: its time
+            # means nothing in this boot.
+            if bool(data.get(key)) == value and not restamp and (not value or _start_boot(data, key) == _boot_id()):
                 return
             data[key] = value
             if value:
                 data[f"{key}@"] = time.time()       # every start request: tells a crash from "still starting"
                 data[f"{key}@mono"] = time.monotonic()
-                data["boot_id"] = _boot_id()
+                data[f"{key}@boot"] = data["boot_id"] = _boot_id()
             else:
                 data.pop(f"{key}@", None)
                 data.pop(f"{key}@mono", None)
