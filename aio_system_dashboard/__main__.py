@@ -23,6 +23,9 @@ from .actions import process_control
 from .collectors.dso_watchdog import DsoWatchdog
 from .collectors.gnss_monitor import GnssMonitor
 from .collectors.speed import SpeedMonitor
+from .actions.wifi import hotspot_enabled
+from .collectors import hotspot_relay
+from .collectors.hotspot_relay import HotspotRelay
 from .collectors.nav_udp import NavUdpCollector
 from .collectors.ros_guard import RosIsolationGuard
 from .collectors.network import NetworkCollector
@@ -54,10 +57,14 @@ class DashboardContext:
         self.events = EventLog(resolve_path(ev["log_file"]) if ev.get("log_file") else None,
                                ev["max_memory"])
         self.fake = FakeState(resolve_path(cfg["fake"]["state_file"])) if cfg.fake else None
+        # Copies of the NAV and 0x05 packets for the devices on the Wi-Fi hotspot (when installed).
+        self.hotspot_relay = HotspotRelay(cfg, cfg.state_file(hotspot_relay.STATE_FILE), self.events,
+                                          offered=lambda: hotspot_enabled(cfg))
         self.nav = NavUdpCollector(
             cfg["nav"]["udp_bind"], cfg["nav"]["trajectory"],
             on_session_reset=lambda s, reason: self.events.add(
-                "info", "nav", "New NAV session", reason))
+                "info", "nav", "New NAV session", reason),
+            relay=self.hotspot_relay.send)
         self.system = SystemCollector(self.store, cfg)
         self.services = ServicesCollector(self.store, cfg, self.fake)
         self.network = NetworkCollector(self.store, cfg, self.fake)
@@ -102,11 +109,12 @@ class DashboardContext:
         self.health.clock_status = self.gnss_clock.status if self.gnss_clock else None
         self.driver_watchdog = DriverWatchdog(cfg, self.store, self.actions, self.events)
         self.status_udp = StatusUdpPublisher(cfg, self.store)
+        self.status_udp.relay = self.hotspot_relay.send
         self.health.status_publisher = self.status_udp
         self.modules = modules.load(cfg)      # optional modules (installed with --with-<name>)
         self.maint_pages = []                 # sidebar of the Maintenance app, filled when it is built
         self._workers = [self.nav, self.system, self.services, self.network, self.ros, self.health,
-                         self.autostart, self.driver_watchdog]
+                         self.autostart, self.driver_watchdog, self.hotspot_relay]
 
     def alive(self, max_age_s: float = 20.0) -> bool:
         """The health loop (readiness, 0x05) and the start-up coordinator have run recently."""

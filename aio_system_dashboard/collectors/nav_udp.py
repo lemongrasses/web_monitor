@@ -30,13 +30,14 @@ TIME_STALL_S = 2.0
 class NavUdpCollector:
     name = "nav-udp"
 
-    def __init__(self, bind: str, trajectory_cfg: Dict, on_session_reset=None):
+    def __init__(self, bind: str, trajectory_cfg: Dict, on_session_reset=None, relay=None):
         addr = parse_host_port(bind)
         if addr is None:
             raise ValueError(f"invalid nav.udp_bind: {bind!r}")
         self.bind_addr = addr
         self.trajectory = TrajectoryBuffer(**trajectory_cfg)
         self._on_session_reset = on_session_reset
+        self._relay = relay                  # copies for the devices on the hotspot (hotspot_relay.py)
         self._lock = threading.Lock()
         self._stop = threading.Event()
         self._thread: Optional[threading.Thread] = None
@@ -108,6 +109,8 @@ class NavUdpCollector:
 
     # ----------------------------------------------------------------- packets
     def handle_datagram(self, data: bytes, now: float) -> None:
+        if self._relay is not None:
+            self._relay(data)                # as received, like the vehicle gets it
         decoded = parse_nav_packet(data)
         if decoded is None:
             with self._lock:

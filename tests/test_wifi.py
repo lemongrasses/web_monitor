@@ -345,6 +345,9 @@ class WifiWebTest(unittest.TestCase):
                               actions=SimpleNamespace(describe=lambda: []), preview=SimpleNamespace(describe=lambda: {}),
                               events=self.events, still_limits=limits,
                               still_calibration=still.StillCalibration(lambda: (None, None, None), limits))
+        from aio_system_dashboard.collectors.hotspot_relay import HotspotRelay
+        ctx.hotspot_relay = self.relay = HotspotRelay(cfg, base / "state" / "hotspot_relay.json",
+                                                      runner=lambda argv, timeout=3.0: (1, ""))
         app = create_maintenance_app(ctx)
         self.addCleanup(lambda: ctx.terminals.shutdown())
         self.nm = HotspotNM()
@@ -387,6 +390,15 @@ class WifiWebTest(unittest.TestCase):
         r = self.post("/api/maint/wifi/hotspot", {"action": "stop"})       # a phone is on it: confirm
         self.assertEqual(r.status_code, 409)
         self.assertTrue(self.post("/api/maint/wifi/hotspot", {"action": "stop", "confirm": True}).get_json()["success"])
+
+    def test_packet_copies_switch_needs_the_password(self):
+        self.assertEqual(self.post("/api/maint/wifi/hotspot/relay", {"enabled": False}).status_code, 401)
+        self.post("/api/maint/auth/unlock", {"password": "right-password"})
+        self.assertEqual(self.post("/api/maint/wifi/hotspot/relay", {"enabled": "no"}).status_code, 400)
+        r = self.post("/api/maint/wifi/hotspot/relay", {"enabled": False}).get_json()
+        self.assertTrue(r["success"], r)
+        self.assertFalse(self.relay.enabled)
+        self.assertFalse(self.c.get("/api/maint/wifi").get_json()["hotspot"]["relay"]["enabled"])
 
     def test_a_browser_on_wifi_is_refused(self):
         self.post("/api/maint/auth/unlock", {"password": "right-password"})

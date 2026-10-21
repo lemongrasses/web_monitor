@@ -13,7 +13,10 @@
       st: null, networks: [], ssid: "", password: "", hidden: false, showPw: false,
       busy: "", msg: "", msgClass: "", confirmText: "", pending: "",
       hsName: "", hsPassword: "",
-      async init() { await this.refresh(); },
+      async init() {
+        await this.refresh();
+        setInterval(() => { if (!document.hidden && !this.busy) this.refresh(); }, 5000);   // devices come and go
+      },
       async refresh() {
         try { this.st = await (await fetch("/api/maint/wifi", { cache: "no-store" })).json(); }
         catch (e) { this.st = { available: false, reason: "cannot read Wi-Fi state" }; }
@@ -30,6 +33,20 @@
         if (!h) return "";
         if (!h.active) return h.saved && h.ssid ? "Off (last used: " + h.ssid + ")" : "Off";
         return "On: " + h.ssid + " · " + h.clients + " device(s) connected · they open http://" + h.address + ":" + h.port;
+      },
+      relayText() {
+        const r = this.st && this.st.hotspot && this.st.hotspot.relay;
+        if (!r || !r.enabled) return "";
+        if (!r.active) return "(when the hotspot runs)";
+        if (!r.targets.length) return "no device on the hotspot yet";
+        return "now to " + r.targets.join(", ") + " · " + r.sent + " packets sent";
+      },
+      async setRelay(enabled) {
+        this.busy = "relay";
+        const j = await this.toolFetch("/api/maint/wifi/hotspot/relay", { method: "POST", body: JSON.stringify({ enabled }) });
+        this.busy = "";
+        this.msg = j.summary || ""; this.msgClass = j.success ? "ok" : "bad";
+        await this.refresh();
       },
       confirmed() {
         const p = this.pending;

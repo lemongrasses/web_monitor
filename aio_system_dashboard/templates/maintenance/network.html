@@ -119,6 +119,13 @@
             <p class="small muted mb-2">The Wi-Fi becomes a network of its own for phones and tablets
               (<span x-text="st.hotspot.band"></span>, WPA2) instead of joining one: its one radio cannot do both.
               It starts again after a power-off, until it is stopped here.</p>
+            <div class="d-flex flex-wrap align-items-center gap-2 mb-2" x-show="st.hotspot.relay">
+              <label class="small"><input type="checkbox" :checked="st.hotspot.relay && st.hotspot.relay.enabled"
+                     :disabled="!!busy" @change="setRelay($event.target.checked)">
+                Send the NAV and status packets to the devices on the hotspot
+                (UDP <span x-text="st.hotspot.relay ? st.hotspot.relay.port : ''"></span>; the vehicle's output is unchanged)</label>
+              <span class="small muted" x-text="relayText()"></span>
+            </div>
             <div class="d-flex gap-2 align-items-center" x-show="st.hotspot.active && st.may_change">
               <button type="button" class="btn btn-sm btn-outline-danger" :disabled="!!busy" @click="stopHotspot(false)"
                       x-text="busy === 'hotspot' ? 'Stopping…' : 'Stop hotspot'"></button>

@@ -140,8 +140,11 @@ DEFAULTS: Dict[str, Any] = {
              # Hotspot (Maintenance > Network): the Wi-Fi becomes an access point for phones and
              # tablets instead of joining a network (one radio: it cannot do both). enabled "auto":
              # when the installer's "hotspot" option is installed. Phones get addresses in the /24 of
-             # `address` and may open the pages (allow_clients); band "bg" = 2.4 GHz.
-             "hotspot": {"enabled": "auto", "address": "10.42.0.1/24", "band": "bg", "allow_clients": True}},
+             # `address` and may open the pages (allow_clients); band "bg" = 2.4 GHz. relay_udp: each
+             # device on it gets a copy of the NAV and 0x05 packets on relay_port (the vehicle's
+             # output is unchanged); switchable on Maintenance > Network.
+             "hotspot": {"enabled": "auto", "address": "10.42.0.1/24", "band": "bg", "allow_clients": True,
+                         "relay_udp": True, "relay_port": 9000}},
     "events": {"log_file": "logs/events.jsonl", "max_memory": 500},
     "actions": {"restart_timeout_s": 30.0, "diagnostic_timeout_s": 15.0,
                 "stop_grace_s": 5.0},  # stop_grace_s: SIGTERM -> SIGKILL delay for AIO NAV / DSO

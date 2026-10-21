@@ -58,6 +58,9 @@ def register_settings(ctx, app, prefix: str, rtk_path: str, guard=None, where: s
     def api_wifi():
         st = wifi.status()
         ok, why, risks = wifi_gate(st.get("device")) if st.get("available") else (False, st.get("reason", ""), [])
+        relay = getattr(ctx, "hotspot_relay", None)
+        if st.get("hotspot") is not None and relay is not None:
+            st["hotspot"]["relay"] = relay.status()
         return jsonify(dict(st, may_change=ok, client=why, risks=risks))
 
     def api_wifi_scan():
@@ -132,6 +135,23 @@ def register_settings(ctx, app, prefix: str, rtk_path: str, guard=None, where: s
             return jsonify({"success": False, "summary": str(e)}), e.status
 
     @protect
+    def api_wifi_hotspot_relay():
+        """Copies of the NAV and 0x05 packets for the devices on the hotspot: {"enabled": bool}.
+        Changes no Wi-Fi setting, so no cable rule."""
+        if bad_request():
+            return jsonify({"success": False, "summary": "bad request"}), 400
+        relay = getattr(ctx, "hotspot_relay", None)
+        if relay is None or not wifi.hotspot_offered:
+            return jsonify({"success": False, "summary": "the hotspot is not installed on this device"}), 404
+        enabled = body().get("enabled")
+        if not isinstance(enabled, bool):
+            return jsonify({"success": False, "summary": "enabled must be true or false"}), 400
+        relay.set_enabled(enabled, f"{where} {request.remote_addr or ''}".strip())
+        return jsonify({"success": True, "relay": relay.status(),
+                        "summary": (f"devices on the hotspot get the NAV and status packets on UDP {relay.port}"
+                                    if enabled else "no packets to the devices on the hotspot")})
+
+    @protect
     def api_rtk():
         """Require RTK for READY, or not. A safety setting: confirmed, logged, kept on disk."""
         if bad_request():
@@ -159,6 +179,8 @@ def register_settings(ctx, app, prefix: str, rtk_path: str, guard=None, where: s
     app.add_url_rule(f"{prefix}/wifi/connect", f"{name}_wifi_connect", api_wifi_connect, methods=["POST"])
     if guard is not None:                             # the hotspot is switched on Maintenance only
         app.add_url_rule(f"{prefix}/wifi/hotspot", f"{name}_wifi_hotspot", api_wifi_hotspot, methods=["POST"])
+        app.add_url_rule(f"{prefix}/wifi/hotspot/relay", f"{name}_wifi_hotspot_relay", api_wifi_hotspot_relay,
+                         methods=["POST"])
     app.add_url_rule(rtk_path, f"{name}_rtk", api_rtk, methods=["POST"])
 
 

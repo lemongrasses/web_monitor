@@ -40,6 +40,7 @@ class StatusUdpPublisher:
         self._last_key = None
         self._sock: Optional[socket.socket] = None
         self._published_at = 0.0
+        self.relay = None                 # copies for the devices on the hotspot (hotspot_relay.py)
 
     # ------------------------------------------------------------ destination
     def destination(self) -> Tuple[Optional[Tuple[str, int]], str]:
@@ -87,6 +88,8 @@ class StatusUdpPublisher:
                 self.last_error = ""
             except OSError as e:                         # no route, host unreachable, buffer full
                 self._note_error(f"send to {addr[0]}:{addr[1]} failed: {e.strerror or e}")
+            if self.relay is not None:
+                self.relay(pkt)
         self._last_sent_at, self._last_key = now, key
         if now - self._published_at >= 1.0 or self.last_error:
             self._published_at = now
