@@ -29,6 +29,10 @@ LimitNOFILE=8192
 KillSignal=SIGTERM
 KillMode=process
 TimeoutStopSec=10
+# AIO NAV and DSO run in this unit's group. If the kernel kills one for lack of memory (DSO grows
+# ~20 MB/s; its watchdog normally restarts it first), the dashboard keeps running: the default
+# (stop) would stop the dashboard too, and the vehicle's 0x05 status packet with it.
+OOMPolicy=continue
 
 [Install]
 WantedBy=multi-user.target
