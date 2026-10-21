@@ -104,6 +104,7 @@ case "${1:-}" in
     [[ "$p1" == "$p2" ]] || { echo "The two passwords differ; nothing changed." >&2; exit 1; }
     (( ${#p1} >= 8 )) || { echo "Use at least 8 characters; nothing changed." >&2; exit 1; }
     owner="$(stat -c %U "$APP_DIR/logs" 2>/dev/null || echo root)"
+    cd "$APP_DIR"     # python3 -c imports from the current folder first, and this runs as root
     printf '%s' "$p1" | sudo env PYTHONPATH="$APP_DIR/lib:$APP_DIR" python3 -c \
       'import sys; from aio_system_dashboard.web.auth import write_password_file; write_password_file(sys.argv[1], sys.stdin.read())' \
       "$APP_DIR/config/maint_password"

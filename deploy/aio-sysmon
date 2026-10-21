@@ -3,4 +3,7 @@
 #   aio-sysmon status | last-crash | report | ring | events | snapshots     (aio-sysmon --help)
 APP_DIR="$(cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")/.." && pwd)"
 export PYTHONPATH="$APP_DIR:$APP_DIR/lib${PYTHONPATH:+:$PYTHONPATH}"
-exec /usr/bin/python3 -m aio_sysmon --config "$APP_DIR/config/sysmon.yaml" "$@"
+# Not "python3 -m": that puts the current folder first, and run inside the source checkout
+# (~/web_monitor) it ran the checkout's code instead of the installed one (seen 2026-10-21).
+exec /usr/bin/python3 -c 'import runpy, sys; del sys.path[0]; runpy.run_module("aio_sysmon", run_name="__main__", alter_sys=True)' \
+  --config "$APP_DIR/config/sysmon.yaml" "$@"
