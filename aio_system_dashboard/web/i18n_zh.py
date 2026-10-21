@@ -129,7 +129,7 @@ ZH = {
     "Stopped by an operator. It stays stopped until you press Resume or switch the system off and on.":
         "已由操作人員停止。會保持停止，直到按下「恢復」或重新上電。",
     "AIO NAV starts by itself after power-on, as soon as the sensors are ready.": "上電後，感測器就緒時 AIO NAV 會自動啟動。",
-    "Sent there": "傳送內容", "Navigation data (0x04) and the Ready signal (0x05), on the same port": "導航資料（0x04）與就緒訊號（0x05），使用同一個 port",
+    "Sent there": "傳送內容", "Navigation data (0x04) and the Ready signal (0x05), on the same port": "導航資料（0x04）與就緒訊號（0x05），使用同一個連接埠",
     "Ready signals sent": "已送出的就緒訊號",
     "UDP has no reply, so delivery is not confirmed here. The vehicle address is set on the Maintenance page (AIO NAV config).":
         "UDP 沒有回覆，因此這裡無法確認已送達。車端位址在維護頁面（AIO NAV 設定）中設定。",
