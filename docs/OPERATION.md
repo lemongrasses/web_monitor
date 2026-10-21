@@ -32,15 +32,19 @@ state, and download its logs.
 | Service | Where | For | What it does |
 |---------|-------|-----|--------------|
 | **Navigation output** | UDP, binary, 100 Hz | Your application | The product output: position, velocity, attitude, accuracy and status flags (section 6). |
-| **Product view** | `http://<device-ip>:8080` | Operators | Overview, Navigation and Data pages: is navigation usable, where is the vehicle, is the output streaming. |
-| **AIO NAV control** | Overview page | Operators | Start, stop and restart the navigation filter (if enabled on this device). |
+| **Product view** | `http://<device-ip>:8080` | Operators | Overview, Navigation, Data, Setup and Settings pages: is navigation usable, where is the vehicle, is the output streaming. |
+| **AIO NAV control** | Overview page | Operators | AIO NAV starts by itself; Stop, Resume and Restart it by hand when needed. |
 | **Data download** | Product view, Data page | Operators | Download AIO NAV log files to your computer. |
-| **Maintenance view** | `http://<device-ip>:8081` (password) | Engineers | Pinpoint whether a problem is in the system, a service, ROS, a sensor or the network; live camera and LiDAR view; driver diagnostics and restarts; starting and stopping the sensor drivers; editing AIO NAV's settings; a terminal; bag replay (optional module). |
+| **Wi-Fi hotspot** (optional) | `http://10.42.0.1:8080` | Phones and tablets | The device's own Wi-Fi network: open the pages and receive copies of the navigation packets (section 8.2). |
+| **Maintenance view** | `http://<device-ip>:8081` (password) | Engineers | Pinpoint whether a problem is in the system, a service, ROS, a sensor or the network; live camera and LiDAR view; driver diagnostics and restarts; starting and stopping the sensor drivers; still detection; Wi-Fi and the hotspot; editing AIO NAV's settings; a terminal; bag replay (optional module). |
 | **`aio-dashboard` command** | Device terminal | Engineers | Start, stop, check and configure the dashboard itself. |
 
-The dashboard starts and stops AIO NAV (when enabled) and watches everything else. AIO NAV
-runs on its own: navigation keeps running even if the dashboard stops or restarts, or a browser
-is closed.
+**AIO NAV runs without an operator.** After power-on the dashboard starts it (and DSO), restarts it
+after a failure, and never gives up; after Ready it restarts it only once the vehicle stands still
+(section 4.2). It also starts the sensor drivers if needed, and watchdogs restart the drivers when
+the IMU goes silent and DSO when it crashes or grows too large. AIO NAV runs on its own: navigation
+keeps running even if the dashboard stops or restarts, or a browser is closed. Switching the device
+off while AIO NAV runs is normal and not a fault.
 
 ## 2. Opening the dashboard
 
@@ -51,6 +55,9 @@ is closed.
 3. If the page does not open, or shows **403 Forbidden**, this device only accepts
    specific computers (`access.allowed_clients` in the settings). Ask the administrator
    to add your computer's IP address.
+
+**From a phone or tablet:** when the device's Wi-Fi hotspot is on (section 8.2), join its network
+(default name `AIO-NAV`, the password is given by the administrator) and open `http://10.42.0.1:8080`.
 
 The map background needs Internet access on **your** computer. Without it, the vehicle
 position and track are still shown on a blank background.
@@ -91,7 +98,7 @@ map with the recent track; position, motion and attitude.*
 | **Initializing** | Amber label | AIO NAV is running and sends output, but alignment is not finished. It shows the current step and what to do, for example *Step 1 of 3: Alignment — Keep the vehicle completely still*. | Follow the instruction ([Alignment SOP](#5-alignment-sop)). Do not use the output yet. |
 | **Ready** | Green label, closed green ring | AIO NAV is running, data is fresh, and alignment is complete. The output can be used. | Operate normally. |
 | **Degraded** | Dark red panel | The output *was* Ready in this run, but a required condition (for example RTK) or the alignment is lost. It never goes back to the alignment prompts while the vehicle may be moving. | Stop using navigation as the vehicle's safety procedure says. Restart AIO NAV only with the vehicle standing still. |
-| **Fault** | Dark red panel | AIO NAV has a problem: it stopped although nobody pressed Stop, it runs but has sent nothing for 60 s after starting, or its output stopped for more than 2 s. The reason is shown. | See [Troubleshooting](#9-troubleshooting). |
+| **Fault** | Dark red panel | AIO NAV has a problem: it stopped in this power-on although nobody pressed Stop, it runs but has sent nothing for 60 s after starting, or its output stopped for more than 2 s. The reason is shown. With automatic start the panel says what is being done (for example *Restarting AIO NAV in 8 s if it does not resume*). | Usually nothing: it is restarted by itself. After Ready, stop using navigation (section 4.2). If it repeats, see [Troubleshooting](#9-troubleshooting). |
 | **Unknown** / **Offline** | Grey label, slate panel | The dashboard just started, or your browser lost its connection to the device. | Wait a few seconds; check the network if it persists. |
 
 ![A fault: what happened and what to do](images/user/status-fault.png)
@@ -160,6 +167,7 @@ See section 2: the menu at the top right switches the user pages between English
   **Show whole trajectory** zooms to the full track; **Follow vehicle** re-centers.
 - **Data**: AIO NAV log folders. Click a folder to open it and **Download** to save a
   file. Nothing on the device can be changed from this page.
+- **Setup**: where the GNSS antenna and the rear axle centre are, measured from the IMU (section 3.7).
 - **Settings**: Wi-Fi, the RTK requirement, automatic start and the vehicle link (section 3.6).
 
 ![Navigation page](images/user/navigation.png)
@@ -179,9 +187,9 @@ See section 2: the menu at the top right switches the user pages between English
 
 | Card | What you can do |
 |------|-----------------|
-| **Wi-Fi** | See the network in use. Choose a network from the list (strongest first; *Other network (hidden)…* to type a name), enter the password, **Connect**. The result is said in plain words: *Connected to …*, or *The password was not accepted. Back on …*. A failed attempt always returns to the previous Wi-Fi within about a minute. |
+| **Wi-Fi** | See the network in use. Choose a network from the list (strongest first; *Other network (hidden)…* to type a name), enter the password, **Connect**. The result is said in plain words: *Connected to …*, or *The password was not accepted. Back on …* (*Still on …* when the device never left its network). A failed attempt always returns to the previous Wi-Fi within about a minute. While the hotspot is on, the card shows *Hotspot: …* and how phones open the pages, and no network can be joined here (the hotspot is switched on Maintenance → Network). |
 | **Position accuracy for Ready** | The switch **Require RTK before Ready** (on by default, recommended). Turning it off asks for confirmation, because Ready can then be given with a position accurate to only a few metres. The time of the last change is shown, and every change is recorded in the event log. |
-| **Automatic start** | *On*: AIO NAV starts by itself after power-on. *Paused*: an operator pressed Stop; **Resume** starts it again. *Off*: press Start on the Overview page. |
+| **Automatic start** | *On*: AIO NAV starts by itself after power-on. *Starting*: it is waiting, and says for what (for example *Waiting for the vehicle to be still*). *Paused*: an operator pressed Stop; it stays stopped until **Resume** or the next power-on. *Problem*: a sensor it waits for is missing. *Off*: press Start on the Overview page. |
 | **Vehicle link** | The vehicle address, and that the navigation data (0x04) and the Ready signal (0x05) go there on the same port. Read only: the address is set on Maintenance → AIO NAV config. |
 
 Wi-Fi can be changed only from a computer connected to the device **by cable** (or on the
@@ -190,6 +198,30 @@ computer sees *Connect with a network cable to change Wi-Fi.* While navigation i
 the vehicle or the internet route (RTK corrections) goes over Wi-Fi, the page asks before it
 changes anything. These settings need no password on the user pages; the same settings are on the
 Maintenance view too. Wi-Fi needs a one-time setup by the installer (configuration manual 4.5a).
+
+### 3.7 Setup page: lever arms
+
+**Setup** says where the GNSS antenna and the centre of the rear axle (AIO NAV's vehicle reference
+point) are, measured from the **IMU in the AIO unit**. Measure them again whenever the AIO unit or
+the antenna is moved: wrong values make the position and heading worse.
+
+| Field | Meaning |
+|-------|---------|
+| **Forward** / **Right** / **Down** | Metres from the IMU along the vehicle: + ahead, + right, + below. Negative values: behind, left, above. Up to 20 m each, to the centimetre or better. |
+| **GNSS antenna** | To the centre of the antenna. |
+| **Rear axle centre** | To the middle of the rear axle. |
+
+Next to the table, a side view and a top view draw the IMU, the antenna and the rear axle centre to
+scale on an example car: check that each point sits where it is on your vehicle (the car shows the
+directions, not your vehicle's size).
+
+- **Save** writes the values into the Live settings file (`aio_nav.yaml`); they apply at AIO NAV's
+  next start. The previous file is kept (Maintenance → AIO NAV config → Earlier versions) and the
+  change is recorded in the event log.
+- **Save and restart AIO NAV** (when AIO NAV runs) applies them at once. It works only while the
+  vehicle stands still, because AIO NAV aligns again; it asks for confirmation first.
+- Like Start / Stop this needs no password. The administrator can make the page read-only
+  (`product.edit_lever_arms`, configuration manual 4.1).
 
 ## 4. Daily operation
 
@@ -217,24 +249,36 @@ The **Start** button is in the status area at the top of the Overview and Naviga
 *Initializing: the status area says what to do (Keep still) and names the alignment step; the
 Alignment step of the start-up progress is opened to show the three phases.*
 
-**Automatic start (power-on).** With `autostart` on (the shipped setting, [configuration
-manual 4.2b](CONFIG.md)) nobody presses Start. After power-on the system goes through:
+**Automatic start (power-on).** AIO NAV is fully automatic (the default, [configuration
+manual 4.2b](CONFIG.md)): nobody presses Start. After power-on the system goes through:
 
 | Step | Status area | The vehicle receives (0x05) | Operator |
 |---|---|---|---|
 | 1. Dashboard starts | **Unknown** → **Starting** | `BOOTING`, then `CHECKING` | Keep the vehicle still |
-| 2. Sensor drivers started if needed; wait for IMU data and a GNSS position | **Starting** — *Starting automatically: Waiting for …* | `CHECKING` / `HOLD_STILL` | Keep the vehicle still |
+| 2. Sensor drivers started if needed; wait for IMU data, for the system clock to match GNSS time (at most 2 min), and for the vehicle to be still for 5 s | **Starting** — *Starting automatically: Waiting for …* | `CHECKING` / `HOLD_STILL` | Keep the vehicle still |
 | 3. AIO NAV (and DSO) started | **Starting** | `NAV_STARTING` / `HOLD_STILL` | Keep the vehicle still |
 | 4. Alignment ([SOP](#5-alignment-sop)) | **Initializing**, step 1 → 2 → 3 | `KEEP_STILL` → `MOVE_STRAIGHT` → `REFINING` | Follow the step shown |
 | 5. RTK float or better, stable 3 s | **Ready** | `READY`, inhibit 0 | Use navigation |
 
 The **start-up progress** (section 3.2) shows which step it is on and what it is waiting for. If
 the sensors do not come within 2 minutes the state becomes **Fault** naming them (for example
-*IMU data not available after 120 s*); it still starts by itself as soon as they pass. If AIO NAV
-does not start or sends nothing, it is tried again a few times. After you press **Stop**, it stays
-stopped (also after a reboot) and the button reads **Resume** until someone presses it. Once Ready
-was reached it is never restarted automatically until the next power-on: if AIO NAV stops while
-driving, the state is **Fault** with *stop using navigation*.
+*IMU data not available after 120 s*); it still starts by itself as soon as they pass. Waiting for
+the vehicle to be still or for the clock is never a fault.
+
+What happens after a failure:
+
+- **Before Ready**: if AIO NAV does not start, exits, or sends nothing, it is started again after
+  5, 15, 30, then every 60 s. It never gives up.
+- **AIO NAV runs but its output stopped**: if an input is missing (no IMU data, no valid time) it is
+  left running, because it may resume by itself; with the inputs fine it gets 10 s, then it is
+  restarted (*Restarting AIO NAV in … s if it does not resume*).
+- **After Ready**: the vehicle is told at once to stop using navigation (**Fault**, `SAFE_STOP`,
+  *AIO NAV stopped after it was ready*). AIO NAV is started again only once the vehicle has stood
+  still for 5 s, then aligns again.
+- **Stop**: after you press **Stop**, AIO NAV stays stopped and the button reads **Resume** until
+  someone presses it, or until the next power-on.
+- **Power-off while it runs**: normal. The next power-on starts it again; it is not reported as a
+  crash.
 
 RTK is required for Ready by default. At a site without RTK it can be switched off on the
 **Settings** page (with a confirmation; recorded), or on Maintenance → Overview.
@@ -257,8 +301,8 @@ ask the administrator to enable it. AIO NAV that was started in another way is d
 - **Restart** (asks for confirmation: choose **Restart now**, or **Cancel** / Esc): stops and starts AIO NAV. **Alignment starts over**,
   so only restart while the vehicle can stand still.
 - **Stop** (asks for confirmation: choose **Stop now**, or **Cancel** / Esc): ends the navigation output. Your application stops
-  receiving data. With automatic start on, AIO NAV then stays stopped, also after a power cycle,
-  until someone presses **Resume**.
+  receiving data. With automatic start on, AIO NAV then stays stopped until someone presses
+  **Resume**, or until the next power-on.
 
 ### 4.5 After the run
 
@@ -371,7 +415,8 @@ turns **Ready**.
 | Starts | As soon as AIO NAV runs, **before** alignment completes. Use the flags to know when the data is valid. |
 
 Each destination gets its own copy of every packet. Your receiver and the dashboard do
-not compete for data. The dashboard is the only program that listens on `127.0.0.1:9000`:
+not compete for data. With the Wi-Fi hotspot on, the dashboard also copies every packet (and the
+0x05 status packet) to each phone or tablet on the hotspot, on UDP port 9000 (section 8.2). The dashboard is the only program that listens on `127.0.0.1:9000`:
 only one program can hold that address, so do not run another listener there (for example the
 old AIO Nav desktop app), or the dashboard would show no data.
 
@@ -497,8 +542,8 @@ For C/C++, use a packed struct (`#pragma pack(push, 1)`) with the field order of
 ### 6.8 Status packet (0x05)
 
 The 0x04 packet starts **before** alignment is complete, so receiving it does not mean the
-data may be used. When `status_udp` is on ([configuration manual 4.2c](CONFIG.md)) the
-dashboard also sends a **0x05 status packet**, twice a second and at once on every change, to
+data may be used. The dashboard therefore also sends (`status_udp`, on by default,
+[configuration manual 4.2c](CONFIG.md)) a **0x05 status packet**, twice a second and at once on every change, to
 the **same address and port as 0x04**. It carries the same readiness snapshot as the pages:
 the state, what the operator should do, and every reason the output must not be used. It
 keeps coming after READY: silence means "do not use".
@@ -643,9 +688,10 @@ Download them from the **Data** page of the product view.
 | **ROS 2** | Required nodes, monitored topics (rate, freshness, publishers, subscribers), all topics. Also here: **Sensor drivers** (Start / Stop / Restart the camera and IMU/GNSS drivers) and the ROS environment in use. |
 | **Replay** (replay module only) | Switch between Live and Bag replay, and play bags with any `ros2 bag play` option (section 4.6). |
 | **Camera / LiDAR** (if fitted) | Reachability, driver state, topic health, **Live view** (camera image; LiDAR point cloud with top/3D view), **Run diagnostic**, **Restart driver** (asks for confirmation). |
-| **Network** | Interfaces and addresses, sensor reachability, the NAV output destinations and their route. **Wi-Fi**: scan and connect (from a browser connected by cable only; the previous Wi-Fi comes back if the new one fails; see [configuration manual 4.5a](CONFIG.md)). |
-| **Diagnostics** | Active faults and warnings, results of diagnostics and restarts, and the event history. |
-| **AIO NAV config** | Edit AIO NAV's settings files (`aio_nav.yaml` for Live, `aio_nav_bag.yaml` for Bag replay). **Settings** is a form of the most used values (output, ROS, logs, alignment, aiding, lever arms); **Edit file** is the whole file. Comments in the file are kept. **Review changes** checks the file and shows exactly what changes; then **Save**, or **Save and restart AIO NAV** so it takes effect at once. Every save keeps the previous version (**Earlier versions**, to go back). |
+| **Still detection** | Whether the vehicle stands still (used before every automatic start and for *Save and restart* on Setup), and measuring the limits on the vehicle (section 8.1). |
+| **Network** | Interfaces and addresses, sensor reachability, the NAV output destinations and their route. **Wi-Fi**: scan and connect (from a browser connected by cable only; the previous Wi-Fi comes back if the new one fails; see [configuration manual 4.5a](CONFIG.md)). **Hotspot** (when installed): section 8.2. |
+| **Diagnostics** | Active faults and warnings, results of diagnostics and restarts, and the event history. Events from the first minute after power-on, before the clock was set from GNSS time, are shown at their real time once it is set (the log file keeps the time they were written). |
+| **AIO NAV config** | Edit AIO NAV's settings files (`aio_nav.yaml` for Live, `aio_nav_bag.yaml` for Bag replay). **Settings** is a form of the most used values (output, ROS, logs, alignment, aiding, lever arms); **Edit file** is the whole file. Comments in the file are kept. **Review changes** checks the file and shows exactly what changes (a removed or empty setting, a decimal written as a whole number, a list of another length are errors); then **Save**, or **Save and restart AIO NAV** so it takes effect at once. Saving first starts AIO NAV on the new file for a moment, cut off from the network: a file it would not start with is refused (*not saved: AIO NAV does not start with this file: …*) and the file on disk stays as it was. Every save keeps the previous version (**Earlier versions**, to go back). |
 | **Terminal** | A shell on the device, in the browser, for quick checks (`ros2 topic hz …`, `journalctl …`, `top`). It runs as the dashboard's user and loads your `.bashrc`, like a desktop terminal (so ROS is set up); **Use active ROS domain** types the export line for the mode in use. Up to 3 at once; closed after 30 min without typing. |
 
 The maintenance view can change the device, so it needs a password; the product view does not.
@@ -700,6 +746,55 @@ aio-dashboard config     # edit settings, check, restart
 aio-dashboard password   # set the maintenance password
 ```
 
+### 8.1 Still detection
+
+Every automatic start waits until the vehicle has stood still for 5 s, and **Save and restart** on
+the Setup page needs it too: AIO NAV's first alignment step needs a still vehicle, and a start may
+follow a crash while driving. "Still" means all three values below their limits:
+
+| Value | From | Default limit |
+|-------|------|---------------|
+| **Rotation** | The largest IMU rotation rate in the last 2 s | 0.05 rad/s |
+| **Shake** | The spread of the IMU acceleration in the last 2 s | 0.15 m/s² |
+| **GNSS speed** | The receiver's speed, used only while it has a position (otherwise *not used: …*) | 0.3 m/s |
+
+**Now** shows each value against its limit (the mark at two thirds of the bar), whether the vehicle
+is *Still* or *Moving* and why, and where the limits come from (*Default limits*, *Measured …* or
+*Set by hand …*). The defaults were measured on one vehicle; measure yours:
+
+1. **Measure still** (60 s): park, engine running, nobody gets in or out. If the vehicle moves the
+   measurement stops and says so. The proposed limits are twice the largest values seen.
+2. **Check while driving** (optional, 30 s, walking pace is enough): says how many readings the
+   proposed limits would wrongly call still.
+3. Check the numbers in the form, then **Apply these limits**. They apply at once and are kept
+   across restarts and updates. The values can also be typed by hand (within fixed ranges).
+   **Back to defaults** returns to the settings file's values.
+
+Measuring and changing need the maintenance password; every change is in the event log.
+
+### 8.2 Wi-Fi hotspot
+
+With the installer part `hotspot`, **Maintenance → Network → Hotspot** turns the device's Wi-Fi into
+a network of its own, so phones and tablets can join it in the field. Its one radio cannot join
+another network at the same time.
+
+- **Start hotspot**: type the name (default `AIO-NAV`) and a password (8–63 characters). It uses
+  2.4 GHz and WPA2, which every phone can join. The page asks first if the Wi-Fi is on a network
+  (it leaves it); if the hotspot does not start, the previous network comes back.
+- It **comes back after a power-off**, until it is stopped here.
+- Phones join it and open **`http://10.42.0.1:8080`** (the user pages). The page shows how many
+  devices are connected.
+- **Stop hotspot**: asks first if devices are connected; then the Wi-Fi joins a saved network in
+  range by itself.
+- **UDP copies**: while the hotspot runs, every device on it receives a copy of each navigation
+  packet (0x04) and status packet (0x05) on **UDP port 9000**, in the format of section 6. The
+  vehicle's output is unchanged. The switch *Send the NAV and status packets to the devices on the
+  hotspot* turns this off and on (kept across restarts); the line under it shows which devices get
+  them and how many packets were sent.
+- Starting and stopping need the maintenance password and a browser connected by cable (or the
+  device itself): a phone on the hotspot cannot switch it off. The user Settings page shows the
+  hotspot but cannot change it.
+
 ## 9. Troubleshooting
 
 | What you see | Likely cause | What to do |
@@ -711,12 +806,17 @@ aio-dashboard password   # set the maintenance password
 | A page looks unstyled or shows *Unknown* right after an update | The browser still has the old page files | Reload with **Ctrl+Shift+R**. |
 | **Offline**, "Lost connection to the dashboard" | Your browser cannot reach the device | Check the network; the page recovers by itself. |
 | **Stopped** | AIO NAV is not running (normal) | Click **Start** (section 4.2). |
-| **Fault**: AIO NAV stopped unexpectedly | AIO NAV exited by itself | Click **Start**. If it keeps stopping, collect `/opt/aio-dashboard/logs/aio_nav.log` for the navigation team (Maintenance view shows details). |
+| **Fault**: AIO NAV stopped unexpectedly | AIO NAV exited by itself in this power-on | With automatic start it is started again by itself (after Ready, once the vehicle stands still). Without it, click **Start**. If it keeps stopping, collect `/opt/aio-dashboard/logs/aio_nav.log` for the navigation team (Maintenance view shows details). |
+| **Starting** for a long time: *Waiting for the vehicle to be still* | The vehicle moves, or the still limits are too tight for this vehicle | Park it with nobody moving in it. If it never turns still, measure the limits on Maintenance → Still detection (section 8.1). |
+| **Starting**: *Waiting for the system clock to match GNSS time* | The receiver has no GNSS time yet (it needs open sky) | Wait; after 2 min AIO NAV starts anyway (event *System clock not corrected*). |
+| Event *Sensor drivers restarted* | The driver unit ran but the IMU sent nothing for 45 s | Nothing to do if it recovers. If it repeats, check the IMU cable and power. |
+| Fault *Settings file has an error* | The dashboard settings file has a mistake; it runs with the last good settings | Configuration manual section 3. |
+| A phone does not see the hotspot | The hotspot is off, or the phone is out of range | Maintenance → Network → Hotspot shows whether it is on; it uses 2.4 GHz. |
 | **Fault**: AIO NAV is running but sends no navigation output | Nothing came out within 60 s of starting (`nav.startup_timeout_s`) | **Restart** AIO NAV; check its sensors (IMU/GNSS driver) on the Maintenance view. |
 | **Fault**: Navigation output stopped | The filter froze or its sensors stopped | Check the IMU/GNSS driver on the Maintenance view; **Restart** AIO NAV. |
 | Message *AIO NAV did not start: …* under the buttons | AIO NAV exited or could not start; the message gives the reason | Click **Start** again. If it repeats, collect `/opt/aio-dashboard/logs/aio_nav.log` for the navigation team. |
 | **Fault**: AIO NAV is not installed on this device | The aio-nav-ros `install/` folder is missing or incomplete on this device | Ask the administrator to check that aio-nav-ros is installed. |
-| Live: no camera or IMU data | The sensor drivers are stopped | Maintenance → ROS 2 → Sensor drivers → **Start**; wait about 15 s. |
+| Live: no camera or IMU data | The sensor drivers are stopped (an operator Stop is kept: neither the automatic start nor the watchdog starts them again) | Maintenance → ROS 2 → Sensor drivers → **Start**; wait about 15 s. |
 | Bag replay: AIO NAV receives no data | The bag is played in another ROS domain, or AIO NAV was not started | Section 4.6: play from Maintenance → Replay (it uses the right domain), and click Start on the Overview page. From a terminal: `ROS_DOMAIN_ID=13 ROS_LOCALHOST_ONLY=0 ros2 bag play … --clock 100`. |
 | Stuck at **Initializing** | Alignment not finished | Follow the [Alignment SOP](#5-alignment-sop) and 5.3. |
 | Event *DSO used too much memory: restarting DSO* (Maintenance → Diagnostics) | DSO kept growing (it was seen keeping every camera frame); the watchdog restarted it before the machine ran out of memory | Nothing to do right away; AIO NAV keeps running. If it repeats, report it to the DSO maintainers. The limit is `dso_watchdog.max_memory_mb`. |

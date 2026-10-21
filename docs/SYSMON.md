@@ -61,6 +61,10 @@ What is given up first when the cap is reached: old snapshots (they may use at m
 cap), then the oldest daily samples, then the oldest events. Files older than 30 days are deleted.
 Yesterday's samples are compressed (about 7×).
 
+**Nothing is cleaned up before the clock is set.** Right after a power-on the clock may still say
+1970 (section 5); clean-up then waits, so a power-off never costs the day's records. Files written
+with a 1970 date get today's date once the clock is set, and age from then.
+
 **Disk guard.** The recorder watches the free space and degrades before the disk is full:
 
 | Free space | Behaviour |
@@ -78,9 +82,11 @@ disk is in the first level. A message storm from the kernel is capped at 120 lin
 aio-sysmon last-crash
 ```
 
-shows how the previous run ended. If the machine stopped without a clean shutdown, it prints a
-verdict, the readings of the last minute, the kernel messages just before the end, and the last
-records second by second, for example:
+says first how the previous run ended: *the previous run ended cleanly (stopped at …)*, or *the
+previous run was killed while the machine kept running*, or an unclean stop. If the machine stopped
+without a clean shutdown, it prints a verdict, the readings of the last minute, the kernel messages
+just before the end, and the last records second by second. After a clean run, an older unclean
+stop still follows under *the newest unclean stop of the machine on record is older:*. For example:
 
 ```
 verdict:  the machine stopped without a clean shutdown; the input voltage fell in the last minute
@@ -111,11 +117,11 @@ All commands:
 
 | Command | Shows |
 |---------|-------|
-| `aio-sysmon status` | whether it is running, space used, the latest reading |
-| `aio-sysmon last-crash` | the verdict for the last unclean stop and the last records before it |
+| `aio-sysmon status` | whether it is running, space used, the latest reading, the anomalies and unclean stops of the last 24 h; *WARNING: the recorder is not writing* when the newest record is older than 60 s |
+| `aio-sysmon last-crash` | how the previous run ended, then the verdict for the last unclean stop and the last records before it |
 | `aio-sysmon report [--hours N] [--since "YYYY-MM-DD HH:MM"]` | per-hour summary and notable events |
 | `aio-sysmon ring [--rows N]` | the newest second-by-second records (root only: use `sudo`; `last-crash` shows them too when run with `sudo`) |
-| `aio-sysmon events [--hours N] [--kind KIND]` | events (`anomaly`, `kernel`, `unclean_stop`, `tick_gap`, `clock_step`, `start`, `stop`) |
+| `aio-sysmon events [--hours N] [--kind KIND]` | events (`anomaly`, `kernel`, `unclean_stop`, `recorder_killed`, `tick_gap`, `clock_step`, `priority`, `snapshot`, `start`, `stop`) |
 | `aio-sysmon snapshots [NAME]` | list snapshots, or print one |
 
 The files are plain text and gzip in `/var/log/aio-sysmon/`: `ring.bin` (fixed ring),
@@ -162,17 +168,24 @@ Everything is optional. The most useful keys:
 - **A freeze with healthy numbers.** If the readings were normal until the last record and the
   kernel logged nothing, the verdict says so honestly: it points to power or a hardware or kernel
   fault, which the recorder cannot tell apart.
-- **Clock problems.** If the machine has no battery-backed clock, or keeps its hardware clock in
-  local time (`timedatectl` shows "RTC in local TZ: yes"), its time can be wrong right after a boot
-  until it is set; on this Orin NX it ran 8 hours ahead. Every record also carries the uptime, a
-  jump of the clock is logged as `clock_step`, and `last-crash` / `events` still find records
-  written while the clock was ahead. `sudo timedatectl set-local-rtc 0` keeps the hardware clock in UTC.
+- **Clock problems.** If the machine keeps no time over a power-off (no working clock battery), each
+  power-on starts at 1970 until GNSS time or NTP sets the clock (the dashboard installer sets it from
+  GNSS time). Every record also carries the uptime, and the jump of the clock is logged as
+  `clock_step`, so records of that power-on are shown at their real time, marked *(clock set
+  later)*. A run that lost power before its clock was set keeps the time it wrote, marked
+  *(clock not set yet: time unknown)*; `events` and `report` list those records whatever the time
+  window. A hardware clock kept in local time (`timedatectl` shows "RTC in local TZ: yes") makes the
+  time wrong the other way (on this Orin NX it ran 8 hours ahead); `last-crash` / `events` still find
+  those records, and `sudo timedatectl set-local-rtc 0` keeps the hardware clock in UTC.
 - **Release packages.** The compiled release made by `tools/build_release.sh` does not include the
   recorder yet; it is installed from a source checkout.
 
 ## 6. Install, permissions and removal
 
-It is optional and **not installed by default**: add `--with-sysmon` to `sudo deploy/install.sh --user <you>` to install it (once installed, later runs of the installer keep it updated). It also keeps the
+It is optional: choose *Black-box recorder (aio-sysmon)* in the installer's menu (shown the first
+time, or with `--choose`), or add `--with-sysmon` to `sudo deploy/install.sh --user <you>`. The
+installer remembers the choice, so later runs keep it updated; `--without-sysmon` removes the service
+(the records are kept). It also keeps the
 system journal on disk (`/etc/systemd/journald.conf.d/aio-persistent.conf`, 300 MB), so the
 kernel's own log survives a reboot too.
 

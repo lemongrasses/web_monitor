@@ -63,7 +63,12 @@ cd ~/web_monitor && sudo deploy/install.sh --user jetson
 - 含有 `:` 或 `#` 的文字請加上引號，例如 `host: "192.0.2.20"`。
 - `auto` 是關鍵字，代表該項設定使用自動偵測。
 
-設定檔有語法錯誤時儀表板無法啟動，systemd 會每隔幾秒重試一次。可用以下指令檢查設定檔：
+設定寫錯不會讓儀表板停擺：
+
+- **設定檔無法讀取**（YAML 語法錯誤，或不是設定檔）：儀表板改用上次成功啟動時的設定（`state/dashboard.lastgood.yaml`），沒有的話就用內建預設值，並發出故障「Settings file has an error」。
+- **數值型別不對**（數字欄位寫成文字、`true` 寫成 `yes`）：該值改用預設值，日誌寫出 `settings: <key>: … is not a valid value; using the default …`，並發出故障「Settings with an invalid value: defaults used」。
+
+重新啟動前可用 `aio-dashboard check` 或以下指令檢查設定檔：
 ```bash
 python3 -c "import yaml; yaml.safe_load(open('/opt/aio-dashboard/config/dashboard.yaml')); print('OK')"
 ```
@@ -88,6 +93,8 @@ maintenance:  { host: 0.0.0.0, port: 8081 }
 | `maintenance.password_file` | `config/maint_password` | 維護密碼雜湊值存放的位置（用 `aio-dashboard password` 設定）。沒有這個檔案時，受保護的部分會保持鎖住。 |
 | `maintenance.lock` | `all` | `all`：整個維護頁面都需要密碼。`tools`：只有 AIO NAV 設定編輯器與終端機需要（其他維護頁面開放，例如開發用的機器）。 |
 | `maintenance.unlock_minutes` | `15` | 登入後這麼多分鐘沒有使用就會自動登出（頁面自己的定時更新不算使用）。 |
+| `maintenance.config_test_start` | `true` | 在**維護頁面 → AIO NAV config** 儲存 AIO NAV 設定檔之前，先讓 AIO NAV 以新檔案短暫啟動一次（與網路隔離）；AIO NAV 無法啟動的檔案會被拒絕，並顯示 AIO NAV 的訊息。`false` 時只做規則檢查就儲存。 |
+| `product.edit_lever_arms` | `true` | 使用者的**安裝**頁可以修改即時模式 `aio_nav.yaml` 中的槓桿臂（與 Start／Stop 一樣不需要密碼；數值會檢查、保留舊檔並記錄變更）。`false` 時只能檢視。 |
 
 產品頁面給操作人員使用；維護頁面給工程人員使用，且可以重新啟動驅動程式。若希望維護頁面只能從 Jetson 本機開啟，請設定 `maintenance.host: 127.0.0.1`。
 
@@ -95,14 +102,14 @@ maintenance:  { host: 0.0.0.0, port: 8081 }
 
 ```yaml
 access:
-  allowed_clients: [192.168.116.154]
+  allowed_clients: [192.0.2.50]
 ```
 
 | 設定 | 預設 | 說明 |
 |-----|------|------|
-| `allowed_clients` | `[]` | 允許開啟 Product / Maintenance 頁面的電腦 IP 或 CIDR(例如 `192.168.116.0/24`)。其他來源會得到 `403 Forbidden`。本機 `127.0.0.1` 一律允許。留空代表不限制。 |
+| `allowed_clients` | `[]` | 允許開啟 Product / Maintenance 頁面的電腦 IP 或 CIDR(例如 `192.0.2.0/24`)。其他來源會得到 `403 Forbidden`。本機 `127.0.0.1` 一律允許。留空代表不限制。 |
 
-預設值是感測器網段上的外部電腦(`192.168.116.154`);本 Jetson 在 `eno1` 上是 `192.168.116.1`。這只是來源 IP 過濾,不是身分驗證,無法防止同一網段內有人偽造該 IP。
+請在這裡填入感測器網段上的外部電腦。連上 Wi-Fi 熱點的手機會自動加入（`wifi.hotspot.allow_clients`，第 4.5a 節）。這只是來源 IP 過濾,不是身分驗證,無法防止同一網段內有人偽造該 IP。
 
 ### 4.2 `nav`：AIO NAV 資料與 Stopped／Starting／Initializing／Ready／Fault 狀態
 
@@ -154,30 +161,42 @@ READY 需要 AIO NAV 正在執行、輸出即時、`nav.ready_requires` 的旗�
 | `imu_topic` | `auto` | `imu` 條件使用 `ros.topics` 中的哪一個項目。`auto` = group 為 `nav` 的第一個。採用的是 topic 的*狀態*而非原始延遲，因此搭配 `ros.sampling` 也能正確運作。 |
 | `dso_stale_s` | `1.0` | DSO 里程計超過這個時間沒有更新即視為未就緒。 |
 | `dso_only_with_vupt` | `true` | `require` 含 `dso` 時，只有在 `aio_nav.yaml` 開啟 `Odometry.vupt`（AIO NAV 有使用 DSO）時才要求 DSO。 |
+| `still_gyro_rad_s` | `0.05` | 「車輛靜止」以最近 2 秒的 IMU 資料判斷：最大旋轉速率（rad/s）。停車、引擎發動時低於 0.035；行駛時高於 0.17。 |
+| `still_accel_std` | `0.15` | 加速度大小的離散程度（m/s²）。停車時低於 0.16；行駛時高於 0.6。 |
+| `still_speed_m_s` | `0.3` | 接收器有 GNSS 位置時，其速度也必須低於此值（m/s）。 |
+| `still_speed_topic` | `/openrtk330/odometry` | 速度的來源（接收器的 INS 里程計）。`""` = 只用 IMU。 |
 
-某次導航執行一旦達到 READY，之後若必要條件（或對準）失效，會進入 **DEGRADED**，動作為「停止使用導航」，而不會回到對準提示：此時車輛可能正在行駛。新的一次執行（AIO NAV 重新啟動）才會重新開始流程。
+每次自動啟動前（4.2b）以及安裝頁的**儲存並重新啟動**都會用到「車輛靜止」。以上四個值是預設值：在**維護頁面 → Still detection** 於車上量測的門檻會取代它們（保存在 `state/still_limits.json`；*Back to defaults* 會移除）。
+
+某次導航執行一旦達到 READY，之後若必要條件（或對準）失效，會進入 **DEGRADED**，動作為「停止使用導航」，而不會回到對準提示：此時車輛可能正在行駛。若是 AIO NAV 本身在 READY 後停止，狀態為 **FAULT**、動作 **SAFE_STOP**（*AIO NAV stopped after it was ready*），儀表板重新啟動後也一樣，直到 AIO NAV 再次執行。新的一次執行（AIO NAV 重新啟動）才會重新開始流程。
 
 > 要求 RTK 時，沒有 RTK（只有 SPP）的場地永遠不會 READY：在那裡請把 RTK 關掉。
 > `require` 中若有不認得的名稱（打錯字），會以 `CONFIG_INVALID` 擋住 READY，而不是被忽略。
 
-### 4.2b `autostart`：開機後自動啟動 AIO NAV
+### 4.2b `autostart`：不需操作人員的 AIO NAV
+
+AIO NAV 預設為全自動：開機後自動啟動、失敗後重新啟動，而且自動啟動永不放棄。
 
 | 項目 | 預設值 | 說明 |
 |------|--------|------|
-| `enabled` | `false`（隨附設定：`true`） | `true` 會在儀表板啟動後自動啟動 AIO NAV 與 DSO（`nav.control_group`）。需要 `nav.allow_control: true`。 |
-| `prerequisites` | `[]` | 第一次啟動前必須成立的 readiness 條件（見 4.2a，例如 `imu`、`gnss`），避免在感測器尚未就緒時啟動 AIO NAV。 |
+| `enabled` | `true` | 自動啟動 AIO NAV 與 DSO（`nav.control_group`）。需要 `nav.allow_control: true`（隨附設定已開啟）。`false` = 只能手動 Start／Stop。 |
+| `prerequisites` | `[imu]` | 啟動前必須成立的 readiness 條件（見 4.2a，例如 `imu`、`gnss`），避免在感測器尚未就緒時啟動 AIO NAV。 |
 | `prerequisite_stable_s` | `2.0` | 前置條件需要持續成立的時間。 |
-| `prerequisite_timeout_s` | `120` | 超過這個時間仍缺少前置條件即為 **Fault**（例如「IMU data not available after 120 s」）。它會繼續等待，條件一出現就啟動，或由操作人員按 **Start**。 |
-| `start_services` | `[]` | 具有 `user_unit` 的服務（例如 `drivers`），若沒有在執行，會在等待前置條件之前先啟動。`install.sh` 會為服務使用者開啟 *lingering*，讓這個 user unit 在沒有人登入時也能於開機啟動。 |
-| `retry_backoff_s` | `[5, 15, 30, 60]` | READY 之前：若 AIO NAV 啟動失敗、自行結束，或在 `nav.startup_timeout_s` 內沒有任何輸出，會先停止，再依這些等待時間重試。 |
-| `max_attempts` | `5` | 超過這個次數後狀態變成 **Fault**（*automatic start gave up*）；按 **Start** 可再試一次。 |
+| `prerequisite_timeout_s` | `120` | 超過這個時間仍缺少前置條件即為 **Fault**（例如「IMU data not available after 120 s」）。它會繼續等待，條件一出現就啟動。等待車輛靜止或等待時鐘都不算故障。 |
+| `require_still` | `true` | 只在車輛靜止時啟動（4.2a）：AIO NAV 的第一個對準步驟需要靜止，而且啟動可能發生在行駛中當機或 watchdog 重開機之後。 |
+| `still_stable_s` | `5.0` | 啟動前車輛需要靜止的時間。 |
+| `start_services` | `[]`（隨附設定：`[drivers]`） | 具有 `user_unit` 的服務，等待啟動期間若沒有在執行就先啟動。操作人員停掉的服務不會被啟動；開機初期使用者的服務管理員還沒回應前也不會啟動。`install.sh` 會為服務使用者開啟 *lingering*，讓這個 user unit 在沒有人登入時也能於開機啟動。 |
+| `retry_backoff_s` | `[5, 15, 30, 60]` | 每次嘗試之間的等待時間，最後一個值會一直重複。次數以這次開機為範圍保存（儀表板重新啟動不會縮短等待），達到 READY 後重新計算。 |
+| `max_attempts` | `0` | `0` = 永不放棄。填數字則在該次數後停止（*automatic start gave up*；按 **Start** 再試一次）。 |
+| `stale_grace_s` | `10.0` | AIO NAV 在執行但輸出停止、輸入正常時，給它這麼久恢復，之後停止再重新啟動。若有輸入缺少（沒有 IMU 資料、沒有有效時間）則讓它繼續執行，因為重新啟動也沒用：*Waiting for …; AIO NAV may resume by itself*。 |
 
-隨附的 `config/dashboard.yaml` 已開啟這個功能，開機流程為：BOOTING → CHECKING（必要時先啟動感測器驅動，再等待 IMU 資料與 GNSS 位置）→ NAV_STARTING（AIO NAV，接著 DSO）→ KEEP_STILL → MOVE_STRAIGHT → REFINING → READY（RTK float）。啟動是否成功只看 AIO NAV：DSO 會一起啟動，DSO 的失敗交給 DSO watchdog 處理，絕不會因此重新啟動 AIO NAV。已安裝的裝置會保留自己的設定；請與 `dashboard.yaml.new` 比較，或以 `--reset-config` 重新安裝。
+開機流程為：BOOTING → CHECKING（必要時啟動感測器驅動、IMU 資料、系統時鐘與 GNSS 時間一致（4.2d）、車輛靜止）→ NAV_STARTING（AIO NAV，接著 DSO）→ KEEP_STILL → MOVE_STRAIGHT → REFINING → READY（RTK float）。啟動是否成功只看 AIO NAV：DSO 會一起啟動，DSO 的失敗交給 DSO watchdog（4.7a）處理，絕不會因此重新啟動 AIO NAV。已安裝的裝置會保留自己的設定；請與 `dashboard.yaml.new` 比較，或以 `--reset-config` 重新安裝。
 
 固定適用的規則：
 
-- **Stop**（Overview 或維護頁面）會讓自動啟動進入**暫停（hold）**，重開機後仍然有效，直到有人按 **Start**。
-- 一旦達到 READY，**直到下次開機前都不會再自動啟動或重新啟動 AIO NAV**，即使它停止或儀表板重新啟動也一樣：此時車輛可能正在行駛。
+- **Stop**（Overview 或維護頁面）會讓自動啟動進入**暫停（hold）**，直到有人按 **Start**／**恢復**，或下次上電。儀表板重新啟動後暫停仍然有效。
+- **READY 之後**若 AIO NAV 停止或輸出停止，會立即告訴車端 **SAFE_STOP**；車輛靜止 `still_stable_s` 後才會再次啟動 AIO NAV。
+- 斷電時 AIO NAV 正在執行不算當機：下次上電會直接再啟動它。
 - 已經在執行的程式（儀表板重新啟動、桌面程式啟動的）會被接管，絕不會重複啟動。
 - AIO NAV 應只由一個管理者負責。開啟 `autostart` 時，若 `aio-nav.service` 被設為開機自動啟動，會判定為 **Fault**（`OWNERSHIP_CONFLICT`）。開啟 `autostart` 時，`install.sh` 不會把它設為開機啟動，若已設定則會取消；只開啟 `nav.allow_control` 時則只會提出警告。
 
@@ -185,12 +204,35 @@ READY 需要 AIO NAV 正在執行、輸出即時、`nav.ready_requires` 的旗�
 
 | 項目 | 預設值 | 說明 |
 |------|--------|------|
-| `enabled` | `false`（隨附設定：`true`） | `true` 會把 readiness 快照以 42 位元組的 0x05 封包送出（格式見[操作手冊第 6.8 節](OPERATION.zh-TW.md#sec6)）。 |
+| `enabled` | `true` | 把 readiness 快照以 42 位元組的 0x05 封包送出（格式見[操作手冊第 6.8 節](OPERATION.zh-TW.md#sec6)）。`false` = 不送 0x05。 |
 | `destination` | `auto` | IPv4 `位址:port`。`auto` = `aio_nav.yaml` 中 `output_udp` 的位址**與 port**：0x05 與 0x04 進入同一個 socket，接收端以訊息 ID 區分。只有車端希望 0x05 走另一個 port 時才需要填寫位址。不接受主機名稱（避免在 5 Hz 的流程中查詢 DNS），也不可設為儀表板自己的接收位址（`nav.udp_bind`）。 |
 | `message_id` | `5` | 0x05 專用於此封包（AIO NAV 只送 0x04）。 |
 | `rate_hz` | `2.0` | 每秒封包數；狀態、動作或禁止遮罩一改變就立即送出。READY 之後仍持續發送。 |
 
-維護頁面的 Overview 會顯示 readiness 快照、條件表、自動啟動狀態與封包計數（已送出、錯誤）。這裡只會顯示「傳送中」，不會顯示「已接收」：UDP 沒有回應確認。
+維護頁面的 Overview 會顯示 readiness 快照、條件表、自動啟動狀態與封包計數（已送出、錯誤）。這裡只會顯示「傳送中」，不會顯示「已接收」：UDP 沒有回應確認。開啟 Wi-Fi 熱點時，連上的裝置也會收到副本（4.5a）。
+
+### 4.2d `gnss_time`：以 GNSS 時間設定系統時鐘
+
+Jetson 斷電後不會保留時間，野外也沒有 NTP。儀表板把 IMU 的 GNSS 時間戳記交給 chrony 當作時間來源（`install.sh` 設定的共用記憶體 refclock），讓系統時鐘、日誌與 AIO NAV 的時間一致。
+
+| 項目 | 預設值 | 說明 |
+|------|--------|------|
+| `enabled` | `true` | 提供時間給 chrony，並在自動啟動前等待時鐘。 |
+| `latency_ms` | `4.6` | 最快的 IMU 訊息比其時間戳記晚到的時間（與 NTP 比對 8 小時量得）。 |
+| `shm_unit` | `2` | chrony 的 SHM 編號（`/etc/chrony/conf.d/aio-gnss.conf` 中的 `refclock SHM 2`）。 |
+| `clock_tolerance_s` | `1.0` | 時鐘與 GNSS 時間相差在此範圍內即視為一致。 |
+| `clock_wait_s` | `120.0` | 自動啟動最多等待時鐘這麼久（*Waiting for the system clock to match GNSS time*）；之後照樣啟動 AIO NAV，並記錄事件「System clock not corrected」。 |
+
+### 4.2e `driver_watchdog`：IMU 沒有資料時重新啟動感測器驅動
+
+| 項目 | 預設值 | 說明 |
+|------|--------|------|
+| `enabled` | `true` | 監看感測器驅動服務（只在即時模式；播放 bag 時 IMU 來自 bag）。 |
+| `service` | `auto` | 具有 `user_unit` 的 `services` 項目；`auto` = 第一個。 |
+| `stale_s` | `45.0` | 服務在執行但 IMU 這麼久沒有資料（或 systemd 已放棄它）：重新啟動。 |
+| `retry_backoff_s` | `[60, 120, 300]` | 重新啟動沒有用時的等待時間，最後一個值會一直重複。 |
+
+操作人員停掉驅動（維護頁面 → ROS 2）後，watchdog 不會再啟動它。每次重新啟動都會記錄在事件紀錄（*Sensor drivers restarted*）。
 
 ### 4.3 `services`：要監看（及重新啟動）的 systemd 服務
 
@@ -283,6 +325,23 @@ ros2 param get /ouster/os_driver sensor_hostname   # Ouster IP（節點名稱可
 - **失敗會還原**：若新網路失敗（密碼錯誤、`ip_timeout_s` 內沒有取得位址），會刪除新建立的設定並恢復原本的 Wi-Fi。
 - **使用中會先詢問**：導航為 Ready／Degraded 時，或車端輸出、網際網路路由（RTK 修正資料）經由 Wi-Fi 時，會先要求確認。
 - 產品頁面的設定頁不需要密碼（由上面的有線連線規則保護）；維護頁面需要維護密碼。每次變更都會記錄在事件紀錄；Wi-Fi 密碼絕不會被記錄、顯示或回傳。
+- 若失敗時裝置從未離開目前的網路，就不會斷線：頁面顯示「仍連線在 …」。
+
+**熱點**（`wifi.hotspot`，安裝程式的 `hotspot` 部分）：在**維護頁面 → Network** 可以讓 Wi-Fi 自己成為一個網路，給手機和平板連線，而不是加入別的網路（同一個無線電無法兩者同時進行）。它是名為 `aio-hotspot` 的 NetworkManager 設定：一般 WPA2（不使用 WPA3 過渡模式，有些 iPhone 會看不到），每次上電都會比已儲存的網路優先啟動，直到在該頁面停止為止。手機開啟 `http://10.42.0.1:8080`。
+
+| 項目 | 預設值 | 說明 |
+|------|--------|------|
+| `hotspot.enabled` | `auto` | `auto`：已安裝 `hotspot` 部分時提供。`true` 強制開啟；其他值則關閉。 |
+| `hotspot.address` | `10.42.0.1/24` | 裝置在熱點上的位址；手機會取得這個網段的位址。 |
+| `hotspot.band` | `bg` | `bg` = 2.4 GHz（所有手機都能連）；`a` = 5 GHz。 |
+| `hotspot.allow_clients` | `true` | 把熱點網段加入 `access.allowed_clients`，讓手機能開啟頁面（只有該清單不是空的時候才有作用）。 |
+| `hotspot.relay_udp` | `true` | 把 NAV（0x04）與狀態（0x05）封包的副本送給熱點上的裝置。維護頁面 → Network 的開關會覆蓋此值（保存在 `state/hotspot_relay.json`）。 |
+| `hotspot.relay_port` | `9000` | 每台裝置上的 UDP port。 |
+
+- 熱點名稱在頁面上輸入（預設 `AIO-NAV`），密碼（8–63 個字元）也在每次啟動時輸入。密碼只存在 NetworkManager 設定中，不會出現在儀表板的檔案、日誌或頁面。
+- **Start** 時若 Wi-Fi 正連在某個網路上會先詢問（會離開該網路）；熱點啟動失敗時會恢復原本的網路。**Stop** 時若有裝置連線會先詢問，之後 Wi-Fi 會自動加入範圍內已儲存的網路；停止後上電也不會再啟動。
+- 啟動與停止需要維護密碼，且瀏覽器必須透過網路線連線（連在熱點上的手機無法關閉它）。使用者的設定頁會顯示熱點，但不能變更。
+- 封包副本以 unicast 送給目前連線中的每台裝置，每 2 秒更新一次清單（車端的輸出不變）。0x05 副本需要開啟 `status_udp` 並有車端目的地。裝置數量與副本需要 `iw` 工具。
 
 ### 4.6 `system`：Jetson 系統狀態
 
@@ -356,7 +415,7 @@ dso_watchdog:
 只處理 DSO,不會動 AIO NAV。狀態在維護頁面的 ROS 2,首頁沒有任何操作,每個動作都有事件紀錄。
 
 * **里程計變成 NaN**(DSO 追蹤失敗):**立刻**重啟 DSO。
-* **DSO 沒有在跑、但應該要跑**(崩潰,或剛啟動就結束):**每 `retry_s`(30 秒)**再啟動一次,直到穩定為止。
+* **DSO 沒有在跑、但應該要跑**(崩潰,或剛啟動就結束):先等 `retry_s`(30 秒)再啟動,之後等待時間加倍,最多 `retry_max_s`(300 秒);持續執行 `stay_up_s` 後重新計算。永不放棄。這次開機之前的啟動不算「應該要跑」。
 * **DSO 用了太多記憶體**(RAM 加 swap 超過 `max_memory_mb`):**立刻**重啟 DSO,避免失控的 DSO 把記憶體用完、讓整台機器卡死。
 * 你主動停掉的 DSO 會保持停止。「應該在跑」是在儀表板啟動或停止 AIO NAV、DSO 時記錄的(`state/processes.json`),正在執行的 DSO 也視為需要。
 * 如果 NaN 一直出現(`window_s` 內重啟 `fast_restarts` 次),之後的重啟也改成間隔 `retry_s`,避免畫面不好時一直迴圈重啟。
@@ -369,7 +428,9 @@ dso_watchdog:
 | `bad_messages` | `1` | 連續幾筆 NaN 才重啟(1 = 立刻)。 |
 | `cooldown_s` | `2` | 兩次 NaN 重啟的最短間隔。 |
 | `settle_s` | `3` | 重啟後忽略里程計的時間。 |
-| `retry_s` | `30` | DSO 沒在跑時的重試間隔,以及 NaN 持續出現時的重啟間隔。 |
+| `retry_s` | `30` | DSO 沒在跑時第一次重試前的等待,以及 NaN 持續出現時的重啟間隔。 |
+| `retry_max_s` | `300` | DSO 一直剛啟動就結束時,等待時間加倍到此上限。 |
+| `stay_up_s` | `120` | 持續執行這麼久後,等待時間重新計算。 |
 | `fast_restarts` / `window_s` | `3` / `60` | 見上方說明。 |
 | `max_memory_mb` | `auto` | DSO 使用的記憶體（RAM 加 swap）超過這個值時，立刻重新啟動 DSO（不影響 AIO NAV）。`auto`：RAM 的 20%（16 GB 的 Orin NX 約 3.1 GB）；`0`：關閉。起因是 DSO 曾經保留每一張相機影像（約 25 MB/s），直到 RAM 與 swap 用完、整台機器卡死。 |
 
@@ -418,6 +479,7 @@ data:
 |------|--------|------|
 | `restart_timeout_s` | `30` | 驅動程式重新啟動超過這個時間會被回報為失敗。 |
 | `diagnostic_timeout_s` | `15` | **Run diagnostic** 的逾時時間。 |
+| `stop_grace_s` | `5` | 停止 AIO NAV 或 DSO 時先送 SIGTERM，這麼多秒後再送 SIGKILL。 |
 
 ### 4.11 `fake`：僅供展示／開發
 
@@ -498,7 +560,8 @@ nav:
 | 狀況 | 可能原因與解決方式 |
 |------|------------------|
 | 修改後沒有效果 | 改到的是 `~/web_monitor/config/dashboard.yaml` 而不是 `/opt/aio-dashboard/config/dashboard.yaml`，或忘了執行 `sudo systemctl restart aio-dashboard`。 |
-| 修改後頁面打不開 | YAML 語法錯誤。執行第 3 節的檢查指令，並查看 `journalctl -u aio-dashboard -n 40`。 |
+| 修改後出現故障「Settings file has an error」 | YAML 語法錯誤：儀表板以上次正常的設定執行。執行 `aio-dashboard check`（第 3 節），修正後重新啟動。 |
+| 故障「Settings with an invalid value: defaults used」 | 某個值的型別不對；`journalctl -u aio-dashboard -n 40` 會指出是哪一項。 |
 | 「Sending to」顯示錯誤的位址 | 這個位址來自 `aio_nav.yaml` 的 `output_udp`，不是這個設定檔（見 4.2）。 |
 | Network 頁面顯示找不到 `aio_nav.yaml` | 將 `nav.aio_nav_config` 設為完整路徑（見第 5 節）。 |
 | ROS 2 頁面顯示 rclpy 無法使用 | `/opt/ros/humble` 沒有安裝 ROS 2 Humble，服務無法載入 ROS 2。 |

@@ -83,8 +83,16 @@ never overwrites your installed config.
 - Put text containing `:` or `#` in quotes: `host: "192.0.2.20"`.
 - `auto` is a keyword: it turns on auto-detection for that setting.
 
-If the file has a syntax error, the dashboard cannot start, and systemd retries every
-few seconds. Check the file with:
+A mistake never stops the dashboard:
+
+- **The file cannot be read** (a YAML syntax error, or not a settings file): the dashboard runs
+  with the settings that last started it (`state/dashboard.lastgood.yaml`), or with the built-in
+  defaults if there are none, and raises the fault *Settings file has an error*.
+- **A value of the wrong kind** (text where a number belongs, `yes` where `true` belongs): that
+  value is replaced by its default, the log says `settings: <key>: … is not a valid value; using
+  the default …`, and the fault *Settings with an invalid value: defaults used* is raised.
+
+Check the file before restarting with `aio-dashboard check`, or:
 ```bash
 python3 -c "import yaml; yaml.safe_load(open('/opt/aio-dashboard/config/dashboard.yaml')); print('OK')"
 ```
@@ -109,6 +117,8 @@ maintenance:  { host: 0.0.0.0, port: 8081 }
 | `maintenance.password_file` | `config/maint_password` | Where the hash of the maintenance password is kept (set it with `aio-dashboard password`). No file: what it protects stays locked. |
 | `maintenance.lock` | `all` | `all`: the whole maintenance view needs the password. `tools`: only the AIO NAV config editor and the terminal do (the other maintenance pages are open, e.g. on a development machine). |
 | `maintenance.unlock_minutes` | `15` | A signed-in browser is signed out after this many minutes without use (the pages' own refresh does not count). |
+| `maintenance.config_test_start` | `true` | Before an AIO NAV settings file is saved on **Maintenance → AIO NAV config**, AIO NAV is started on it for a moment, cut off from the network; a file AIO NAV would not start with is refused, with what AIO NAV said. `false` saves after the checks alone. |
+| `product.edit_lever_arms` | `true` | The user **Setup** page may change the lever arms in the Live `aio_nav.yaml` (no password, like Start / Stop; the values are checked, the previous file is kept and the change is logged). `false` shows them read-only. |
 
 The product view is for operators. The maintenance view is for engineers and can
 restart drivers. To keep the maintenance view reachable only from the Jetson itself,
@@ -118,16 +128,16 @@ set `maintenance.host: 127.0.0.1`.
 
 ```yaml
 access:
-  allowed_clients: [192.168.116.154]
+  allowed_clients: [192.0.2.50]
 ```
 
 | Key | Default | Meaning |
 |-----|---------|---------|
-| `allowed_clients` | `[]` | IP addresses or CIDRs (e.g. `192.168.116.0/24`) of the computers allowed to open the product and maintenance views. Anyone else gets `403 Forbidden`. `127.0.0.1` (this Jetson) is always allowed. Empty = no restriction. |
+| `allowed_clients` | `[]` | IP addresses or CIDRs (e.g. `192.0.2.0/24`) of the computers allowed to open the product and maintenance views. Anyone else gets `403 Forbidden`. `127.0.0.1` (this Jetson) is always allowed. Empty = no restriction. |
 
-The shipped value is the external computer on the sensor LAN (`192.168.116.154`); this
-Jetson is `192.168.116.1` on `eno1`. It is an access filter, not authentication: it
-does not protect against a computer that spoofs that address on the same LAN.
+Put the external computer on the sensor LAN here. Phones on the Wi-Fi hotspot are added
+automatically (`wifi.hotspot.allow_clients`, section 4.5a). It is an access filter, not
+authentication: it does not protect against a computer that spoofs that address on the same LAN.
 
 ### 4.2 `nav`: AIO NAV data and the Stopped / Starting / Initializing / Ready / Fault state
 
@@ -189,39 +199,57 @@ conditions.
 | `imu_topic` | `auto` | Which `ros.topics` entry is the IMU for `imu`. `auto` = the first one in group `nav`. Its *state* is used, not its raw age, so it also works with `ros.sampling`. |
 | `dso_stale_s` | `1.0` | DSO odometry older than this is not ready. |
 | `dso_only_with_vupt` | `true` | With `dso` in `require`, DSO is only required when `Odometry.vupt` is on in `aio_nav.yaml` (AIO NAV uses it). |
+| `still_gyro_rad_s` | `0.05` | "Vehicle still", from the last 2 s of IMU samples: the largest rotation rate (rad/s). Parked with the engine on it stayed under 0.035; driving it was above 0.17. |
+| `still_accel_std` | `0.15` | The spread of the acceleration magnitude (m/s²). Parked: under 0.16; driving: above 0.6. |
+| `still_speed_m_s` | `0.3` | While the receiver has a GNSS position, its speed must also be below this (m/s). |
+| `still_speed_topic` | `/openrtk330/odometry` | Where that speed comes from (the receiver's INS odometry). `""` = IMU only. |
+
+"Vehicle still" is used before every automatic start (4.2b) and for **Save and restart** on the
+Setup page. The four values above are defaults: limits measured on the vehicle on **Maintenance →
+Still detection** replace them (kept in `state/still_limits.json`; *Back to defaults* removes them).
 
 After READY was reached in a navigation run, losing a required condition (or the alignment)
 gives **DEGRADED** with the action *stop using navigation*, never a return to the alignment
-prompts: the vehicle may be moving. A new run (AIO NAV restarted) starts the flow again.
+prompts: the vehicle may be moving. If AIO NAV itself stops after READY, the state is **FAULT**
+with **SAFE_STOP** (*AIO NAV stopped after it was ready*), also across a dashboard restart, until
+it is running again. A new run (AIO NAV restarted) starts the flow again.
 
 > With RTK required, a site without RTK (only SPP) never becomes READY: switch RTK off there.
 > An unknown name in `require` (a typo) blocks READY with `CONFIG_INVALID` instead of being ignored.
 
-### 4.2b `autostart`: start AIO NAV by itself after power-on
+### 4.2b `autostart`: run AIO NAV without an operator
+
+AIO NAV is fully automatic by default: it starts after power-on, is restarted after a failure,
+and the automatic start never gives up.
 
 | Key | Default | Meaning |
 |-----|---------|---------|
-| `enabled` | `false` (shipped config: `true`) | `true` starts AIO NAV and DSO (`nav.control_group`) after the dashboard starts. Needs `nav.allow_control: true`. |
-| `prerequisites` | `[]` | Readiness conditions (see 4.2a, e.g. `imu`, `gnss`) that must hold before the first start, so AIO NAV does not start while sensors are still coming up. |
+| `enabled` | `true` | Start AIO NAV and DSO (`nav.control_group`) by itself. Needs `nav.allow_control: true` (the shipped config sets it). `false` = Start / Stop by hand only. |
+| `prerequisites` | `[imu]` | Readiness conditions (see 4.2a, e.g. `imu`, `gnss`) that must hold before a start, so AIO NAV does not start while the sensors are still coming up. |
 | `prerequisite_stable_s` | `2.0` | How long the prerequisites must hold. |
-| `prerequisite_timeout_s` | `120` | A prerequisite still missing after this is a **Fault** (for example *IMU data not available after 120 s*). It keeps waiting and starts as soon as the prerequisite appears, or when someone presses **Start**. |
-| `start_services` | `[]` | Services with a `user_unit` (e.g. `drivers`) to start if they are not running, before waiting for the prerequisites. `install.sh` then enables *lingering* for the service user, so the user unit can start at power-on with nobody logged in. |
-| `retry_backoff_s` | `[5, 15, 30, 60]` | Before READY: if AIO NAV does not start, exits, or sends nothing within `nav.startup_timeout_s`, it is stopped and tried again after these waits. |
-| `max_attempts` | `5` | After this many attempts the state is **Fault** (*automatic start gave up*); **Start** tries again. |
+| `prerequisite_timeout_s` | `120` | A prerequisite still missing after this is a **Fault** (for example *IMU data not available after 120 s*). It keeps waiting and starts as soon as the prerequisite appears. Waiting for the vehicle to be still or for the clock is never a fault. |
+| `require_still` | `true` | Start only with the vehicle still (4.2a): AIO NAV's first alignment step needs it, and a start may follow a crash or a watchdog reboot while driving. |
+| `still_stable_s` | `5.0` | How long the vehicle must be still before a start. |
+| `start_services` | `[]` (shipped config: `[drivers]`) | Services with a `user_unit` to start if they do not run, while waiting to start. A unit an operator stopped is left alone, and nothing is started before the user's service manager answers (early in a power-on). `install.sh` then enables *lingering* for the service user, so the unit can start at power-on with nobody logged in. |
+| `retry_backoff_s` | `[5, 15, 30, 60]` | Waits between attempts; the last one repeats. The count is kept for the power-on (a dashboard restart does not shorten the waits) and starts again after READY. |
+| `max_attempts` | `0` | `0` = never give up. A number stops after that many attempts (*automatic start gave up*; **Start** tries again). |
+| `stale_grace_s` | `10.0` | AIO NAV runs but its output stopped while its inputs are fine: it gets this long to recover, then it is stopped and started again. If an input is missing (no IMU data, no valid time) it is left running, because a restart would not help: *Waiting for …; AIO NAV may resume by itself*. |
 
-The shipped `config/dashboard.yaml` turns this on: power-on runs
-BOOTING → CHECKING (sensor drivers started if needed, then IMU data and a GNSS position) →
-NAV_STARTING (AIO NAV, then DSO) → KEEP_STILL → MOVE_STRAIGHT → REFINING → READY (RTK float).
-Only AIO NAV decides whether a start worked: DSO starts with it, and a DSO failure is handled by
-the DSO watchdog, never by restarting AIO NAV. An existing installation keeps its own config;
-compare it with `dashboard.yaml.new`, or re-install with `--reset-config`.
+Power-on runs BOOTING → CHECKING (sensor drivers started if needed, IMU data, the system clock
+matching GNSS time (4.2d), the vehicle still) → NAV_STARTING (AIO NAV, then DSO) → KEEP_STILL →
+MOVE_STRAIGHT → REFINING → READY (RTK float). Only AIO NAV decides whether a start worked: DSO
+starts with it, and a DSO failure is handled by the DSO watchdog (4.7a), never by restarting AIO
+NAV. An existing installation keeps its own config; compare it with `dashboard.yaml.new`, or
+re-install with `--reset-config`.
 
 Rules that always apply:
 
-- **Stop** (Overview or Maintenance) puts the automatic start **on hold**, also across a
-  reboot, until someone presses **Start**.
-- Once READY was reached, AIO NAV is **never started or restarted automatically again until
-  the next power-on**, even if it stops or the dashboard restarts: the vehicle may be moving.
+- **Stop** (Overview or Maintenance) puts the automatic start **on hold** until someone presses
+  **Start** / **Resume**, or until the next power-on. A dashboard restart keeps the hold.
+- **After READY**, if AIO NAV stops or its output stops, the vehicle is told **SAFE_STOP** at once;
+  AIO NAV is started again only once the vehicle has been still for `still_stable_s`.
+- AIO NAV that was running when the power went off is not a crash: the next power-on simply starts
+  it again.
 - A program that already runs (dashboard restart, desktop app) is adopted, never started twice.
 - Only one program should own AIO NAV. With `autostart` on, an `aio-nav.service` that is
   enabled at boot is a **Fault** (`OWNERSHIP_CONFLICT`). With `autostart` on, `install.sh` does
@@ -231,14 +259,40 @@ Rules that always apply:
 
 | Key | Default | Meaning |
 |-----|---------|---------|
-| `enabled` | `false` (shipped config: `true`) | `true` sends the readiness snapshot as a 42-byte 0x05 packet (format: [Operation manual, section 6.8](OPERATION.md#68-status-packet-0x05)). |
+| `enabled` | `true` | Send the readiness snapshot as a 42-byte 0x05 packet (format: [Operation manual, section 6.8](OPERATION.md#68-status-packet-0x05)). `false` = no 0x05. |
 | `destination` | `auto` | IPv4 `address:port`. `auto` = the `output_udp` address **and port** of `aio_nav.yaml`: 0x05 arrives on the same socket as 0x04 and the receiver tells them apart by the message ID. Write an address only if the vehicle wants 0x05 on its own port. Host names are refused (no DNS lookups on the 5 Hz path), and so is the dashboard's own listener (`nav.udp_bind`). |
 | `message_id` | `5` | 0x05 is reserved for this packet (AIO NAV only sends 0x04). |
 | `rate_hz` | `2.0` | Packets per second; a change of state, action or inhibit mask is sent at once. It keeps sending after READY. |
 
 The Maintenance Overview shows the readiness snapshot, the condition table, the automatic
 start state and the packet counters (sent, errors). It says *Transmitting*, never *received*:
-UDP has no acknowledgement.
+UDP has no acknowledgement. With the Wi-Fi hotspot on, the devices on it get copies (4.5a).
+
+### 4.2d `gnss_time`: the system clock from GNSS time
+
+The Jetson keeps no time over a power-off, and in the field there is no NTP. The dashboard gives
+the IMU's GNSS time stamps to chrony as a time source (a shared-memory refclock that `install.sh`
+sets up), so the system clock, the logs and AIO NAV's time agree.
+
+| Key | Default | Meaning |
+|-----|---------|---------|
+| `enabled` | `true` | Feed chrony, and wait for the clock before an automatic start. |
+| `latency_ms` | `4.6` | Delay of the fastest IMU message after its stamp (measured over 8 h against NTP). |
+| `shm_unit` | `2` | The chrony SHM unit (`refclock SHM 2` in `/etc/chrony/conf.d/aio-gnss.conf`). |
+| `clock_tolerance_s` | `1.0` | The clock counts as matching GNSS time within this. |
+| `clock_wait_s` | `120.0` | An automatic start waits at most this long for the clock (*Waiting for the system clock to match GNSS time*); then AIO NAV starts anyway and the event *System clock not corrected* is logged. |
+
+### 4.2e `driver_watchdog`: restart the sensor drivers when the IMU goes silent
+
+| Key | Default | Meaning |
+|-----|---------|---------|
+| `enabled` | `true` | Watch the sensor driver unit (Live mode only; in bag replay the IMU comes from the bag). |
+| `service` | `auto` | A `services` entry with a `user_unit`; `auto` = the first one. |
+| `stale_s` | `45.0` | The unit is active but its IMU sends nothing (or systemd gave up on it) for this long: it is restarted. |
+| `retry_backoff_s` | `[60, 120, 300]` | Waits between restarts when it does not help; the last one repeats. |
+
+An operator Stop of the drivers (Maintenance → ROS 2) is kept: the watchdog does not restart
+them. Every restart is in the event log (*Sensor drivers restarted*).
 
 ### 4.3 `services`: systemd units to watch (and restart)
 
@@ -344,6 +398,34 @@ Rules:
 - No password on the user Settings page (the cable rule above protects it); the maintenance
   password on the Maintenance page. Every change is recorded in the event log; the Wi-Fi password
   is never logged, shown or returned.
+- A failed change that never left the current network does not drop it: the page says *Still on …*.
+
+**Hotspot** (`wifi.hotspot`, installer part `hotspot`): on **Maintenance → Network** the Wi-Fi can
+become a network of its own for phones and tablets instead of joining one (one radio cannot do
+both). It is a NetworkManager profile named `aio-hotspot`: plain WPA2 (no WPA3 transition mode,
+which some iPhones do not list), and it starts again at every power-on, ahead of the saved networks,
+until it is stopped there. Phones open `http://10.42.0.1:8080`.
+
+| Key | Default | Meaning |
+|-----|---------|---------|
+| `hotspot.enabled` | `auto` | `auto`: offered when the installer part `hotspot` is installed. `true` forces it on; anything else turns it off. |
+| `hotspot.address` | `10.42.0.1/24` | The device's address on the hotspot; phones get addresses in this network. |
+| `hotspot.band` | `bg` | `bg` = 2.4 GHz (works with every phone); `a` = 5 GHz. |
+| `hotspot.allow_clients` | `true` | Add the hotspot network to `access.allowed_clients`, so phones may open the pages (only matters when that list is not empty). |
+| `hotspot.relay_udp` | `true` | Send copies of the NAV (0x04) and status (0x05) packets to the devices on the hotspot. The switch on Maintenance → Network overrides this (kept in `state/hotspot_relay.json`). |
+| `hotspot.relay_port` | `9000` | The UDP port on each device. |
+
+- The hotspot name is typed on the page (default `AIO-NAV`), and so is the password (8–63
+  characters) at each start. The password is kept only in the NetworkManager profile: never in the
+  dashboard's files, logs or pages.
+- **Start** asks first when the Wi-Fi is on a network (it leaves it); if the hotspot does not start,
+  the previous network comes back. **Stop** asks first when devices are connected, then the Wi-Fi
+  joins a saved network in range by itself; it does not come back after a power-off.
+- Starting and stopping need the maintenance password and a browser on the cable (a phone on the
+  hotspot cannot switch it off). The user Settings page shows the hotspot but cannot change it.
+- The packet copies are unicast to each device that is associated now, found every 2 s (the
+  vehicle's output is unchanged). 0x05 copies need `status_udp` on with a vehicle destination.
+  The device count and the copies need the `iw` tool.
 
 ### 4.6 `system`: Jetson health
 
@@ -421,7 +503,9 @@ operate on the Overview page, and every action is in the event log.
 
 * **Odometry turns NaN** (DSO lost tracking): DSO is restarted **at once**.
 * **DSO is not running but should be** (it crashed, or failed right after a start): it is started
-  again **every `retry_s` (30 s)** until it stays up.
+  again, first after `retry_s` (30 s), then after waits that double up to `retry_max_s` (300 s);
+  once it has run for `stay_up_s` the waits start over. It never gives up. A start from before
+  this power-on does not count as "should be running".
 * **DSO uses too much memory** (RAM + swap above `max_memory_mb`): DSO is restarted **at once**, so
   a runaway DSO cannot fill the memory and hang the whole machine.
 * A DSO you stopped on purpose stays stopped. "Should be running" is recorded when AIO NAV and DSO
@@ -438,7 +522,9 @@ operate on the Overview page, and every action is in the event log.
 | `bad_messages` | `1` | NaN messages in a row before restarting (1 = at once). |
 | `cooldown_s` | `2` | Minimum gap between two NaN restarts. |
 | `settle_s` | `3` | After a restart, odometry is ignored for this long. |
-| `retry_s` | `30` | Interval between tries when DSO is not running, and between restarts when NaN keeps coming back. |
+| `retry_s` | `30` | First wait before starting a DSO that is not running, and the gap between restarts when NaN keeps coming back. |
+| `retry_max_s` | `300` | The wait doubles while DSO keeps exiting at once, up to this. |
+| `stay_up_s` | `120` | Running this long resets the waits. |
 | `fast_restarts` / `window_s` | `3` / `60` | See above. |
 | `max_memory_mb` | `auto` | DSO's RAM plus swap above this restarts DSO at once (AIO NAV is not touched). `auto`: 20% of RAM (about 3.1 GB on a 16 GB Orin NX); `0`: off. Added after DSO kept every camera frame (about 25 MB/s) until RAM and swap were full and the whole machine hung. |
 
@@ -498,6 +584,7 @@ data:
 |-----|---------|---------|
 | `restart_timeout_s` | `30` | A driver restart that takes longer is reported as failed. |
 | `diagnostic_timeout_s` | `15` | Same, for **Run diagnostic**. |
+| `stop_grace_s` | `5` | Stopping AIO NAV or DSO sends SIGTERM, then SIGKILL after this many seconds. |
 
 ### 4.11 `fake`: demo / development only
 
@@ -583,7 +670,8 @@ After any change: `sudo systemctl restart aio-dashboard`.
 | Symptom | Likely cause and fix |
 |---------|----------------------|
 | My change has no effect | You edited `~/web_monitor/config/dashboard.yaml` instead of `/opt/aio-dashboard/config/dashboard.yaml`, or forgot `sudo systemctl restart aio-dashboard`. |
-| Page doesn't load after editing | YAML syntax error. Run the check in section 3 and read `journalctl -u aio-dashboard -n 40`. |
+| Fault *Settings file has an error* after editing | YAML syntax error: the dashboard runs with the last good settings. Run `aio-dashboard check` (section 3), fix the file, restart. |
+| Fault *Settings with an invalid value: defaults used* | A value of the wrong kind; `journalctl -u aio-dashboard -n 40` names the key. |
 | "Sending to" shows the wrong address | It comes from `output_udp` in `aio_nav.yaml`, not this file (see 4.2). |
 | Network page says `aio_nav.yaml` not found | Set `nav.aio_nav_config` to the full path (see section 5). |
 | ROS 2 page says rclpy is not available | ROS 2 Humble isn't at `/opt/ros/humble`, so the service could not load it. |

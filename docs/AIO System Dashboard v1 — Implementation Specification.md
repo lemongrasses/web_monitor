@@ -312,7 +312,7 @@ AIO NAV
 Dashboard 只顯示目前 configured output：
 
 ```text
-Destination   192.168.50.91:9000
+Destination   192.0.2.50:9000   
 Protocol      UDP / NAV
 Output Rate   ...
 Status        Streaming / Lost
@@ -713,7 +713,7 @@ Data
 │ AIO Navigation System                         ● READY        │
 │ Overview          Navigation          Data                   │
 ├──────────────────────────────────────────────────────────────┤
-│ NAV Output  ● Streaming  100 Hz  → 192.168.50.91:9000      │
+│ NAV Output  ● Streaming  100 Hz  → 192.0.2.50:9000         │
 ├───────────────────────────────────┬──────────────────────────┤
 │                                   │ POSITION                 │
 │                                   │ Lat      22.xxxxxxxx     │

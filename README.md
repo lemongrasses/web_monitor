@@ -148,13 +148,51 @@ sudo deploy/install.sh --user nvidia \
   --with-aio-nav /home/nvidia/aio-nav-ros/install/aio_nav_ros/lib/aio_nav_ros/aio-nav
 ```
 
+**Optional parts.** The first run (or any run with `--choose`) shows a menu of the optional parts;
+type their numbers to switch them on or off, Enter to continue, `q` to quit without changes:
+
+| Part | Menu title | What it adds |
+|------|------------|--------------|
+| `sysmon` | Black-box recorder (aio-sysmon) | `aio-sysmon.service`, `/var/log/aio-sysmon`, a persistent journal (300 MB), the `aio-sysmon` command ([docs/SYSMON.md](docs/SYSMON.md)) |
+| `replay` | Replay: Live / Bag switch and bag player | Maintenance > Replay ([operation 4.6](docs/OPERATION.md)) |
+| `wifi` | Wi-Fi from the pages | a polkit rule so the service user can manage NetworkManager (Settings page and Maintenance > Network) |
+| `hotspot` | Wi-Fi hotspot (Maintenance > Network) | the right to share the Wi-Fi as a hotspot; needs `wifi` (choosing it switches `wifi` on) |
+
+The choice is saved in `/opt/aio-dashboard/config/installed-options`, and later runs install the
+same parts without asking. A part switched off is removed (the sysmon records in
+`/var/log/aio-sysmon` are kept; switching off `hotspot` deletes the hotspot profile). Without a
+terminal, the first run uses the parts found in the package.
+
+| Option | Does |
+|--------|------|
+| `--choose` | show the menu again |
+| `--list` | what is installed and chosen (no sudo needed) |
+| `--dry-run` | what an install would add or remove, then stop (no sudo needed) |
+| `--with-<part>` / `--without-<part>` | switch a part on or off without the menu (`sysmon`, `replay`, `wifi`, `hotspot`) |
+| `--yes`, `-y` | never ask (for scripts) |
+| `--user U` | the service user (default: the user running sudo) |
+| `--prefix P` | install folder (default `/opt/aio-dashboard`) |
+| `--with-aio-nav PATH` | also install `aio-nav.service` (not enabled at boot while the dashboard starts AIO NAV itself) |
+| `--reset-config` | replace the installed config with the shipped one (the old one is kept as `.bak`) |
+
 `install.sh` does the following:
 - copies the app to `/opt/aio-dashboard`, keeping an existing config
 - installs the bundled aarch64/cp310 wheels from `wheels/` (pip if present, otherwise it unpacks them)
-- installs and starts `aio-dashboard.service`, which runs as the ROS user with ROS 2 Humble sourced so `rclpy` works
+- installs and starts `aio-dashboard.service`, which runs as the ROS user with ROS 2 Humble sourced so `rclpy` works.
+  The unit has a systemd watchdog (`WatchdogSec=60`: a dashboard that stops answering is restarted)
+  and keeps running when the kernel kills AIO NAV or DSO for lack of memory
 - writes `/etc/sudoers.d/aio-dashboard`, which allows only `systemctl restart <unit>` for units with `restartable: true`
-- with `--with-replay` / `--with-sysmon`, the optional modules (kept and updated on later runs)
+- sets the system clock from GNSS time: a chrony time source (`/etc/chrony/conf.d/aio-gnss.conf`, refclock SHM 2)
+  fed from the IMU time stamps, so the clock is right in the field without NTP (if chrony is installed)
+- reboots the device 10 s after a kernel panic (`/etc/sysctl.d/90-aio-unattended.conf`, `kernel.panic = 10`)
+  instead of waiting for the hardware watchdog
+- enables *lingering* for the service user when the automatic start must start the sensor drivers (a user unit) at power-on
+- installs the optional parts chosen above
 - reminds you to run `aio-dashboard password` if no maintenance password is set
+
+`sudo deploy/uninstall.sh` first saves `config/` and `state/` to `~/aio-dashboard-backup-<time>`, then
+removes the units, the sudoers, sysctl, chrony and polkit files, the hotspot profile and
+`/opt/aio-dashboard`. It leaves the sysmon records, the persistent journal setting and lingering.
 
 No configuration is required. For every setting and how to change it, see the configuration
 manual: [English](docs/CONFIG.md) · [繁體中文](docs/CONFIG.zh-TW.md). At start-up the dashboard detects:
@@ -205,6 +243,10 @@ Features that not every machine needs are separate modules that are **not instal
 |--------|--------------|------------|
 | System recorder (`aio_sysmon`) | `--with-sysmon` | a power-loss-safe black box, see above |
 | Replay (`aio_dashboard_replay`) | `--with-replay` | Live / Bag replay switch and a bag player on Maintenance > Replay ([operation 4.6](docs/OPERATION.md)); without it the machine runs Live only |
+| Wi-Fi | `--with-wifi` | joining a Wi-Fi network from the Settings page and Maintenance > Network |
+| Hotspot | `--with-hotspot` | the Wi-Fi as a hotspot for phones and tablets, with copies of the NAV and status packets (needs `wifi`) |
+
+The installer's menu (see Deployment) chooses the same parts.
 
 New optional features follow the same pattern (own folder, own flag, own `enabled` setting) and are developed on a short-lived `feature/<name>` branch that is merged into `main`.
 

@@ -51,6 +51,8 @@
 
 達到上限時,最先被捨棄的順序:舊快照(最多佔上限的 40%)、最舊的每日樣本、最舊的事件。超過 30 天的檔案會刪除,前一天的樣本會壓縮(約 7 倍)。
 
+**時鐘設定好之前不做任何清理。** 剛上電時時鐘可能還是 1970 年(第 5 節);此時清理會先等待,所以斷電不會讓當天的紀錄被刪掉。以 1970 年日期寫下的檔案,會在時鐘設定好後改成當天日期,從那時開始計算保留天數。
+
 **磁碟保護。** 紀錄器會監看剩餘空間,在磁碟寫滿**之前**就降級:
 
 | 剩餘空間 | 行為 |
@@ -67,7 +69,7 @@
 aio-sysmon last-crash
 ```
 
-會顯示上一次是怎麼結束的。如果機器不是正常關機,它會印出判斷、最後一分鐘的數值、結束前的核心訊息,以及最後幾筆逐秒的紀錄,例如:
+第一行先說明上一次是怎麼結束的:*the previous run ended cleanly (stopped at …)*(正常結束)、*the previous run was killed while the machine kept running*(機器沒關、紀錄器被終止),或是不正常結束。如果機器不是正常關機,它會印出判斷、最後一分鐘的數值、結束前的核心訊息,以及最後幾筆逐秒的紀錄。若上一次是正常結束,較早的不正常結束會接在 *the newest unclean stop of the machine on record is older:* 之後顯示。例如:
 
 ```
 verdict:  the machine stopped without a clean shutdown; the input voltage fell in the last minute
@@ -92,11 +94,11 @@ aio-sysmon snapshots stall       # 開啟名稱含 "stall" 的最新一份
 
 | 指令 | 顯示 |
 |------|------|
-| `aio-sysmon status` | 是否在執行、使用的空間、最新數值 |
-| `aio-sysmon last-crash` | 上一次不正常結束的判斷,以及結束前的最後紀錄 |
+| `aio-sysmon status` | 是否在執行、使用的空間、最新數值、最近 24 小時的異常與不正常結束次數;最新紀錄超過 60 秒時顯示 *WARNING: the recorder is not writing* |
+| `aio-sysmon last-crash` | 上一次怎麼結束,接著是最近一次不正常結束的判斷,以及結束前的最後紀錄 |
 | `aio-sysmon report [--hours N] [--since "YYYY-MM-DD HH:MM"]` | 逐小時摘要與重要事件 |
 | `aio-sysmon ring [--rows N]` | 最新的逐秒紀錄(只有 root 能讀:請加 `sudo`;`last-crash` 用 `sudo` 執行時也會顯示) |
-| `aio-sysmon events [--hours N] [--kind KIND]` | 事件(`anomaly`、`kernel`、`unclean_stop`、`tick_gap`、`clock_step`、`start`、`stop`) |
+| `aio-sysmon events [--hours N] [--kind KIND]` | 事件(`anomaly`、`kernel`、`unclean_stop`、`recorder_killed`、`tick_gap`、`clock_step`、`priority`、`snapshot`、`start`、`stop`) |
 | `aio-sysmon snapshots [NAME]` | 列出快照,或印出其中一份 |
 
 檔案都是純文字或 gzip,放在 `/var/log/aio-sysmon/`:`ring.bin`(固定大小的環狀檔)、`samples/`(每日 JSON 行)、`events.jsonl`、`snapshots/`、`last_known.json`、`run.json`。
@@ -132,12 +134,12 @@ aio-sysmon snapshots stall       # 開啟名稱含 "stall" 的最新一份
 - **每個程序的磁碟使用量。** 這個核心沒有提供。磁碟問題改由整顆磁碟的忙碌率、請求時間、紀錄器自己寫入磁碟所花的時間,以及卡在磁碟等待的工作來呈現。
 - **斷電前最後幾秒。** 環狀檔每 5 秒才寫入磁碟,所以最多可能少 5 秒;樣本則是每次寫入都會同步。
 - **數值正常的卡死。** 如果直到最後一筆紀錄數值都正常,核心也沒有記錄任何東西,判斷會老實地這樣說:這指向電源、硬體或核心的問題,紀錄器無法再細分。
-- **時鐘問題。** 機器如果沒有電池供電的時鐘,或硬體時鐘存的是當地時間(`timedatectl` 顯示「RTC in local TZ: yes」),剛開機時時間可能是錯的,直到校準為止;這台 Orin NX 曾快了 8 小時。每筆紀錄也都帶有開機後經過的時間,時鐘跳變會記成 `clock_step`,而 `last-crash` 與 `events` 仍找得到時鐘超前時寫下的紀錄。`sudo timedatectl set-local-rtc 0` 會讓硬體時鐘改存 UTC。
+- **時鐘問題。** 機器若斷電後不保留時間(時鐘電池沒有作用),每次上電都從 1970 年開始,直到 GNSS 時間或 NTP 設定時鐘為止(儀表板的安裝程式會以 GNSS 時間設定)。每筆紀錄也都帶有開機後經過的時間,時鐘跳變會記成 `clock_step`,因此這次上電的紀錄會顯示為實際時間,並標示 *(clock set later)*。時鐘設定前就斷電的那次執行,會保留當時寫下的時間,並標示 *(clock not set yet: time unknown)*;`events` 與 `report` 不論時間範圍都會列出這些紀錄。硬體時鐘存的是當地時間時(`timedatectl` 顯示「RTC in local TZ: yes」),時間會往另一個方向錯(這台 Orin NX 曾快了 8 小時);`last-crash` 與 `events` 仍找得到這些紀錄,`sudo timedatectl set-local-rtc 0` 會讓硬體時鐘改存 UTC。
 - **發行包。** `tools/build_release.sh` 產生的編譯版發行包目前不含紀錄器,要從原始碼目錄安裝。
 
 ## 6. 安裝、權限與移除
 
-這是選配功能,**預設不安裝**:執行 `sudo deploy/install.sh --user <使用者> --with-sysmon` 才會安裝(裝過之後,再執行安裝程式會自動更新它)。它也會讓系統 journal 保存在磁碟上(`/etc/systemd/journald.conf.d/aio-persistent.conf`,300 MB),這樣核心自己的日誌在重開機後也還在。
+這是選配功能:在安裝程式的選單(第一次執行,或加上 `--choose` 時出現)中選擇 *Black-box recorder (aio-sysmon)*,或在 `sudo deploy/install.sh --user <使用者>` 加上 `--with-sysmon`。安裝程式會記住選擇,之後再執行會自動更新它;`--without-sysmon` 會移除服務(紀錄會保留)。它也會讓系統 journal 保存在磁碟上(`/etc/systemd/journald.conf.d/aio-persistent.conf`,300 MB),這樣核心自己的日誌在重開機後也還在。
 
 服務以 root 身分執行,是為了讀取核心訊息和卡住工作的堆疊,但有沙箱限制:系統對它是唯讀、看不到家目錄,只有 `/var/log/aio-sysmon` 可以寫入。快照裡有程序的命令列,所以只有 root 與 `adm` 群組可以讀。
 
