@@ -9,7 +9,7 @@
       <span class="small" :class="dirty() ? 'cfg-dirty' : 'muted'" x-text="dirty() ? 'Unsaved changes' : 'Saved values'"></span></div>
     <div class="panel-b">
       <p class="small mb-3" style="max-width: 50rem">
-        Where the GNSS antenna and the vehicle reference point are, measured from the <strong>IMU in the AIO unit</strong>,
+        Where the GNSS antenna and the centre of the rear axle are, measured from the <strong>IMU in the AIO unit</strong>,
         in metres along the vehicle. Measure them again whenever the AIO unit or the antenna is moved:
         wrong values make the position and heading worse.
       </p>
@@ -40,8 +40,8 @@
           <template x-for="v in VIEWS" :key="v.key">
             <div class="arm-view">
               <div class="small muted" x-text="v.title"></div>
-              <svg viewBox="0 0 320 170" role="img" :aria-label="v.title + ' of the IMU, antenna and reference point'">
-                <!-- a typical car, to scale, its rear axle at the vehicle reference point: front to the right;
+              <svg viewBox="0 0 320 170" role="img" :aria-label="v.title + ' of the IMU, antenna and rear axle centre'">
+                <!-- a typical car, to scale, its rear axle on the rear axle centre entered: front to the right;
                      seen from above, its right side at the bottom -->
                 <g aria-hidden="true">
                   <line class="arm-ground" x1="14" x2="306" :y1="groundY()" :y2="groundY()" x-show="v.key === 'side'"/>
@@ -65,12 +65,12 @@
                 <path class="arm-vehicle" :d="cross(pt(v.key, 'vehicle'))"/>
                 <text class="arm-label" :x="label(v.key, 'imu').x" :y="label(v.key, 'imu').y" :text-anchor="label(v.key, 'imu').a">IMU</text>
                 <text class="arm-label" :x="label(v.key, 'gnss').x" :y="label(v.key, 'gnss').y" :text-anchor="label(v.key, 'gnss').a">Antenna</text>
-                <text class="arm-label" :x="label(v.key, 'vehicle').x" :y="label(v.key, 'vehicle').y" :text-anchor="label(v.key, 'vehicle').a">Reference</text>
+                <text class="arm-label" :x="label(v.key, 'vehicle').x" :y="label(v.key, 'vehicle').y" :text-anchor="label(v.key, 'vehicle').a">Rear axle</text>
               </svg>
             </div>
           </template>
           <figcaption class="small muted">Drawn to scale from the values entered. The car shows the directions (forward is its front,
-            right its right side, down towards the road); it is an example car with its rear axle at the reference point,
+            right its right side, down towards the road); it is an example car placed by its rear axle,
             not your vehicle's size. Check that each point sits where it is on your vehicle.</figcaption>
         </figure>
       </div>

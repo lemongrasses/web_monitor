@@ -78,7 +78,7 @@ FIELDS: List[Dict[str, Any]] = [
     {"group": "Aiding", "path": ["Motion", "nhc"], "label": "NHC", "type": "bool", "help": "Non-holonomic constraint."},
     {"group": "Aiding", "path": ["Odometry", "vupt"], "label": "VUPT", "type": "bool", "help": "Visual odometry updates (DSO)."},
     {"group": "Lever arms", "path": ["Motion", "leverarm"], "label": "Vehicle lever arm (m)", "type": "list3",
-     "help": "Motion.leverarm, IMU to the vehicle reference point."},
+     "help": "Motion.leverarm, IMU to the centre of the rear axle (the vehicle reference point)."},
     {"group": "Lever arms", "path": ["GNSS", "leverarm"], "label": "GNSS antenna lever arm (m)", "type": "list3",
      "help": "GNSS.leverarm, IMU to the antenna."},
     {"group": "Lever arms", "path": ["Odometry", "leverarm"], "label": "Camera lever arm (m)", "type": "list3",

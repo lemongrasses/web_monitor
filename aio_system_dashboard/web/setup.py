@@ -9,8 +9,9 @@ and the change recorded in the event log. product.edit_lever_arms: false turns i
 Axes, from AIO NAV's own data (2026-10-21): the IMU's z axis points down (it reads -9.73 m/s2 at
 rest), and the camera rotation Odometry.c_bs maps the camera's right / down / forward axes to the
 body's y / z / x. So the body frame is x forward, y right, z down, and a lever arm is the position
-of the point as seen from the IMU in that frame (the shipped values: the vehicle reference point
-2.25 m behind and 1.52 m below the IMU, the antenna 0.49 m behind it).
+of the point as seen from the IMU in that frame. The vehicle reference point is the centre of the rear
+axle (confirmed by the AIO NAV author, 2026-10-21). The shipped values: the rear axle centre
+2.25 m behind and 1.52 m below the IMU, the antenna 0.49 m behind it.
 """
 
 import math
@@ -23,7 +24,7 @@ from ..actions.registry import ActionError
 from .common import json_body
 
 ARMS = {"vehicle": "Motion.leverarm", "gnss": "GNSS.leverarm"}
-LABELS = {"vehicle": "vehicle reference point", "gnss": "GNSS antenna"}
+LABELS = {"vehicle": "rear axle centre", "gnss": "GNSS antenna"}   # Motion.leverarm: IMU to the rear axle centre
 MODE = "live"                 # the mounting belongs to the vehicle, not to a recorded bag
 MAX_M = 20.0                  # longer than any vehicle the system goes on
 

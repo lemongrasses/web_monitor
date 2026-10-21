@@ -4,13 +4,14 @@
   const AXES = ["forward", "right", "down"];
   const ROWS = [
     { key: "gnss", label: "GNSS antenna", help: "to the centre of the antenna" },
-    { key: "vehicle", label: "Vehicle reference point", help: "to the point AIO NAV uses for the vehicle's motion (usually the middle of the rear axle)" },
+    { key: "vehicle", label: "Rear axle centre", help: "to the middle of the rear axle (AIO NAV's vehicle reference point)" },
   ];
   // Side view: forward to the right, down downwards. Top view: forward to the right, right downwards.
   const VIEWS = [{ key: "side", title: "Side view", down: "down", axis: 2 }, { key: "top", title: "Top view", down: "right", axis: 1 }];
   const AREA = { x0: 48, x1: 278, y0: 52, y1: 150 };          // inside the 320 x 170 drawing
   // A typical car, in metres from the middle of its rear axle (x forward, y right, z down), drawn with
-  // its rear axle at the vehicle reference point. It shows the directions; its size is an example.
+  // its rear axle at the vehicle reference point (which is the rear axle centre). It shows the directions;
+  // its size is an example.
   const CAR = {
     side: [[-1.0, 0.05], [-1.0, -0.55], [-0.85, -0.62], [-0.5, -0.66], [0.1, -1.12], [0.25, -1.17], [1.75, -1.17],
            [2.35, -0.7], [3.45, -0.6], [3.7, -0.45], [3.7, 0.05]],
