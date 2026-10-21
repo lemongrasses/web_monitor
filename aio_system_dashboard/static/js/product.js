@@ -74,7 +74,10 @@
         const h = this.s && this.s.health;
         return (h && h.detail) || "";
       },
-      get held() { return !!(this.s && this.s.readiness && this.s.readiness.hold); },
+      get held() {                     // an operator Stop holds the automatic start: the button reads Resume
+        const r = this.s && this.s.readiness;
+        return !!(r && r.autostart && r.autostart.hold);
+      },
       action() { return this.connected && this.s && this.s.health ? ACTION[this.s.health.action] : null; },
       actionIcon() { const a = this.action(); return a ? a[0] : ""; },
       actionText() { const a = this.action(); return a ? tr(a[1]) : ""; },
