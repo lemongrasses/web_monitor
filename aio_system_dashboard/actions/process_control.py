@@ -166,10 +166,13 @@ def wanted_age_s(cfg, key: str) -> Optional[float]:
 
 
 _WANTED_LOCK = threading.Lock()
+# A program still running this soon after a stop is on its way out, not wanted (see adopt).
+ADOPT_AFTER_STOP_S = 60.0
 
 
 def set_wanted(cfg, key: str, value: bool, restamp: bool = True) -> None:
-    """restamp=False: only change the flag (no new start time if it is already set)."""
+    """restamp=False: only change the flag (no new start time if it is already set). Every stop
+    is stamped (``<key>@stopped``: monotonic time and boot id), even of a program not wanted."""
     f = _wanted_file(cfg)
     try:
         with _WANTED_LOCK:                          # actions and the DSO watchdog write it
@@ -177,7 +180,7 @@ def set_wanted(cfg, key: str, value: bool, restamp: bool = True) -> None:
                 data = json.loads(f.read_text(encoding="utf-8"))
             except (OSError, ValueError):
                 data = {}
-            if bool(data.get(key)) == value and not (value and restamp):
+            if bool(data.get(key)) == value and not restamp:
                 return
             data[key] = value
             if value:
@@ -187,12 +190,29 @@ def set_wanted(cfg, key: str, value: bool, restamp: bool = True) -> None:
             else:
                 data.pop(f"{key}@", None)
                 data.pop(f"{key}@mono", None)
+                data[f"{key}@stopped"] = [time.monotonic(), _boot_id()]
             f.parent.mkdir(parents=True, exist_ok=True)
             tmp = f.with_name(f.name + ".tmp")      # never a half-written file after a power cut
             tmp.write_text(json.dumps(data) + "\n", encoding="utf-8")
             tmp.replace(f)
     except OSError as e:
         logger.warning("cannot record that %s should %srun: %s", key, "" if value else "not ", e)
+
+
+def adopt(cfg, key: str) -> bool:
+    """A running program counts as wanted (started by hand, or before this dashboard ran), so its
+    watchdog looks after it. Not within ADOPT_AFTER_STOP_S of a stop in this boot: DSO holding
+    gigabytes takes seconds to exit, and adopting it meanwhile undid the stop (2026-10-21: an
+    operator Stop, then the DSO watchdog started DSO again 30 s later). True if adopted."""
+    try:
+        data = json.loads(_wanted_file(cfg).read_text(encoding="utf-8"))
+        mono, boot = data.get(f"{key}@stopped") or (None, None)
+        if mono is not None and boot == _boot_id() and time.monotonic() - float(mono) < ADOPT_AFTER_STOP_S:
+            return False
+    except (OSError, ValueError, AttributeError, TypeError):
+        pass
+    set_wanted(cfg, key, True, restamp=False)
+    return True
 
 
 _START_LOCKS: Dict[str, threading.Lock] = {}

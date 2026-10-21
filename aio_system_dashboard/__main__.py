@@ -67,7 +67,7 @@ class DashboardContext:
             start=lambda: self.actions.run("start_process", dso),
             process_running=lambda: bool(process_control.running_pids(cfg, dso)),
             wanted=lambda: process_control.wanted(cfg, dso),
-            adopt=lambda: process_control.set_wanted(cfg, dso, True, restamp=False),
+            adopt=lambda: process_control.adopt(cfg, dso),
             memory_mb=lambda: process_control.memory_mb(cfg, dso),
             total_memory_mb=process_control.total_memory_mb())
         self.gnss = GnssMonitor(cfg, self.store)

@@ -92,6 +92,25 @@ class ControlActionsTest(unittest.TestCase):
         process_control.set_wanted(cfg, "aio_nav", False)
         self.assertIsNone(process_control.wanted_age_s(cfg, "aio_nav"))
 
+    def test_a_program_still_exiting_after_a_stop_is_not_adopted(self):
+        """Seen 2026-10-21: an operator Stop of AIO NAV + DSO; DSO (3 GB) took seconds to exit, its
+        watchdog saw it running, marked it wanted again and started it 30 s later."""
+        cfg = make()
+        process_control.set_wanted(cfg, "dso", True)
+        process_control.set_wanted(cfg, "dso", False)                 # the Stop
+        self.assertFalse(process_control.adopt(cfg, "dso"))           # still exiting
+        self.assertFalse(process_control.wanted(cfg, "dso"))
+        later = time.monotonic() + process_control.ADOPT_AFTER_STOP_S + 1
+        with mock.patch.object(process_control.time, "monotonic", lambda: later):
+            self.assertTrue(process_control.adopt(cfg, "dso"))        # started by hand since
+        self.assertTrue(process_control.wanted(cfg, "dso"))
+        process_control.set_wanted(cfg, "dso", False)
+        with mock.patch.object(process_control, "_boot_id", lambda: "another-boot"):
+            self.assertTrue(process_control.adopt(cfg, "dso"))        # a stop in an earlier boot
+        process_control.set_wanted(cfg, "aio_nav", True)              # a stop does not touch other
+        process_control.set_wanted(cfg, "dso", False)                 # programs' start times
+        self.assertLess(process_control.wanted_age_s(cfg, "aio_nav"), 5)
+
     def test_unlisted_target_rejected(self):
         reg = ActionRegistry(make(), {}, FakeEvents(), lambda d: {})
         with self.assertRaises(ActionError):
