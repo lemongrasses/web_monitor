@@ -377,3 +377,30 @@ h1, h2, h3 { font-family: var(--cond); font-weight: 600; letter-spacing: .005em;
   .still-row { grid-template-columns: 1fr auto; }
   .still-meter { grid-column: 1 / -1; grid-row: 2; }
 }
+
+/* Product > Setup: lever arms, with a to-scale drawing */
+.arm-grid { display: grid; grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr); gap: 1.2rem; align-items: start; }
+.arm-table th[scope=row] { font-weight: 600; min-width: 11rem; }
+.arm-table input { min-width: 4.5rem; }
+.arm-dot { display: inline-block; width: .7rem; height: .7rem; margin-right: .4rem; border-radius: 50%; vertical-align: -.05rem; }
+.arm-dot.arm-gnss { background: var(--track); }
+.arm-dot.arm-vehicle { background: var(--caution); border-radius: 1px; }
+.arm-views { display: grid; grid-template-columns: 1fr 1fr; gap: .6rem; }
+.arm-views figcaption { grid-column: 1 / -1; }
+.arm-view { background: #f6f8fa; border: 1px solid var(--rule-soft); border-radius: 2px; padding: .3rem .4rem; }
+.arm-view svg { width: 100%; height: auto; overflow: visible; display: block; }
+.arm-axis { stroke: var(--muted); stroke-width: 1.4; }
+.arm-axis-head { fill: var(--muted); }
+.arm-axis-t { fill: var(--muted); font-size: 11px; }
+.arm-link { stroke: var(--rule); stroke-width: 1.5; stroke-dasharray: 4 3; }
+.arm-imu { fill: var(--ink); }
+.arm-gnss { fill: var(--track); }
+.arm-vehicle { stroke: var(--caution); stroke-width: 3; stroke-linecap: round; fill: none; }
+.arm-label { fill: var(--ink-2); font-size: 12px; font-weight: 500; }
+@media (max-width: 991px) {
+  .arm-grid { grid-template-columns: 1fr; }
+}
+@media (max-width: 575px) {
+  .arm-views { grid-template-columns: 1fr; }
+  .arm-table thead .small { display: none; }
+}

@@ -1,0 +1,89 @@
+{% extends "product/base.html" %}
+{% block title %}Setup · AIO Navigation{% endblock %}
+{% block content %}
+<div x-data="setupPage()" x-init="setupInit()">
+  <div class="alert alert-warning" x-show="error" x-text="error" x-cloak></div>
+
+  <section class="panel" x-show="info" x-cloak aria-labelledby="arms-title">
+    <div class="panel-h"><strong id="arms-title">Mounting: lever arms</strong>
+      <span class="small" :class="dirty() ? 'cfg-dirty' : 'muted'" x-text="dirty() ? 'Unsaved changes' : 'Saved values'"></span></div>
+    <div class="panel-b">
+      <p class="small mb-3" style="max-width: 50rem">
+        Where the GNSS antenna and the vehicle reference point are, measured from the <strong>IMU in the AIO unit</strong>,
+        in metres along the vehicle. Measure them again whenever the AIO unit or the antenna is moved:
+        wrong values make the position and heading worse.
+      </p>
+
+      <div class="arm-grid">
+        <div class="arm-form">
+          <table class="table table-sm align-middle mb-2 arm-table">
+            <thead><tr><th></th><th>Forward <span class="muted small">+ ahead</span></th><th>Right <span class="muted small">+ right</span></th><th>Down <span class="muted small">+ below</span></th></tr></thead>
+            <tbody>
+              <template x-for="row in rows" :key="row.key">
+                <tr>
+                  <th scope="row"><span class="arm-dot" :class="'arm-' + row.key" aria-hidden="true"></span><span x-text="row.label"></span>
+                    <div class="small muted fw-normal" x-text="row.help"></div></th>
+                  <template x-for="(axis, i) in AXES" :key="axis">
+                    <td><div class="input-group input-group-sm">
+                      <input type="number" step="0.01" class="form-control" :class="bad(row.key, i) ? 'is-invalid' : ''"
+                             :aria-label="row.label + ', ' + axis + ' (m)'" x-model.number="form[row.key][i]" @input="msg = ''">
+                      <span class="input-group-text">m</span></div></td>
+                  </template>
+                </tr>
+              </template>
+            </tbody>
+          </table>
+          <p class="small muted mb-0">Negative values: behind, left, above. Up to <span x-text="info ? info.max_m : 20"></span> m each, to the centimetre or better.</p>
+        </div>
+
+        <figure class="arm-views mb-0" aria-label="Drawing of the entered positions">
+          <template x-for="v in VIEWS" :key="v.key">
+            <div class="arm-view">
+              <div class="small muted" x-text="v.title"></div>
+              <svg viewBox="0 0 320 170" role="img" :aria-label="v.title + ' of the IMU, antenna and reference point'">
+                <line class="arm-axis" x1="12" y1="12" x2="44" y2="12"/><path class="arm-axis-head" d="M44 8 L52 12 L44 16 Z"/>
+                <text class="arm-axis-t" x="56" y="16">forward</text>
+                <line class="arm-axis" x1="12" y1="12" x2="12" y2="40"/><path class="arm-axis-head" d="M8 40 L12 48 L16 40 Z"/>
+                <text class="arm-axis-t" x="18" y="48" x-text="v.down"></text>
+                <line class="arm-link" :x1="pt(v.key, 'imu').x" :y1="pt(v.key, 'imu').y" :x2="pt(v.key, 'vehicle').x" :y2="pt(v.key, 'vehicle').y"/>
+                <line class="arm-link" :x1="pt(v.key, 'imu').x" :y1="pt(v.key, 'imu').y" :x2="pt(v.key, 'gnss').x" :y2="pt(v.key, 'gnss').y"/>
+                <rect class="arm-imu" :x="pt(v.key, 'imu').x - 6" :y="pt(v.key, 'imu').y - 6" width="12" height="12" rx="2"/>
+                <circle class="arm-gnss" :cx="pt(v.key, 'gnss').x" :cy="pt(v.key, 'gnss').y" r="6"/>
+                <path class="arm-vehicle" :d="cross(pt(v.key, 'vehicle'))"/>
+                <text class="arm-label" :x="pt(v.key, 'imu').x + 9" :y="pt(v.key, 'imu').y - 8">IMU</text>
+                <text class="arm-label" :x="pt(v.key, 'gnss').x + 9" :y="pt(v.key, 'gnss').y - 8">Antenna</text>
+                <text class="arm-label" :x="pt(v.key, 'vehicle').x + 9" :y="pt(v.key, 'vehicle').y + 16">Reference</text>
+              </svg>
+            </div>
+          </template>
+          <figcaption class="small muted">Drawn from the values entered, to scale. Check the antenna is above and the points are where they are on the vehicle.</figcaption>
+        </figure>
+      </div>
+
+      <div class="d-flex flex-wrap align-items-center gap-2 mt-3">
+        <template x-if="!confirmRestart">
+          <div class="d-flex flex-wrap align-items-center gap-2">
+            <button type="button" class="btn btn-primary btn-sm" :disabled="!!busy || !dirty() || !valid()" @click="save(false)">
+              <span x-show="busy === 'save'" class="spinner-border spinner-border-sm me-1"></span>Save</button>
+            <button type="button" class="btn btn-outline-danger btn-sm" x-show="canRestart()" :disabled="!!busy || !dirty() || !valid() || info.still !== true"
+                    @click="confirmRestart = true">Save and restart AIO NAV</button>
+          </div>
+        </template>
+        <template x-if="confirmRestart">
+          <div class="d-flex flex-wrap align-items-center gap-2" role="alertdialog" aria-labelledby="arm-ask">
+            <span id="arm-ask" class="small fw-semibold">Restart AIO NAV now? It aligns again: keep the vehicle still.</span>
+            <button type="button" class="btn btn-danger btn-sm" :disabled="!!busy" @click="save(true)">
+              <span x-show="busy === 'restart'" class="spinner-border spinner-border-sm me-1"></span>Save and restart</button>
+            <button type="button" class="btn btn-outline-secondary btn-sm" @click="confirmRestart = false">Cancel</button>
+          </div>
+        </template>
+        <span class="small muted" x-text="applyNote()"></span>
+      </div>
+      <div class="ctl-msg mt-2" :class="msgClass" role="status" aria-live="polite" x-text="msg"></div>
+    </div>
+  </section>
+</div>
+{% endblock %}
+{% block scripts %}
+<script src="{{ url_for('static', filename='js/setup.js') }}"></script>
+{% endblock %}

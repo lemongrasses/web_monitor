@@ -16,7 +16,10 @@ logger = logging.getLogger(__name__)
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 
 DEFAULTS: Dict[str, Any] = {
-    "product": {"host": "0.0.0.0", "port": 8080},
+    "product": {"host": "0.0.0.0", "port": 8080,
+                # Setup page: the lever arms of the Live config file may be changed there
+                # (no password, like Start / Stop; checked, backed up and logged).
+                "edit_lever_arms": True},
     "maintenance": {"host": "0.0.0.0", "port": 8081,
                     # The config editor and the terminal need this password (aio-dashboard password).
                     "password_file": "config/maint_password", "unlock_minutes": 15,

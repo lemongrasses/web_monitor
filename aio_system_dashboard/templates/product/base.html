@@ -70,11 +70,12 @@
         <a href="/" class="{{ 'active' if page == 'overview' }}" {{ 'aria-current=page' if page == 'overview' }}>Overview</a>
         <a href="/navigation" class="{{ 'active' if page == 'navigation' }}" {{ 'aria-current=page' if page == 'navigation' }}>Navigation</a>
         <a href="/data" class="{{ 'active' if page == 'data' }}" {{ 'aria-current=page' if page == 'data' }}>Data</a>
+        <a href="/setup" class="{{ 'active' if page == 'setup' }}" {{ 'aria-current=page' if page == 'setup' }}>Setup</a>
       </nav>
       {% if fake_mode %}<span class="fake-tag" title="Subsystem state comes from dev/fake_state.json">Fake data</span>{% endif %}
     </div>
   </header>
-  {{ status_area(controls=(page != 'data'), compact=(page == 'data')) }}
+  {{ status_area(controls=(page not in ('data', 'setup')), compact=(page in ('data', 'setup'))) }}
 
   <main class="container-fluid px-3 px-md-4 py-3">
     {% block content %}{% endblock %}
@@ -84,6 +85,7 @@
   <script src="{{ url_for('static', filename='js/common.js') }}"></script>
   <script src="{{ url_for('static', filename='js/map.js') }}"></script>
   <script src="{{ url_for('static', filename='js/product.js') }}"></script>
+  {% block scripts %}{% endblock %}
   <script defer src="{{ url_for('static', filename='vendor/alpine.min.js') }}"></script>
 </body>
 </html>

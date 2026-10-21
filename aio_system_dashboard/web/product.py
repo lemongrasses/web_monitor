@@ -1,4 +1,5 @@
-"""Product UI (:8080): Overview, Navigation, Data. No login, read-only."""
+"""Product UI (:8080): Overview, Navigation, Data, Setup. No login: reading, Start / Stop, and the
+lever arms (Setup) are open to the allowed clients."""
 
 from flask import abort, jsonify, render_template, request, send_file
 
@@ -6,6 +7,7 @@ from ..actions import process_control
 from ..actions.registry import ActionError
 from ..data_access.files import DataAccessError
 from .common import create_base_app
+from .setup import register_setup
 
 
 def create_product_app(ctx):
@@ -22,6 +24,10 @@ def create_product_app(ctx):
     @app.route("/data")
     def data_page():
         return render_template("product/data.html", page="data")
+
+    @app.route("/setup")
+    def setup_page():
+        return render_template("product/setup.html", page="setup")
 
     @app.route("/api/state")
     def api_state():
@@ -85,4 +91,5 @@ def create_product_app(ctx):
             abort(e.status)
         return send_file(path, as_attachment=True, download_name=path.name, max_age=0)
 
+    register_setup(ctx, app)
     return app
