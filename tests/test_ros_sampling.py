@@ -60,6 +60,25 @@ class SampledStatsTest(unittest.TestCase):
         self.window(20.0)
         self.assertAlmostEqual(self.s.read_sampled()[0], 20.0, delta=2)
 
+    def test_a_1_hz_topic_is_not_low_rate_when_a_message_is_a_little_late(self):
+        """Seen with /openrtk330/gnss/fix: over 2 s, one late message left one message in the
+        window (rate 0, "low rate") while the topic was fine."""
+        def reading(window_s):
+            c, worst = _TopicStats(window_s), 99.0
+            for i, interval in enumerate([1.0] * 5 + [1.02, 1.6, 0.4] + [1.0] * 3):
+                for _ in range(int(round(interval / 0.01))):   # read every 10 ms, as the pages may
+                    self.now += 0.01
+                    rate, age = c.read()
+                    if i >= 3:                                  # after the first messages
+                        worst = min(worst, rate)
+                c.tick()
+            return worst
+        self.assertEqual(reading(2.0), 0.0)                               # the old window
+        self.assertEqual(ros2.rate_window_s(2.0, 1.0), 3.0)
+        self.assertGreater(reading(ros2.rate_window_s(2.0, 1.0)), 0.5)      # 0.5 x expected: not low
+        self.assertEqual(ros2.rate_window_s(2.0, 100.0), 2.0)              # fast topics: unchanged
+        self.assertEqual(ros2.rate_window_s(2.0, None), 2.0)
+
     def test_unsampled_topics_keep_the_continuous_reading(self):
         c = _TopicStats(2.0)
         for _ in range(100):

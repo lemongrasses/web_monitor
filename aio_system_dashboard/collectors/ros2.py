@@ -128,6 +128,16 @@ def stale_after_s(expected_hz: Optional[float]) -> float:
     return 3.0
 
 
+def rate_window_s(window_s: float, expected_hz: Optional[float]) -> float:
+    """A topic's rate is measured over at least three of its periods. Over ros.rate_window_s (2 s)
+    a 1 Hz topic has only one message in the window whenever one comes a little late: rate 0,
+    "low rate". Seen 2026-10-22 with /openrtk330/gnss/fix (1 Hz, intervals up to 1.02 s, and
+    late messages while DSO crashes)."""
+    if expected_hz and expected_hz > 0:
+        return max(window_s, 3.0 / expected_hz)
+    return window_s
+
+
 # A publisher just discovered has had no chance to send yet: DDS discovery comes before the first
 # message, and a sampled topic waits for its next listening window (up to period + window).
 NEW_PUBLISHER_GRACE_S = 10.0
@@ -414,7 +424,7 @@ class Ros2Collector:
         except Exception:
             logger.exception("preview subscription sync failed")
 
-    def _ensure_subscription(self, name: str, type_name: str) -> None:
+    def _ensure_subscription(self, name: str, type_name: str, expected_hz: Optional[float] = None) -> None:
         if name in self._subs:
             return
         try:
@@ -424,7 +434,7 @@ class Ros2Collector:
             logger.warning("cannot load message type %s for %s: %s", type_name, name, e)
             self._subs[name] = None
             return
-        stats = self._stats.setdefault(name, _TopicStats(float(self.rcfg["rate_window_s"]),
+        stats = self._stats.setdefault(name, _TopicStats(rate_window_s(float(self.rcfg["rate_window_s"]), expected_hz),
                                                          type_name in HEADER_FIRST_TYPES, type_name == IMU_TYPE,
                                                          self.clock_feeder if type_name == IMU_TYPE else None))
         self._subs[name] = self._node.create_subscription(
@@ -520,7 +530,7 @@ class Ros2Collector:
                 if sampled:
                     self._sampled.setdefault(name, {"type": t.get("type") or types[0]})
                 else:
-                    self._ensure_subscription(name, t.get("type") or types[0])
+                    self._ensure_subscription(name, t.get("type") or types[0], t.get("expected_hz"))
             elif sampled:
                 self._sample_stop(name)          # the topic is gone: stop listening
             own = self._subs.get(name) is not None or (self._sampled.get(name) or {}).get("sub") is not None
