@@ -126,7 +126,7 @@ DEFAULTS: Dict[str, Any] = {
                   "clock_tolerance_s": 1.0, "clock_wait_s": 120.0},
     # Restart the sensor driver unit when it runs but its IMU sends nothing (Live mode only).
     "driver_watchdog": {"enabled": True,
-                        "service": "auto",       # a services key with user_unit; auto: the first
+                        "service": "auto",       # a services key with user_unit; auto: drivers_service()
                         "stale_s": 45.0,         # IMU missing/stale this long, unit active: restart
                         "retry_backoff_s": [60, 120, 300]},   # between restarts; the last repeats
     # 0x05 status packet (docs/OPERATION.md): readiness for the vehicle, next to the 0x04 data.
@@ -186,6 +186,16 @@ def installed_options() -> set:
     except OSError:
         return set()
     return {w for line in text.splitlines() if not line.lstrip().startswith("#") for w in line.split()}
+
+
+def drivers_service(cfg) -> Optional[str]:
+    """The services key of the sensor driver stack (camera and IMU / GNSS together): "drivers" when
+    it has a user_unit, else the first service with one. A single sensor can have its own user unit
+    too (the camera's point-lab-sensor@basler.service); it is never taken for the stack."""
+    services = cfg["services"]
+    if (services.get("drivers") or {}).get("user_unit"):
+        return "drivers"
+    return next((k for k, s in services.items() if s.get("user_unit")), None)
 
 
 def parse_host_port(value: str, default_host: str = "127.0.0.1") -> Optional[tuple]:

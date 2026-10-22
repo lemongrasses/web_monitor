@@ -84,7 +84,7 @@
       </button>
       {% if dev.service and services_cfg.get(dev.service, {}).get('restartable') %}
       <button class="btn btn-outline-danger" :disabled="isRunning('restart_service', '{{ dev.service }}')"
-              @click="ask('restart_service', '{{ dev.service }}', 'Restart {{ services_cfg[dev.service].label or dev.service }} ({{ services_cfg[dev.service].unit }})', true)">
+              @click="ask('restart_service', '{{ dev.service }}', 'Restart {{ services_cfg[dev.service].label or dev.service }} ({{ services_cfg[dev.service].user_unit or services_cfg[dev.service].unit }})', true)">
         <span x-show="isRunning('restart_service', '{{ dev.service }}')" class="spinner-border spinner-border-sm me-1"></span>Restart driver
       </button>
       {% endif %}

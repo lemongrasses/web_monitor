@@ -34,7 +34,7 @@ from .collectors.services import ServicesCollector
 from .collectors.status_udp import StatusUdpPublisher
 from .collectors.system import SystemCollector
 from . import modules
-from .config import fallback_config, load_config_safely, remember_good, resolve_path
+from .config import drivers_service, fallback_config, load_config_safely, remember_good, resolve_path
 from .data_access.files import DataRoots
 from .media.tap import PreviewTap
 from .state import still
@@ -84,7 +84,7 @@ class DashboardContext:
         gt = cfg["gnss_time"]
         self.gnss_clock = (GnssClockFeeder(float(gt["latency_ms"]) / 1000.0, ChronyShm(int(gt["shm_unit"])))
                            if gt["enabled"] and not cfg.fake else None)
-        drivers = next((k for k, s in cfg["services"].items() if s.get("user_unit")), None)
+        drivers = drivers_service(cfg)
         self.guard = RosIsolationGuard(
             cfg, self.events,
             driver_pids=lambda: process_control.running_pids(cfg, drivers) if drivers else [],

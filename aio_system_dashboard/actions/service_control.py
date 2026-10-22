@@ -1,8 +1,10 @@
 """Restart of whitelisted systemd units.
 
-The unit name always comes from config (``services.<key>.unit``), never from
-the request. The dashboard runs unprivileged; deploy/aio-dashboard.sudoers
-grants exactly ``systemctl restart <unit>`` for the restartable units.
+The unit name always comes from config (``services.<key>.unit`` or ``.user_unit``), never
+from the request. The dashboard runs unprivileged; deploy/aio-dashboard.sudoers grants
+exactly ``systemctl restart <unit>`` for the restartable system units. A restartable
+service with a user unit (the camera's point-lab-sensor@basler.service) is restarted with
+``systemctl --user``, as the dashboard's own user, without sudo.
 """
 
 import subprocess
@@ -14,6 +16,8 @@ from ..collectors.services import systemd_unit_state, user_bus_env
 
 def restart_service(cfg, key: str, timeout_s: float, fake=None) -> Dict:
     svc = cfg["services"][key]
+    if svc.get("user_unit"):
+        return control_user_service(cfg, key, "restart", timeout_s, fake)
     unit = svc["unit"]
     if cfg.fake:
         time.sleep(1.5)

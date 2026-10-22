@@ -53,7 +53,7 @@ class ActionRegistry:
         acfg = cfg["actions"]
         devices = {k: d.get("label", k) for k, d in cfg["devices"].items()}
         restartable = {k: s.get("label", k) for k, s in cfg["services"].items()
-                       if s.get("restartable") and s.get("unit")}
+                       if s.get("restartable") and (s.get("unit") or s.get("user_unit"))}
         drivers = {k: s.get("label", k) for k, s in cfg["services"].items() if s.get("user_unit")}
         driver_timeout = acfg["restart_timeout_s"] + 30    # the unit waits a while before starting
         launchable = process_control.targets(cfg)

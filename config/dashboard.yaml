@@ -35,12 +35,13 @@ nav:
 # Programs are found by command line; '^[^ ]*' makes the pattern match only the program path at the
 # start of the command, not any other command that merely mentions it (an editor, tail, a shell).
 # AIO NAV is also detected by process name, so a start from elsewhere is noticed too.
-# Units with restartable: true get a Restart button (re-run install.sh after changing).
+# Units with restartable: true get a Restart button (re-run install.sh after changing). A system
+# unit restarts through sudoers; a user_unit (the sensor drivers' point-lab units) with systemctl --user.
 services:
   aio_nav:   { label: AIO NAV, unit: aio-nav.service, process_pattern: '^[^ ]*lib/aio_nav_ros/aio_nav_node', launch: aio-nav }
   dso:       { label: DSO, process_pattern: '^[^ ]*lib/dso_ros/dso_live', launch: aio-nav-dso, optional: true }
-  drivers:   { label: Sensor drivers, user_unit: openrtk330-basler-drivers.service, process_pattern: '^[^ ]*aceinna_openrtk330_driver_node', optional: true }
-  camera:    { label: Camera driver, unit: camera.service, restartable: true, process_pattern: '^[^ ]*pylon_ros2_camera_wrapper' }   # Basler, started by ros2 launch
+  drivers:   { label: Sensor drivers, user_unit: point-lab.target, process_pattern: '^[^ ]*aceinna_openrtk330_driver_node', optional: true }
+  camera:    { label: Camera driver, user_unit: point-lab-sensor@basler.service, restartable: true, process_pattern: '^[^ ]*pylon_ros2_camera_wrapper' }   # Basler, its own unit under point-lab.target
   dashboard: { label: Dashboard, unit: aio-dashboard.service }
 
 # host (optional): IP to ping. Empty = shown as "Not set up", no warnings.

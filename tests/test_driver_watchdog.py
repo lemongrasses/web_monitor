@@ -12,7 +12,7 @@ from unittest import mock
 
 from aio_system_dashboard import sdnotify
 from aio_system_dashboard.actions.driver_watchdog import DriverWatchdog
-from aio_system_dashboard.config import DEFAULTS, Config
+from aio_system_dashboard.config import DEFAULTS, Config, drivers_service
 from aio_system_dashboard.state.store import StateStore
 
 
@@ -126,6 +126,17 @@ class DriverWatchdogTest(unittest.TestCase):
             {"name": "/imu", "group": "nav", "state": "healthy", "time_ok": False}]})
         self.run_for(200)
         self.assertEqual(self.actions.calls, [])
+
+    def test_the_camera_unit_is_never_taken_for_the_driver_stack(self):
+        data = copy.deepcopy(DEFAULTS)
+        data["nav"]["aio_nav_config"] = ""
+        data["services"] = {"camera": {"label": "Camera driver", "user_unit": "cam.service", "restartable": True},
+                            "drivers": {"label": "Sensor drivers", "user_unit": "drivers.service"}}
+        cfg = Config(data, None)
+        self.assertEqual(drivers_service(cfg), "drivers")
+        self.assertEqual(DriverWatchdog(cfg, self.store, self.actions, self.events).service, "drivers")
+        del data["services"]["drivers"]
+        self.assertEqual(drivers_service(Config(data, None)), "camera")    # only one: still found
 
 
 class SdNotifyTest(unittest.TestCase):

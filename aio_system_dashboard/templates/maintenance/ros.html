@@ -23,7 +23,7 @@
   </div>
 </section>
 
-{% for key, svc in services_cfg.items() if svc.get('user_unit') %}
+{% for key, svc in services_cfg.items() if key == driver_stack %}
 <section class="panel mb-3" aria-labelledby="drv-title-{{ key }}">
   <div class="panel-h"><strong id="drv-title-{{ key }}">{{ svc.label or key }}</strong>
     <span class="muted small">camera and IMU / GNSS drivers, run as <span class="mono">{{ svc.user_unit }}</span></span></div>

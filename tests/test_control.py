@@ -317,6 +317,19 @@ class UserUnitTest(unittest.TestCase):
         with self.assertRaises(ActionError):
             reg.run("stop_driver", "camera")
 
+    def test_restart_driver_of_a_user_unit_uses_systemctl_user_not_sudo(self):
+        # The camera as its own point-lab unit: its Restart driver button must reach that unit.
+        self.cfg.data["services"]["camera"] = {"label": "Camera", "user_unit": "cam.service",
+                                               "restartable": True}
+        reg = ActionRegistry(self.cfg, {}, FakeEvents(), lambda d: {})
+        self.assertEqual(set(reg.actions["restart_service"].targets), {"camera"})
+        sc, run = self._run(active="active")
+        r = sc.restart_service(self.cfg, "camera", 30)
+        self.assertTrue(r["success"])
+        self.assertEqual(run.call_args[0][0], ["systemctl", "--user", "restart", "cam.service"])
+        sc, _ = self._run(returncode=1, stderr="Unit cam.service not found.\n")
+        self.assertEqual(sc.restart_service(self.cfg, "camera", 30)["summary"], "Unit cam.service not found.")
+
 
 def types_ns(**kw):
     import types

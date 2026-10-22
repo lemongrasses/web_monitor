@@ -153,7 +153,7 @@ def main() -> int:
                 if not restarted and elapsed > 7200:
                     restarted = True
                     event("disturbance: restart of the sensor drivers")
-                    subprocess.run(["systemctl", "--user", "restart", "openrtk330-basler-drivers.service"],
+                    subprocess.run(["systemctl", "--user", "restart", "point-lab.target"],
                                    timeout=90, check=False)
                     event("drivers restarted")
     except KeyboardInterrupt:

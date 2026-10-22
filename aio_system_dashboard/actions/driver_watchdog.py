@@ -19,6 +19,8 @@ import threading
 import time
 from typing import Dict, Optional
 
+from ..config import drivers_service
+
 logger = logging.getLogger(__name__)
 
 BAD_STATES = ("missing", "stale")
@@ -31,7 +33,7 @@ class DriverWatchdog:
         w = cfg["driver_watchdog"]
         key = w.get("service") or "auto"
         if key == "auto":
-            key = next((k for k, s in cfg["services"].items() if s.get("user_unit")), None)
+            key = drivers_service(cfg)
         self.service: Optional[str] = key if key in cfg["services"] else None
         self.enabled = bool(w["enabled"] and self.service and not cfg.fake)
         self.stale_s = float(w["stale_s"])

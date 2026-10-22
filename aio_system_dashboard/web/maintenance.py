@@ -8,6 +8,7 @@ from flask import Response, abort, jsonify, redirect, render_template, request
 
 from ..actions import process_control
 from ..actions.registry import ActionError
+from ..config import drivers_service
 from ..media.tap import PreviewError, meta_header
 from .common import json_body, create_base_app
 from .still import register_still
@@ -30,6 +31,7 @@ def create_maintenance_app(ctx):
         return {
             "devices": ctx.cfg["devices"],
             "services_cfg": ctx.cfg["services"],
+            "driver_stack": drivers_service(ctx.cfg),
             "actions": ctx.actions.describe(),
             "previews": ctx.preview.describe(),
             "modules": [m.NAME for m in ctx.modules],
