@@ -675,7 +675,7 @@ services:
 ```
 Then re-run `sudo deploy/install.sh --user jetson`.
 
-**Ready needs all three alignment lamps by default** (Alignment, Initial heading, Fine alignment). To relax it, change the `ready_requires` line in `nav`:
+**Ready needs all three alignment lamps by default** (Coarse alignment, Initial heading, Fine alignment). To relax it, change the `ready_requires` line in `nav`:
 ```yaml
 nav:
   ready_requires: [alignment, heading_valid, fine_alignment]
