@@ -24,8 +24,8 @@
 | Degraded | 降級 | 曾經就緒，之後失去必要條件或對準 |
 | Fault | 故障 | |
 | Maintenance | 維護 | 0x05 狀態 MAINTENANCE；維護頁面（Maintenance pages）只有英文，頁面名稱保留英文 |
-| Usable / Blocked | 可用／阻擋 | 車端接收程式（vehicle gate）對導航輸出的判斷 |
-| Blocking condition (inhibit) | 阻擋條件 | 0x05 的 inhibit_flags；任一位元為 1 即阻擋 |
+| Usable / Blocked | 可用／不可用 | 車端接收程式（vehicle gate）對導航輸出的判斷；直接回答「導航輸出能不能用」，不用「阻擋」 |
+| Blocking condition (inhibit) | 不可用原因 | 0x05 的 inhibit_flags；任一位元為 1 即不可用 |
 | Health condition | 成立條件 | 0x05 的 health_flags |
 | Requested action | 要求的動作 | 0x05 的 requested_action |
 | Operator | 操作人員 | 不用「操作員」 |
