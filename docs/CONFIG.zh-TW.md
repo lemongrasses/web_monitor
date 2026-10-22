@@ -162,7 +162,7 @@ GNSS、相機、LiDAR 與網路只會產生提示，永遠不會讓 Ready 變成
 
 ### 4.2a `readiness`：READY 需要哪些條件（以及告訴車端什麼）
 
-儀表板維護一份 *readiness* 快照：給車端的狀態（`BOOTING`、`CHECKING`、`NAV_STARTING`、`KEEP_STILL`、`MOVE_STRAIGHT`、`REFINING`、`READY`、`DEGRADED`、`FAULT`、`MAINTENANCE`）、操作人員該做的動作，以及兩組位元遮罩：哪些條件正常、以及所有禁止使用輸出的原因。網頁、`GET /api/readiness` 與 0x05 狀態封包（第 4.2c 節）顯示的都是同一份快照。
+儀表板維護一份 *readiness* 快照：給車端的狀態（`BOOTING`、`CHECKING`、`NAV_STARTING`、`KEEP_STILL`、`MOVE_STRAIGHT`、`REFINING`、`READY`、`DEGRADED`、`FAULT`、`MAINTENANCE`）、操作人員該做的動作，以及兩組位元遮罩：成立條件（哪些條件正常）與不可用原因（所有不可使用輸出的原因）。網頁、`GET /api/readiness` 與 0x05 狀態封包（第 4.2c 節）顯示的都是同一份快照。
 
 READY 需要 AIO NAV 正在執行、輸出即時、`nav.ready_requires` 的旗標都成立，並且預設需要 **RTK**：GNSS 位置至少為 RTK 浮動解（`require_rtk`）。`require` 可以再增加其他條件。
 
@@ -188,7 +188,7 @@ READY 需要 AIO NAV 正在執行、輸出即時、`nav.ready_requires` 的旗�
 某次導航執行一旦達到 READY，之後若必要條件（或對準）失效，會進入 **DEGRADED**，動作為「停止使用導航」，而不會回到對準提示：此時車輛可能正在行駛。若是 AIO NAV 本身在 READY 後停止，狀態為 **FAULT**、動作 **SAFE_STOP**（*AIO NAV stopped after it was ready*），儀表板重新啟動後也一樣，直到 AIO NAV 再次執行。新的一次執行（AIO NAV 重新啟動）才會重新開始流程。
 
 > 要求 RTK 時，沒有 RTK（只有 SPP）的場地永遠不會 READY：在那裡請把 RTK 關掉。
-> `require` 中若有不認得的名稱（打錯字），會以 `CONFIG_INVALID` 擋住 READY，而不是被忽略。
+> `require` 中若有不認得的名稱（打錯字），會以 `CONFIG_INVALID` 讓 READY 無法成立，而不是被忽略。
 
 ### 4.2b `autostart`：不需操作人員的 AIO NAV
 
@@ -224,7 +224,7 @@ AIO NAV 預設為全自動：開機後自動啟動、失敗後重新啟動，而
 | `enabled` | `true` | 把 readiness 快照以 42 位元組的 0x05 封包送出（格式見[操作手冊第 6.8 節](OPERATION.zh-TW.md#sec6)）。`false` = 不送 0x05。 |
 | `destination` | `auto` | IPv4 `位址:port`。`auto` = `aio_nav.yaml` 中 `output_udp` 的位址**與連接埠**：0x05 與 0x04 進入同一個 socket，接收端以訊息 ID 區分。只有車端希望 0x05 走另一個連接埠時才需要填寫位址。不接受主機名稱（避免在 5 Hz 的流程中查詢 DNS），也不可設為儀表板自己的接收位址（`nav.udp_bind`）。 |
 | `message_id` | `5` | 0x05 專用於此封包（AIO NAV 只送 0x04）。 |
-| `rate_hz` | `2.0` | 每秒封包數；狀態、動作或禁止遮罩一改變就立即送出。READY 之後仍持續發送。 |
+| `rate_hz` | `2.0` | 每秒封包數；狀態、動作或不可用原因一改變就立即送出。READY 之後仍持續發送。 |
 
 維護頁面的 Overview 會顯示 readiness 快照、條件表、自動啟動狀態與封包計數（已送出、錯誤）。這裡只會顯示「傳送中」，不會顯示「已接收」：UDP 沒有回應確認。開啟 Wi-Fi 熱點時，連上的裝置也會收到副本（4.5a）。
 
