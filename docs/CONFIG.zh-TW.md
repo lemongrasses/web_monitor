@@ -461,7 +461,7 @@ gnss:
   timeout_s: 3
 ```
 
-GNSS 燈號顯示接收機的定位品質，來自 `NavSatFix.status.status`（已用一段實際行車紀錄核對）：**綠色**「RTK 固定解」（status 2，約 3 公分）、**琥珀色**「RTK 浮動解」（status 1，約 10 公分）、**紅色**「單點定位（SPP）」（status 0，約 10 公尺）。這個驅動也會送出*帶有*有效位置的 status -1（約 10 公分，出現在 RTK 浮動解期間的單一時刻），所以只要訊息有可用的位置（有限的經緯度與已知的共變異數），就不會是「無訊號」（No signal）：status 沒有對應的種類時顯示「定位（類型不明）」（Fix (type unknown)），水平不確定度（1σ）優於 1 公尺時為琥珀色，否則為紅色。「無訊號」表示沒有可用的位置：超過 `timeout_s` 沒收到訊息，或 status 沒有附位置；提示會說明是哪一種（例如 *no GNSS message for 3 h*，也就是接收機驅動完全沒有送資料）。這只是提示，不會影響 Ready。它和 Navigation 頁面的「GNSS」輔助燈不同，後者是顯示導航濾波器最近一秒有沒有使用 GNSS。
+GNSS 燈號顯示接收機的定位品質，來自 `NavSatFix.status.status`（已用一段實際行車紀錄核對）：**綠色**「RTK 固定解」（status 2，約 3 公分）、**琥珀色**「RTK 浮動解」（status 1，約 10 公分）、**紅色**「單點定位（SPP）」（status 0，約 10 公尺）。這個驅動也會送出*帶有*有效位置的 status -1（約 10 公分，出現在 RTK 浮動解期間的單一時刻），所以只要訊息有可用的位置（有限的經緯度與已知的共變異數），就不會是「無定位」（No signal）：status 沒有對應的種類時顯示「定位（類型不明）」（Fix (type unknown)），水平不確定度（1σ）優於 1 公尺時為琥珀色，否則為紅色。「無定位」表示沒有可用的位置：超過 `timeout_s` 沒收到訊息，或 status 沒有附位置；提示會說明是哪一種（例如 *no GNSS message for 3 h*，也就是接收機驅動完全沒有送資料）。這只是提示，不會影響 Ready。它和 Navigation 頁面的「GNSS」輔助燈不同，後者是顯示導航濾波器最近一秒有沒有使用 GNSS。
 
 ### 4.8 `data`：資料下載頁面
 
@@ -560,7 +560,7 @@ services:
 ```
 接著重新執行 `sudo deploy/install.sh --user jetson`。
 
-**預設三顆對準燈（Alignment、Initial heading、Fine alignment）都亮才算 Ready。** 若要放寬，修改 `nav` 中的 `ready_requires` 這一行：
+**預設三顆對準燈（粗對準、初始航向、精對準；英文介面為 Coarse alignment、Initial heading、Fine alignment）都亮才算 Ready。** 若要放寬，修改 `nav` 中的 `ready_requires` 這一行：
 ```yaml
 nav:
   ready_requires: [alignment, heading_valid, fine_alignment]

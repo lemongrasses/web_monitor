@@ -95,7 +95,7 @@ map with the recent track; position, motion and attitude.*
 |-------|-------|---------|------------|
 | **Stopped** | Grey label, slate panel | AIO NAV is not running and nobody asked it to run. This is normal, not a problem. | Click **Start** when you want navigation. |
 | **Starting** | Teal label | AIO NAV was started and is getting ready; no navigation output yet. | Wait. If nothing comes out within 60 s it becomes **Fault**. |
-| **Initializing** | Amber label | AIO NAV is running and sends output, but alignment is not finished. It shows the current step and what to do, for example *Step 1 of 3: Alignment — Keep the vehicle completely still*. | Follow the instruction ([Alignment SOP](#5-alignment-sop)). Do not use the output yet. |
+| **Initializing** | Amber label | AIO NAV is running and sends output, but alignment is not finished. It shows the current step and what to do, for example *Step 1 of 3: Coarse alignment — Keep the vehicle completely still*. | Follow the instruction ([Alignment SOP](#5-alignment-sop)). Do not use the output yet. |
 | **Ready** | Green label, closed green ring | AIO NAV is running, data is fresh, and alignment is complete. The output can be used. | Operate normally. |
 | **Degraded** | Dark red panel | The output *was* Ready in this run, but a required condition (for example RTK) or the alignment is lost. It never goes back to the alignment prompts while the vehicle may be moving. | Stop using navigation as the vehicle's safety procedure says. Restart AIO NAV only with the vehicle standing still. |
 | **Fault** | Dark red panel | AIO NAV has a problem: it stopped in this power-on although nobody pressed Stop, it runs but has sent nothing for 60 s after starting, or its output stopped for more than 2 s. The reason is shown. With automatic start the panel says what is being done (for example *Restarting AIO NAV in 8 s if it does not resume*). | Usually nothing: it is restarted by itself. After Ready, stop using navigation (section 4.2). If it repeats, see [Troubleshooting](#9-troubleshooting). |
@@ -143,7 +143,7 @@ alignment, GNSS and aiding. Each item is a name, a colored dot and a word:
 | **Navigation output** | Whether the navigation output (UDP, section 6) is sent, at what rate and to where, for example *100 Hz to 192.0.2.50:9000*. Grey when AIO NAV is stopped (normal), amber for *Low rate* (under 80% of the expected rate) or *Stale* (no packet for 0.5 s), red when nothing was sent for 2 s while it should (the state becomes Fault). UDP has no acknowledgement: it confirms that the device sends, not that your application receives. |
 | **Camera / LiDAR** (if fitted) | The sensor answers on the network. "Not set up" means no IP is configured; this is normal if not needed. |
 | **Sensor network** | The sensor network link is up. |
-| **Alignment**, **Initial heading**, **Fine alignment** (Navigation page) | The three alignment steps in order: **Done**, **In progress** (the current step), **Waiting** (a later step), or **—** while AIO NAV sends no output. |
+| **Coarse alignment**, **Initial heading**, **Fine alignment** (Navigation page) | The three alignment steps in order: **Done**, **In progress** (the current step), **Waiting** (a later step), or **—** while AIO NAV sends no output. |
 | **GNSS** (Navigation page) | Position quality of the GNSS receiver: green = *RTK fix* (centimeter level), amber = *RTK float* (about 10 cm) or *Fix (type unknown)*, red = *SPP* (single-point positioning, meters) or *No signal*. Amber and red are warnings only: inertial navigation continues, but accuracy slowly degrades. |
 | **ZUPT / ZIHR / NHC / VUPT** (Navigation page) | Which aiding the filter is using at the moment (see the [glossary](#10-glossary)). Idle is normal. |
 
@@ -366,8 +366,8 @@ before the output can be trusted. It has three stages, shown by three lamps.
 
 | Stage | Lamp turns green | What the filter does | Operator action |
 |-------|------------------|----------------------|-----------------|
-| 1. Coarse alignment (leveling) | **Alignment** | Measures gravity to find roll and pitch. Takes the initial position from GNSS. | Keep the vehicle **completely still**, engine running is fine, nobody moving in or on it. Default duration: 10 s. |
-| 2. Initial heading | **Initial heading** | Finds the heading. With the default setting, heading comes from GNSS while the vehicle moves. | When **Alignment** is green, drive off **straight** at a steady speed under open sky until the lamp turns green. |
+| 1. Coarse alignment (leveling) | **Coarse alignment** | Measures gravity to find roll and pitch. Takes the initial position from GNSS. | Keep the vehicle **completely still**, engine running is fine, nobody moving in or on it. Default duration: 10 s. |
+| 2. Initial heading | **Initial heading** | Finds the heading. With the default setting, heading comes from GNSS while the vehicle moves. | When **Coarse alignment** is green, drive off **straight** at a steady speed under open sky until the lamp turns green. |
 | 3. Fine alignment | **Fine alignment** | Refines heading and sensor errors until heading accuracy is within 1°, or until the fine-alignment time limit passes (default 300 s). | Keep driving normally with GNSS available. Include a few turns and speed changes. |
 
 When all lamps required on this device are green (by default all three), the status area
@@ -379,8 +379,8 @@ turns **Ready**.
    **RTK fix** (green): the initial position comes from GNSS. **RTK float** (amber) works but
    starts less accurately.
 2. On the Overview page, click **Start**. After **Starting**, the state becomes
-   **Initializing**: *Step 1 of 3: Alignment — Keep the vehicle completely still*.
-3. **Do not move** for at least 10 s, until the **Alignment** step is done (green).
+   **Initializing**: *Step 1 of 3: Coarse alignment — Keep the vehicle completely still*.
+3. **Do not move** for at least 10 s, until **Coarse alignment** is done (green).
    While stationary, the Navigation page shows **ZUPT** active; this is expected.
 4. Drive straight ahead at a steady speed. Watch **Initial heading** turn green.
 5. Keep driving with some turns until **Fine alignment** turns green. Check on the
@@ -392,7 +392,7 @@ turns **Ready**.
 | Situation | Action |
 |-----------|--------|
 | The vehicle moved during stage 1 | Stop the vehicle, click **Restart**, and repeat from step 3. |
-| **Alignment** stays amber for well over 10 s | Check the GNSS lamp (initial position comes from GNSS; it should not be red) and that the vehicle is really still. Then restart. |
+| **Coarse alignment** stays amber for well over 10 s | Check the GNSS lamp (initial position comes from GNSS; it should not be red) and that the vehicle is really still. Then restart. |
 | **Initial heading** does not turn green while driving | GNSS may be blocked (trees, buildings, tunnel). Drive in an open area. |
 | **Fine alignment** takes long | It completes at the latest when the fine-alignment time limit passes (default 300 s). Keep driving in open sky. |
 | GNSS is lost after Ready | Navigation continues on inertial sensors (advisory only). Accuracy degrades over time; watch the ± values. |
@@ -603,7 +603,7 @@ checksum (sum of the bytes from the message id to the end of the payload, modulo
 | 3 | `KEEP_DRIVING` | Keep driving normally with GNSS available. |
 | 4 | `SAFE_STOP` | Stop using navigation and follow the vehicle's safety procedure. |
 | 5 | `SERVICE_REQUIRED` | Maintenance is needed. |
-| 6 | `MAINTENANCE_HOLD` | Stopped. Press Start to resume. |
+| 6 | `MAINTENANCE_HOLD` | Stopped. Press Resume or Start on the Overview page. |
 
 | Bit | health_flags | inhibit_flags |
 |---:|---|---|

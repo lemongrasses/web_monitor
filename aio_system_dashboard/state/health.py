@@ -76,7 +76,7 @@ FLAG_WAIT_TEXT = {
 }
 # Alignment steps in order: (title, what the operator does). See OPERATION section 5.
 STEPS = {
-    "alignment": ("Alignment", "Keep the vehicle completely still (about 10 s)."),
+    "alignment": ("Coarse alignment", "Keep the vehicle completely still (about 10 s)."),
     "heading_valid": ("Initial heading", "Drive straight at a steady speed under open sky."),
     "fine_alignment": ("Fine alignment", "Keep driving normally with GNSS available, with a few turns."),
 }

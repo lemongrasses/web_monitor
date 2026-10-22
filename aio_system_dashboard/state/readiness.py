@@ -33,7 +33,7 @@ ACTION_TEXT = {
     "KEEP_DRIVING": "Keep driving normally with GNSS available.",
     "SAFE_STOP": "Stop using navigation and follow the vehicle's safety procedure.",
     "SERVICE_REQUIRED": "Maintenance is needed.",
-    "MAINTENANCE_HOLD": "Stopped. Press Start to resume.",
+    "MAINTENANCE_HOLD": "Stopped. Press Resume or Start on the Overview page.",
 }
 
 # health_flags: a condition that holds. inhibit_flags: a reason the output must not be used.

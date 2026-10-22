@@ -78,7 +78,7 @@ ZH = {
     "Track of the current run: the last 60 s in detail, older points once per second.":
         "本次執行的軌跡：最近 60 秒為完整資料，較早的每秒一點。",
     "Velocity": "速度", "North": "北", "East": "東", "Up": "上", "Time": "時間", "NAV time": "導航時間",
-    "Initial heading": "初始航向", "Fine alignment": "精對準", "GNSS": "GNSS",
+    "Coarse alignment": "粗對準", "Initial heading": "初始航向", "Fine alignment": "精對準", "GNSS": "GNSS",
     "ZUPT": "ZUPT", "ZIHR": "ZIHR", "NHC": "NHC", "VUPT": "VUPT",
     "Folder": "資料夾", "(missing)": "（不存在）", "not available on this device": "此裝置上沒有這個資料夾",
     "Files download from the device to this computer. Nothing on the device can be changed here.":
@@ -152,7 +152,7 @@ ZH = {
     "Keep driving normally with GNSS available, with a few turns.": "請在有 GNSS 的環境下正常行駛，並轉幾個彎。",
     "Waiting for alignment": "等待對準", "Waiting for valid heading": "等待有效航向", "Waiting for fine alignment": "等待精對準",
     "In progress": "進行中", "—": "—",
-    "RTK fix": "RTK 固定解", "RTK float": "RTK 浮動解", "SPP": "單點定位（SPP）", "No signal": "無訊號",
+    "RTK fix": "RTK 固定解", "RTK float": "RTK 浮動解", "SPP": "單點定位（SPP）", "No signal": "無定位",
     "Fix (type unknown)": "定位（類型不明）", "No data": "無資料",
     "Lost": "中斷", "Stale": "延遲", "Low rate": "頻率偏低", "Streaming": "傳送中",
     "AIO NAV is not running": "AIO NAV 未執行", "No output yet": "尚無輸出", "No NAV packets received": "沒有收到導航封包",
@@ -170,9 +170,10 @@ ZH = {
     # readiness (state/readiness.py)
     "Keep the vehicle completely still.": "請讓車輛完全靜止。",
     "Drive straight at a steady speed in a safe, open area.": "請在安全、空曠的區域以穩定速度直線行駛。",
-    "Keep driving normally with GNSS available.": "請在有 GNSS 的環境下正常行駛。",
+    "Keep driving normally with GNSS available.": "請在有 GNSS 的環境下繼續正常行駛。",
     "Stop using navigation and follow the vehicle's safety procedure.": "請停止使用導航，並依車輛安全程序處理。",
-    "Maintenance is needed.": "需要維護。", "Stopped. Press Start to resume.": "已停止。請按「啟動」恢復。",
+    "Maintenance is needed.": "需要維護。",
+    "Stopped. Press Resume or Start on the Overview page.": "已停止。請在總覽頁面按「恢復」或「啟動」。",
     "System starting": "系統啟動中", "Waiting to start AIO NAV": "等待啟動 AIO NAV", "AIO NAV did not start": "AIO NAV 沒有啟動",
     "AIO NAV stopped after it was ready": "AIO NAV 在就緒後停止",
     "Alignment lost after it was ready": "就緒後失去對準", "Navigation output no longer valid": "導航輸出已不再有效",
@@ -256,8 +257,8 @@ ZH = {
 
 PATTERNS = [
     # product state and its parts
-    (r"Step (\d+) of (\d+): (.+)", "步驟 {0}/{1}：{2}"),
-    (r"Step (\d+) of (\d+)", "步驟 {0}/{1}"),
+    (r"Step (\d+) of (\d+): (.+)", "對準第 {0}/{1} 階段：{2}"),
+    (r"Step (\d+) of (\d+)", "第 {0}/{1} 階段"),
     (r"Waiting for: (.+)", "等待：{0}"),
     (r"Navigation degraded: (.+)", "導航降級：{0}"),
     (r"Nothing received in (\d+) s\. Restart it, or check the Maintenance page\.", "{0} 秒內沒有收到輸出。請重新啟動，或查看維護頁面。"),

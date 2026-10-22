@@ -149,7 +149,7 @@ class HealthTest(unittest.TestCase):
     def test_not_aligned_reports_the_current_step(self):
         state, lines, step = raw_product_state(nav(alignment=False, heading_valid=False), run(), NCFG)
         self.assertEqual(state, INITIALIZING)
-        self.assertEqual(lines[0], "Step 1 of 2: Alignment")
+        self.assertEqual(lines[0], "Step 1 of 2: Coarse alignment")
         self.assertIn("still", lines[1])
         self.assertEqual((step["index"], step["key"]), (1, "alignment"))
         state, lines, step = raw_product_state(nav(heading_valid=False), run(), NCFG)
