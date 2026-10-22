@@ -1,5 +1,6 @@
 """User pages in Traditional Chinese (web/i18n.py): every phrase the pages and scripts use has a
-translation, and what the product state says in the usual situations is translated."""
+translation, what the product state says in the usual situations is translated, and the wording
+follows docs/TERMINOLOGY.zh-TW.md (shared with aio-nav-receiver)."""
 
 import glob
 import re
@@ -16,7 +17,12 @@ PKG = ROOT / "aio_system_dashboard"
 ZH_TW = "zh-TW"
 CJK = re.compile(r"[㐀-鿿]")
 # Text that is the same in both languages: product names, abbreviations, numbers with units.
-SAME = {"AIO NAV", "GNSS / RTK", "GNSS", "Wi-Fi", "ZUPT", "ZIHR", "NHC", "VUPT", "—", ""}
+SAME = {"AIO NAV", "GNSS / RTK", "GNSS", "LiDAR", "Wi-Fi", "ZUPT", "ZIHR", "NHC", "VUPT", "—", ""}
+# Words docs/TERMINOLOGY.zh-TW.md replaces (the same list is checked in aio-nav-receiver), and by what.
+AVOID = {"橫滾": "滾轉", "浮點解": "浮動解", "槓桿臂": "桿臂", "接收器": "接收機", "校正資料": "修正資料",
+         "坐標": "座標", "分米": "公寸", "週內秒": "週秒", "時間戳(?!記)": "時間戳記", "回放": "重播",
+         "重啟": "重新啟動", "操作員": "操作人員", "入站": "輸入", "運行": "運作或執行", "年齡": "延遲",
+         "過舊": "延遲", "精度": "準確度、精密度或不確定度"}
 
 
 def keep(text: str) -> bool:
@@ -83,6 +89,24 @@ class TableTest(unittest.TestCase):
         self.assertEqual(i18n.pick_lang("fr", Accept("zh")), "zh-TW")
         self.assertEqual(i18n.pick_lang(None, Accept("en")), "en")
         self.assertEqual(i18n.pick_lang(None, None), "en")
+
+
+class TerminologyTest(unittest.TestCase):
+    """One word for one meaning, in the user pages and in the zh-TW manuals."""
+
+    def avoided(self, texts):
+        return sorted({f"{w} -> {AVOID[w]}: {t[:60]}" for t in texts for w in AVOID if re.search(w, t)})
+
+    def test_user_pages(self):
+        texts = list(ZH.values()) + [template for _rx, template in PATTERNS]
+        self.assertEqual(self.avoided(texts), [])
+        self.assertEqual([t for t in texts if "光達" in t], [], "the pages write LiDAR")
+
+    def test_manuals(self):
+        lines = [line for f in sorted((ROOT / "docs").glob("*.zh-TW.md")) if f.name != "TERMINOLOGY.zh-TW.md"
+                 for line in f.read_text(encoding="utf-8").splitlines()]
+        self.assertGreater(len(lines), 1000)
+        self.assertEqual(self.avoided(lines), [])
 
 
 class StateCoverageTest(unittest.TestCase):

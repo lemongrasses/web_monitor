@@ -18,6 +18,7 @@ their own sessions, so a dashboard crash or restart never stops them.
 Settings: [English](docs/CONFIG.md) · [繁體中文](docs/CONFIG.zh-TW.md).
 Optional system recorder (a black box for the computer, to trace freezes and power cuts; install with `sudo deploy/install.sh --with-sysmon`): [English](docs/SYSMON.md) · [繁體中文](docs/SYSMON.zh-TW.md).
 Engineering flowcharts (system data flow, health tick, readiness states, automatic start, Wi-Fi, vehicle side): [docs/FLOWS.md](docs/FLOWS.md).
+繁體中文 terminology, shared word for word with the vehicle-side aio-nav-receiver: [docs/TERMINOLOGY.zh-TW.md](docs/TERMINOLOGY.zh-TW.md).
 Ideas discussed and kept for later (in Traditional Chinese): [docs/IDEAS.md](docs/IDEAS.md).
 
 ## Architecture
