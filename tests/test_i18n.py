@@ -10,6 +10,7 @@ from pathlib import Path
 
 from aio_system_dashboard.web import i18n
 from aio_system_dashboard.web.i18n_zh import PATTERNS, ZH
+from tests import manuals
 from tests import test_readiness as engine_tests
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -18,7 +19,7 @@ ZH_TW = "zh-TW"
 CJK = re.compile(r"[㐀-鿿]")
 # Text that is the same in both languages: product names, abbreviations, numbers with units.
 SAME = {"AIO NAV", "GNSS / RTK", "GNSS", "LiDAR", "Wi-Fi", "ZUPT", "ZIHR", "NHC", "VUPT", "—", ""}
-GLOSSARY = (ROOT / "docs/TERMINOLOGY.zh-TW.md").read_text(encoding="utf-8")   # the same file in aio-nav-receiver
+GLOSSARY = manuals.read("docs/TERMINOLOGY.zh-TW.md")   # the same file in aio-nav-receiver
 
 
 def glossary(heading):
@@ -124,8 +125,8 @@ class TerminologyTest(unittest.TestCase):
         self.assertEqual([t for t in texts if "光達" in t], [], "the pages write LiDAR")
 
     def test_manuals(self):
-        lines = [line for f in sorted((ROOT / "docs").glob("*.zh-TW.md")) if f.name != "TERMINOLOGY.zh-TW.md"
-                 for line in f.read_text(encoding="utf-8").splitlines()]
+        lines = [line for f in manuals.glob("docs/*.zh-TW.md") if f != "docs/TERMINOLOGY.zh-TW.md"
+                 for line in manuals.read(f).splitlines()]
         self.assertGreater(len(lines), 1000)
         self.assertEqual(avoided(lines), [])
 
@@ -144,7 +145,7 @@ class TerminologyTest(unittest.TestCase):
             self.assertEqual(i18n.tr(label, ZH_TW), zh, label)
 
     def test_status_packet_tables_in_the_manual_are_the_glossarys(self):
-        manual = (ROOT / "docs/OPERATION.zh-TW.md").read_text(encoding="utf-8")
+        manual = manuals.read("docs/OPERATION.zh-TW.md")
         states = table_after(manual, "| 代碼 | 狀態 | 車端顯示 | 意義 |")
         self.assertEqual([r[:3] for r in states], [r[:3] for r in glossary("### 狀態（state）")])
         actions = table_after(manual, "| 代碼 | 要求的動作 | 儀表板顯示 | 車端顯示 |")

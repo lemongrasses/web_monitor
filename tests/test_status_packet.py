@@ -13,6 +13,7 @@ from aio_system_dashboard.nav import status_packet as sp
 from aio_system_dashboard.nav.decoder import encode_nav_packet, flags_to_int
 from aio_system_dashboard.nav.vehicle_gate import VehicleGate
 from aio_system_dashboard.state.store import StateStore
+from tests import manuals
 
 GOLDEN_FIELDS = dict(state=6, requested_action=0, gnss_quality=3, session_id=0x12345678, sequence=482,
                      uptime_ms=123456789, health_flags=0x00010FFF, inhibit_flags=0, nav_flags=0xE8,
@@ -31,9 +32,8 @@ class CodecTest(unittest.TestCase):
             self.assertEqual(d[k], v, k)
 
     def test_manuals_publish_the_same_golden_vector(self):
-        root = Path(__file__).resolve().parent.parent / "docs"
-        for name in ("OPERATION.md", "OPERATION.zh-TW.md"):
-            self.assertIn(GOLDEN_HEX, (root / name).read_text(encoding="utf-8"), name)
+        for name in ("docs/OPERATION.md", "docs/OPERATION.zh-TW.md"):
+            self.assertIn(GOLDEN_HEX, manuals.read(name), name)
 
     def test_rejects_corrupt_short_and_unknown(self):
         good = bytes.fromhex(GOLDEN_HEX)
