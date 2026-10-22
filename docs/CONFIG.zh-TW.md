@@ -4,7 +4,7 @@
 
 本手冊說明儀表板的設定檔放在哪裡、如何安全地修改，以及每一項設定的意義。
 
-**重點摘要：** 隨附的設定檔不需修改即可使用。大部分設定值為 `auto`（啟動時自動偵測）或屬於選填。通常只需要填入相機與光達的 IP 位址，或在自動偵測結果不正確時手動指定。
+**重點摘要：** 隨附的設定檔不需修改即可使用。大部分設定值為 `auto`（啟動時自動偵測）或屬於選填。通常只需要填入相機與光達（LiDAR）的 IP 位址，或在自動偵測結果不正確時手動指定。
 
 ---
 
@@ -111,11 +111,11 @@ maintenance:  { host: 0.0.0.0, port: 8081 }
 | `maintenance.lock` | `all` | `all`：整個維護頁面都需要密碼。`tools`：只有 AIO NAV 設定編輯器與終端機需要（其他維護頁面開放，例如開發用的機器）。 |
 | `maintenance.unlock_minutes` | `15` | 登入後這麼多分鐘沒有使用就會自動登出（頁面自己的定時更新不算使用）。 |
 | `maintenance.config_test_start` | `true` | 在**維護頁面 → AIO NAV config** 儲存 AIO NAV 設定檔之前，先讓 AIO NAV 以新檔案短暫啟動一次（與網路隔離）；AIO NAV 無法啟動的檔案會被拒絕，並顯示 AIO NAV 的訊息。`false` 時只做規則檢查就儲存。 |
-| `product.edit_lever_arms` | `true` | 使用者的**安裝**頁可以修改即時模式 `aio_nav.yaml` 中的槓桿臂（與 Start／Stop 一樣不需要密碼；數值會檢查、保留舊檔並記錄變更）。`false` 時只能檢視。 |
+| `product.edit_lever_arms` | `true` | 使用者的**安裝**頁可以修改即時模式 `aio_nav.yaml` 中的桿臂（與 Start／Stop 一樣不需要密碼；數值會檢查、保留舊檔並記錄變更）。`false` 時只能檢視。 |
 
 產品頁面給操作人員使用；維護頁面給工程人員使用，且可以重新啟動驅動程式。若希望維護頁面只能從 Jetson 本機開啟，請設定 `maintenance.host: 127.0.0.1`。
 
-### 4.1a `access`:誰可以開啟網頁
+### 4.1a `access`：誰可以開啟網頁
 
 ```yaml
 access:
@@ -124,20 +124,20 @@ access:
 
 | 設定 | 預設 | 說明 |
 |-----|------|------|
-| `allowed_clients` | `[]` | 允許開啟 Product / Maintenance 頁面的電腦 IP 或 CIDR(例如 `192.0.2.0/24`)。其他來源會得到 `403 Forbidden`。本機 `127.0.0.1` 一律允許。留空代表不限制。 |
+| `allowed_clients` | `[]` | 允許開啟 Product / Maintenance 頁面的電腦 IP 或 CIDR（例如 `192.0.2.0/24`）。其他來源會得到 `403 Forbidden`。本機 `127.0.0.1` 一律允許。留空代表不限制。 |
 
-請在這裡填入感測器網段上的外部電腦。連上 Wi-Fi 熱點的手機會自動加入（`wifi.hotspot.allow_clients`，第 4.5a 節）。這只是來源 IP 過濾,不是身分驗證,無法防止同一網段內有人偽造該 IP。
+請在這裡填入感測器網段上的外部電腦。連上 Wi-Fi 熱點的手機會自動加入（`wifi.hotspot.allow_clients`，第 4.5a 節）。這只是來源 IP 過濾，不是身分驗證，無法防止同一網段內有人偽造該 IP。
 
 ### 4.2 `nav`：AIO NAV 資料與 Stopped／Starting／Initializing／Ready／Fault 狀態
 
 | 項目 | 預設值 | 說明 |
 |------|--------|------|
-| `udp_bind` | `127.0.0.1:9000` | 儀表板接收 AIO NAV 封包的位址。`aio_nav_node` 一律送往 `127.0.0.1:9000`，請勿修改。只有儀表板在監聽:AIO Nav 桌面程式(`aio-nav-ui`)綁定同一個埠,所以不要與儀表板同時使用。 |
+| `udp_bind` | `127.0.0.1:9000` | 儀表板接收 AIO NAV 封包的位址。`aio_nav_node` 一律送往 `127.0.0.1:9000`，請勿修改。只有儀表板在監聽：AIO Nav 桌面程式（`aio-nav-ui`）綁定同一個連接埠，所以不要與儀表板同時使用。 |
 | `aio_nav_config` | `auto` | AIO NAV 的 `aio_nav.yaml` 路徑。儀表板從中讀取 UDP 目的地（`output_udp`）與輸出頻率（`output_rate`）來顯示。`auto` 會搜尋 `/home/*/aio-nav-ros/install/...` 與 `~/.local/opt/aio-nav-ros/...`，並使用最新的檔案；也可以用環境變數 `AIO_NAV_CONFIG` 指定。修改檔案後約 2 秒內就會生效，而且 **Start**／**Restart** 一定會先重新讀取，讓 AIO NAV 以磁碟上最新的設定啟動。如果修改了目前模式的 ROS domain 或 localhost 設定，儀表板會在啟動後自己重新啟動（幾秒鐘；AIO NAV 不受影響），讓它自己的 ROS 連線跟上。 |
 | `expected_rate_hz` | `null` | 預期的封包頻率。`null` = 使用 `aio_nav.yaml` 中的 `output_rate`。 |
 | `service` | `aio_nav` | `services` 中哪一個項目代表 AIO NAV。 |
-| `allow_control` | `false`(預設設定檔:`true`) | `true` 時,首頁會顯示 AIO NAV 的 **Start / Restart / Stop**。**Start** 會先啟動濾波器再啟動 DSO,**Stop** 兩者一起停止,做法與 AIO Nav 桌面程式相同(程序已在執行就不會重複啟動,所以不會跟桌面程式啟動的那份重複)。啟動的是 aio-nav-ros `install/` 資料夾內的 `aio-nav` 與 `aio-nav-dso`,不需要原始碼。Stop 與 Restart 需要再按一次確認。只有 `access.allowed_clients` 內的電腦連得到頁面。 |
-| `control_group` | `[aio_nav, dso]` | Start/Stop 作用在 `services` 的哪些項目,依序啟動。每個項目都需要設定 `launch`。 |
+| `allow_control` | `false`（預設設定檔：`true`） | `true` 時，首頁會顯示 AIO NAV 的 **Start / Restart / Stop**。**Start** 會先啟動濾波器再啟動 DSO，**Stop** 兩者一起停止，做法與 AIO Nav 桌面程式相同（程序已在執行就不會重複啟動，所以不會跟桌面程式啟動的那份重複）。啟動的是 aio-nav-ros `install/` 資料夾內的 `aio-nav` 與 `aio-nav-dso`，不需要原始碼。Stop 與 Restart 需要再按一次確認。只有 `access.allowed_clients` 內的電腦連得到頁面。 |
+| `control_group` | `[aio_nav, dso]` | Start/Stop 作用在 `services` 的哪些項目，依序啟動。每個項目都需要設定 `launch`。 |
 | `startup_grace_s` | `3.0` | 儀表板啟動後的這段時間內，還在確認 AIO NAV 是否執行時顯示「Unknown」。 |
 | `startup_timeout_s` | `60` | AIO NAV 啟動後，在第一筆輸出到達前顯示 **Starting**。超過這段時間仍沒有輸出，狀態就變成 **Fault**（「running but sends no navigation output」）。AIO NAV 沒有執行、也沒有人要求它執行時是 **Stopped**，永遠不算故障。 |
 | `stale_warn_s` | `0.5` | 封包超過這個秒數未更新時，UDP 輸出顯示 **Stale**。 |
@@ -156,7 +156,7 @@ access:
 - **Initializing**：有收到封包，但 `ready_requires` 的旗標還沒有全部成立。
 - **Ready**：AIO NAV 正在執行、封包即時，且對準（alignment）已完成。
 
-GNSS、相機、光達與網路只會產生提示，永遠不會讓 Ready 變成 Fault。狀態要改變，條件必須持續約 0.5–1 秒；從異常恢復到 Ready 則必須穩定約 2 秒。這些時間是內建的，無法設定。
+GNSS、相機、LiDAR 與網路只會產生提示，永遠不會讓 Ready 變成 Fault。狀態要改變，條件必須持續約 0.5–1 秒；從異常恢復到 Ready 則必須穩定約 2 秒。這些時間是內建的，無法設定。
 
 > 總覽頁面上的「Sending to …」位址**不是**在這裡設定的，而是來自 AIO NAV 的 `aio_nav.yaml` 中的 `output_udp`。請在那裡修改，然後重新啟動 AIO NAV 與儀表板。
 
@@ -164,24 +164,24 @@ GNSS、相機、光達與網路只會產生提示，永遠不會讓 Ready 變成
 
 儀表板維護一份 *readiness* 快照：給車端的狀態（`BOOTING`、`CHECKING`、`NAV_STARTING`、`KEEP_STILL`、`MOVE_STRAIGHT`、`REFINING`、`READY`、`DEGRADED`、`FAULT`、`MAINTENANCE`）、操作人員該做的動作，以及兩組位元遮罩：哪些條件正常、以及所有禁止使用輸出的原因。網頁、`GET /api/readiness` 與 0x05 狀態封包（第 4.2c 節）顯示的都是同一份快照。
 
-READY 需要 AIO NAV 正在執行、輸出即時、`nav.ready_requires` 的旗標都成立，並且預設需要 **RTK**：GNSS 位置至少為 RTK float（`require_rtk`）。`require` 可以再增加其他條件。
+READY 需要 AIO NAV 正在執行、輸出即時、`nav.ready_requires` 的旗標都成立，並且預設需要 **RTK**：GNSS 位置至少為 RTK 浮動解（`require_rtk`）。`require` 可以再增加其他條件。
 
 | 項目 | 預設值 | 說明 |
 |------|--------|------|
-| `require_rtk` | `true` | READY 需要 GNSS 位置至少為 `gnss_min_quality`（RTK float）。可在產品頁面的**設定**頁切換（關閉時會先確認），或在**維護頁面 → Overview → Readiness for the vehicle** 切換（需要密碼）；會記錄在事件紀錄，並保存在 `state/readiness.json`，之後以它為準。也可以在這裡設定。 |
-| `require` | `[]` | READY 的額外條件，可選：`imu`（IMU topic 正常）、`gnss`（接收器有位置）、`gnss_quality`（品質至少為 `gnss_min_quality`）、`dso`（DSO 里程計即時且有效）、`vehicle_route`（核心有通往 `output_udp` 目的地的路由）、`storage`（磁碟用量低於 `system.disk_warn_percent`）。 |
+| `require_rtk` | `true` | READY 需要 GNSS 位置至少為 `gnss_min_quality`（RTK 浮動解）。可在產品頁面的**設定**頁切換（關閉時會先確認），或在**維護頁面 → Overview → Readiness for the vehicle** 切換（需要密碼）；會記錄在事件紀錄，並保存在 `state/readiness.json`，之後以它為準。也可以在這裡設定。 |
+| `require` | `[]` | READY 的額外條件，可選：`imu`（IMU topic 正常）、`gnss`（接收機有位置）、`gnss_quality`（品質至少為 `gnss_min_quality`）、`dso`（DSO 里程計即時且有效）、`vehicle_route`（核心有通往 `output_udp` 目的地的路由）、`storage`（磁碟用量低於 `system.disk_warn_percent`）。 |
 | `stable_s` | `2.0` | 條件必須持續成立這麼久，READY 才會採計。 |
 | `loss_s` | `1.0` | 條件一旦被採計，要持續失敗這麼久才會被撤銷，避免偶爾掉一筆資料就讓 READY 跳動。 |
-| `gnss_min_quality` | `float` | `gnss_quality` 的門檻：`spp`、`float` 或 `fixed`。驅動程式未標示類型但精度良好的位置視為 float（這種情況出現在 float 期間內）。 |
+| `gnss_min_quality` | `float` | `gnss_quality` 的門檻：`spp`、`float` 或 `fixed`。驅動程式未標示類型、但水平不確定度（1σ）在 1 公尺以內的位置視為 float（這種情況出現在 RTK 浮動解期間）。 |
 | `gnss_stable_s` | `3.0` | `gnss_quality` 使用的 `stable_s`。 |
 | `gnss_loss_s` | `3.0` | GNSS 使用的 `loss_s`：RTK 可以中斷多久（樹木、橋下）才讓 READY 變成 DEGRADED。請依場地調整。 |
 | `imu_topic` | `auto` | `imu` 條件使用 `ros.topics` 中的哪一個項目。`auto` = group 為 `nav` 的第一個。採用的是 topic 的*狀態*而非原始延遲，因此搭配 `ros.sampling` 也能正確運作。 |
 | `dso_stale_s` | `1.0` | DSO 里程計超過這個時間沒有更新即視為未就緒。 |
 | `dso_only_with_vupt` | `true` | `require` 含 `dso` 時，只有在 `aio_nav.yaml` 開啟 `Odometry.vupt`（AIO NAV 有使用 DSO）時才要求 DSO。 |
-| `still_gyro_rad_s` | `0.05` | 「車輛靜止」以最近 2 秒的 IMU 資料判斷：最大旋轉速率（rad/s）。停車、引擎發動時低於 0.035；行駛時高於 0.17。 |
+| `still_gyro_rad_s` | `0.05` | 「車輛靜止」以最近 2 秒的 IMU 資料判斷：最大角速率（rad/s）。停車、引擎發動時低於 0.035；行駛時高於 0.17。 |
 | `still_accel_std` | `0.15` | 加速度大小的離散程度（m/s²）。停車時低於 0.16；行駛時高於 0.6。 |
-| `still_speed_m_s` | `0.3` | 接收器有 GNSS 位置時，其速度也必須低於此值（m/s）。 |
-| `still_speed_topic` | `/openrtk330/odometry` | 速度的來源（接收器的 INS 里程計）。`""` = 只用 IMU。 |
+| `still_speed_m_s` | `0.3` | 接收機有 GNSS 位置時，其回報的速率也必須低於此值（m/s）。 |
+| `still_speed_topic` | `/openrtk330/odometry` | 速率的來源（接收機內建 INS 輸出的 odometry topic）。`""` = 只用 IMU。 |
 
 每次自動啟動前（4.2b）以及安裝頁的**儲存並重新啟動**都會用到「車輛靜止」。以上四個值是預設值：在**維護頁面 → Still detection** 於車上量測的門檻會取代它們（保存在 `state/still_limits.json`；*Back to defaults* 會移除）。
 
@@ -207,7 +207,7 @@ AIO NAV 預設為全自動：開機後自動啟動、失敗後重新啟動，而
 | `max_attempts` | `0` | `0` = 永不放棄。填數字則在該次數後停止（*automatic start gave up*；按 **Start** 再試一次）。 |
 | `stale_grace_s` | `10.0` | AIO NAV 在執行但輸出停止、輸入正常時，給它這麼久恢復，之後停止再重新啟動。若有輸入缺少（沒有 IMU 資料、沒有有效時間）則讓它繼續執行，因為重新啟動也沒用：*Waiting for …; AIO NAV may resume by itself*。 |
 
-開機流程為：BOOTING → CHECKING（必要時啟動感測器驅動、IMU 資料、系統時鐘與 GNSS 時間一致（4.2d）、車輛靜止）→ NAV_STARTING（AIO NAV，接著 DSO）→ KEEP_STILL → MOVE_STRAIGHT → REFINING → READY（RTK float）。啟動是否成功只看 AIO NAV：DSO 會一起啟動，DSO 的失敗交給 DSO watchdog（4.7a）處理，絕不會因此重新啟動 AIO NAV。已安裝的裝置會保留自己的設定；請與 `dashboard.yaml.new` 比較，或以 `--reset-config` 重新安裝。
+開機流程為：BOOTING → CHECKING（必要時啟動感測器驅動、IMU 資料、系統時鐘與 GNSS 時間一致（4.2d）、車輛靜止）→ NAV_STARTING（AIO NAV，接著 DSO）→ KEEP_STILL → MOVE_STRAIGHT → REFINING → READY（RTK 浮動解）。啟動是否成功只看 AIO NAV：DSO 會一起啟動，DSO 的失敗交給 DSO watchdog（4.7a）處理，絕不會因此重新啟動 AIO NAV。已安裝的裝置會保留自己的設定；請與 `dashboard.yaml.new` 比較，或以 `--reset-config` 重新安裝。
 
 固定適用的規則：
 
@@ -222,7 +222,7 @@ AIO NAV 預設為全自動：開機後自動啟動、失敗後重新啟動，而
 | 項目 | 預設值 | 說明 |
 |------|--------|------|
 | `enabled` | `true` | 把 readiness 快照以 42 位元組的 0x05 封包送出（格式見[操作手冊第 6.8 節](OPERATION.zh-TW.md#sec6)）。`false` = 不送 0x05。 |
-| `destination` | `auto` | IPv4 `位址:port`。`auto` = `aio_nav.yaml` 中 `output_udp` 的位址**與 port**：0x05 與 0x04 進入同一個 socket，接收端以訊息 ID 區分。只有車端希望 0x05 走另一個 port 時才需要填寫位址。不接受主機名稱（避免在 5 Hz 的流程中查詢 DNS），也不可設為儀表板自己的接收位址（`nav.udp_bind`）。 |
+| `destination` | `auto` | IPv4 `位址:port`。`auto` = `aio_nav.yaml` 中 `output_udp` 的位址**與連接埠**：0x05 與 0x04 進入同一個 socket，接收端以訊息 ID 區分。只有車端希望 0x05 走另一個連接埠時才需要填寫位址。不接受主機名稱（避免在 5 Hz 的流程中查詢 DNS），也不可設為儀表板自己的接收位址（`nav.udp_bind`）。 |
 | `message_id` | `5` | 0x05 專用於此封包（AIO NAV 只送 0x04）。 |
 | `rate_hz` | `2.0` | 每秒封包數；狀態、動作或禁止遮罩一改變就立即送出。READY 之後仍持續發送。 |
 
@@ -267,10 +267,10 @@ services:
 | `label` | 介面上顯示的名稱。 |
 | `unit` | systemd 服務名稱（`systemctl status <unit>`）。 |
 | `process_pattern` | 選填。若有程序符合這段文字（`pgrep -f`），也視為正在執行。AIO NAV 使用這個設定，因此從 AIO Nav 桌面應用程式啟動也能偵測到。 |
-| `restartable` | `true` 會在相機或光達頁面加上 **Restart driver** 按鈕。修改後請重新執行安裝程式（見第 2 節）。 |
-| `launch` | aio-nav-ros `install/aio_nav_ros/lib/aio_nav_ros/` 資料夾內的啟動程式名稱(`aio-nav`、`aio-nav-dso`),或絕對路徑。設定後儀表板可以啟動與停止這個程式,並用 `process_pattern` 找到它。程式以儀表板的使用者身分在獨立的 session 中執行,ROS 網域由 `aio_nav.yaml` 決定,不是儀表板的設定。輸出寫到 `logs/<name>.log`。儀表板服務使用 `KillMode=process`,所以重啟儀表板時 AIO NAV 不會被停掉。 |
-| `optional` | `true` 代表這個程式停止時不算警告(DSO 使用)。 |
-| `user_unit` | systemd **使用者**服務名稱(`systemctl --user`),例如 `openrtk330-basler-drivers.service`(相機與 IMU/GNSS 驅動)。設定後,維護頁面 **ROS 2** 會多一個 **Sensor drivers** 面板,可以 Start / Stop / Restart,方便播 bag 前先停掉即時驅動(否則即時與錄製的資料會混在一起)。以儀表板的使用者身分執行,不需要 sudo。Stop 與 Restart 需要確認;驅動服務啟動後約 15 秒才會開始發布資料。 |
+| `restartable` | `true` 會在相機或 LiDAR 頁面加上 **Restart driver** 按鈕。修改後請重新執行安裝程式（見第 2 節）。 |
+| `launch` | aio-nav-ros `install/aio_nav_ros/lib/aio_nav_ros/` 資料夾內的啟動程式名稱（`aio-nav`、`aio-nav-dso`），或絕對路徑。設定後儀表板可以啟動與停止這個程式，並用 `process_pattern` 找到它。程式以儀表板的使用者身分在獨立的 session 中執行，ROS 網域由 `aio_nav.yaml` 決定，不是儀表板的設定。輸出寫到 `logs/<name>.log`。儀表板服務使用 `KillMode=process`，所以重新啟動儀表板時 AIO NAV 不會被停掉。 |
+| `optional` | `true` 代表這個程式停止時不算警告（DSO 使用）。 |
+| `user_unit` | systemd **使用者**服務名稱（`systemctl --user`），例如 `openrtk330-basler-drivers.service`（相機與 IMU/GNSS 驅動）。設定後，維護頁面 **ROS 2** 會多一個 **Sensor drivers** 面板，可以 Start / Stop / Restart，方便播 bag 前先停掉即時驅動（否則即時與錄製的資料會混在一起）。以儀表板的使用者身分執行，不需要 sudo。Stop 與 Restart 需要確認；驅動服務啟動後約 15 秒才會開始發布資料。 |
 
 裝置上不存在的服務會顯示 **Not installed**，不會產生警告，所以用不到的項目放著也沒關係。查詢實際的服務名稱：
 ```bash
@@ -278,7 +278,7 @@ systemctl list-units --type=service | grep -iE "camera|ouster|lidar|ros"
 ```
 只有這個檔案中列出的 `unit` 可以被重新啟動，網頁無法執行任何其他指令。
 
-### 4.4 `devices`：相機與光達
+### 4.4 `devices`：相機與 LiDAR
 
 ```yaml
 devices:
@@ -303,13 +303,13 @@ devices:
 | `host` | 選填。感測器的 IP 位址，每隔 `network.ping_interval_s` 秒用 ping 檢查一次。留空 = 顯示 **Not set up**，不會 ping，也不會有警告。 |
 | `service` | `services` 中哪一個項目是這個感測器的驅動程式。 |
 | `topic_group` | `ros.topics` 中哪些項目屬於這個感測器（對應其 `group`）。 |
-| `preview.kind` | 相機用 `image`，光達用 `pointcloud`。不需要即時畫面就省略 `preview`。 |
-| `preview.topic` | **Live view** 顯示的 ROS topic。`auto` = 第一個 `CompressedImage` 或 `Image` topic（相機，會略過深度影像），或 `PointCloud2` topic（光達）。也可以填入完整名稱，例如 `/ouster/points`。 |
+| `preview.kind` | 相機用 `image`，LiDAR 用 `pointcloud`。不需要即時畫面就省略 `preview`。 |
+| `preview.topic` | **Live view** 顯示的 ROS topic。`auto` = 第一個 `CompressedImage` 或 `Image` topic（相機，會略過深度影像），或 `PointCloud2` topic（LiDAR）。也可以填入完整名稱，例如 `/ouster/points`。 |
 | `preview.hint` | 選填。自動選擇時，topic 名稱最好包含的文字，例如 `color`。 |
 | `preview.max_width` | 相機：未壓縮的影像會先縮小到這個寬度再傳送；壓縮影像則原樣傳送。 |
-| `preview.max_points` | 光達：點雲會隨機抽樣到這個點數再傳給瀏覽器。 |
+| `preview.max_points` | LiDAR：點雲會隨機抽樣到這個點數再傳給瀏覽器。 |
 
-Live view 只在相機或光達頁面開啟時才讀取 topic，離開頁面 10 秒後停止。
+Live view 只在相機或 LiDAR 頁面開啟時才讀取 topic，離開頁面 10 秒後停止。
 
 查詢感測器 IP 與 topic：
 ```bash
@@ -353,7 +353,7 @@ ros2 param get /ouster/os_driver sensor_hostname   # Ouster IP（節點名稱可
 | `hotspot.band` | `bg` | `bg` = 2.4 GHz（所有手機都能連）；`a` = 5 GHz。 |
 | `hotspot.allow_clients` | `true` | 把熱點網段加入 `access.allowed_clients`，讓手機能開啟頁面（只有該清單不是空的時候才有作用）。 |
 | `hotspot.relay_udp` | `true` | 把 NAV（0x04）與狀態（0x05）封包的副本送給熱點上的裝置。維護頁面 → Network 的開關會覆蓋此值（保存在 `state/hotspot_relay.json`）。 |
-| `hotspot.relay_port` | `9000` | 每台裝置上的 UDP port。 |
+| `hotspot.relay_port` | `9000` | 每台裝置上的 UDP 連接埠。 |
 
 - 熱點名稱在頁面上輸入（預設 `AIO-NAV`），密碼（8–63 個字元）也在每次啟動時輸入。密碼只存在 NetworkManager 設定中，不會出現在儀表板的檔案、日誌或頁面。
 - **Start** 時若 Wi-Fi 正連在某個網路上會先詢問（會離開該網路）；熱點啟動失敗時會恢復原本的網路。**Stop** 時若有裝置連線會先詢問，之後 Wi-Fi 會自動加入範圍內已儲存的網路；停止後上電也不會再啟動。
@@ -389,10 +389,10 @@ ros:
 | 項目 | 預設值 | 說明 |
 |------|--------|------|
 | `enabled` | `true` | `false` 會關閉 ROS 2 監看，topic 指示燈會顯示 Unknown。 |
-| `mode` | `null`(預設設定檔:`live`) | 在維護頁面 **Replay** 另外選擇之前使用的模式(選擇存在 `state/ros_mode.json`,優先於這個設定)。選擇模式需要選配的 replay 模組(4.12);沒有安裝時只會使用這個設定,所以產品機固定在 `live`。`null` 表示沿用服務的環境變數。 |
-| `modes` | `live`:`aio_nav.yaml`;`bag`:`aio_nav_bag.yaml` | 每個模式對應一份 aio-nav-ros 設定檔(與一般的 `aio_nav.yaml` 同一個資料夾)。啟動 AIO NAV 與 DSO 時會把該檔案當參數,檔案裡的 `ros_domain_id` / `ros_localhost_only` 也會成為儀表板自己的 ROS 環境,所以三者一定一致。`use_sim_time` 也由該檔案決定。模式可另加 `domain_id` / `localhost_only` 覆蓋檔案的值。找不到設定檔的模式無法選取。切換會停止 AIO NAV 與 DSO 並重啟儀表板(幾秒鐘),之後需要再次啟動 AIO NAV。相機與 IMU 驅動不受影響。 |
-| `isolation_restart` | `false`(預設設定檔:`true`) | 儀表板自己的 ROS 連線卡住時,自動重啟儀表板。曾經發生過:開機後儀表板比感測器驅動先啟動,之後一直沒有發現驅動,導致 IMU、相機與 GNSS 看起來都不見了。只有在感測器驅動程序**與儀表板在同一個 ROS domain 和 localhost 設定**下執行,但連續 `isolation_grace_s`(30 秒)都看不到任何其他節點時才會動作;驅動停止或在別的 domain 時不會動作;而且最多每 `isolation_cooldown_s`(600 秒)一次,所以不會形成重啟迴圈。重啟會記錄在事件紀錄中。 |
-| `sampling` | `enabled: false`(預設設定檔:`true`)、`period_s: 5`、`window_s: 1.5`、`above_hz: 30` | 降低高頻 topic 的 CPU 使用。被監看的 topic 若 `expected_hz` 大於等於 `above_hz`(例如 100 Hz 的 IMU),每 `period_s` 秒只聽 `window_s` 秒;ROS 2 頁面顯示的頻率與即時性是上一個視窗的結果,並標示 *sampled*。不啟用時,100 Hz 的 topic 每筆訊息都要在 Python 裡處理一次,約佔單一核心的 12%。**代價:**發布者還在但資料凍結時,*Stale* 最多晚 `period_s` 秒才顯示(不取樣時約 1 秒);短於 `period_s` 的中斷可能看不到。topic 整個消失仍會立刻顯示 *Missing*。這只改變儀表板自己的訂閱,不影響 GNSS、視覺里程計監控、相機/光達預覽、驅動程式與 ROS 本身。 |
+| `mode` | `null`（預設設定檔：`live`） | 在維護頁面 **Replay** 另外選擇之前使用的模式（選擇存在 `state/ros_mode.json`，優先於這個設定）。選擇模式需要選配的 replay 模組（4.12）；沒有安裝時只會使用這個設定，所以產品機固定在 `live`。`null` 表示沿用服務的環境變數。 |
+| `modes` | `live`：`aio_nav.yaml`；`bag`：`aio_nav_bag.yaml` | 每個模式對應一份 aio-nav-ros 設定檔（與一般的 `aio_nav.yaml` 同一個資料夾）。啟動 AIO NAV 與 DSO 時會把該檔案當參數，檔案裡的 `ros_domain_id` / `ros_localhost_only` 也會成為儀表板自己的 ROS 環境，所以三者一定一致。`use_sim_time` 也由該檔案決定。模式可另加 `domain_id` / `localhost_only` 覆蓋檔案的值。找不到設定檔的模式無法選取。切換會停止 AIO NAV 與 DSO 並重新啟動儀表板（幾秒鐘），之後需要再次啟動 AIO NAV。相機與 IMU 驅動不受影響。 |
+| `isolation_restart` | `false`（預設設定檔：`true`） | 儀表板自己的 ROS 連線卡住時，自動重新啟動儀表板。曾經發生過：開機後儀表板比感測器驅動先啟動，之後一直沒有發現驅動，導致 IMU、相機與 GNSS 看起來都不見了。只有在感測器驅動程序**與儀表板在同一個 ROS domain 和 localhost 設定**下執行，但連續 `isolation_grace_s`（30 秒）都看不到任何其他節點時才會動作；驅動停止或在別的 domain 時不會動作；而且最多每 `isolation_cooldown_s`（600 秒）一次，所以不會形成重新啟動的迴圈。重新啟動會記錄在事件紀錄中。 |
+| `sampling` | `enabled: false`（預設設定檔：`true`）、`period_s: 5`、`window_s: 1.5`、`above_hz: 30` | 降低高頻 topic 的 CPU 使用。被監看的 topic 若 `expected_hz` 大於等於 `above_hz`（例如 100 Hz 的 IMU），每 `period_s` 秒只聽 `window_s` 秒；ROS 2 頁面顯示的頻率與即時性是上一個視窗的結果，並標示 *sampled*。不啟用時，100 Hz 的 topic 每筆訊息都要在 Python 裡處理一次，約佔單一核心的 12%。**代價：**發布者還在但資料凍結時，*Stale* 最多晚 `period_s` 秒才顯示（不取樣時約 1 秒）；短於 `period_s` 的中斷可能看不到。topic 整個消失仍會立刻顯示 *Missing*。這只改變儀表板自己的訂閱，不影響 GNSS、視覺里程計監控、相機／LiDAR 預覽、驅動程式與 ROS 本身。 |
 | `graph_interval_s` | `2` | 重新整理節點與 topic 清單的間隔。 |
 | `rate_window_s` | `2` | 計算每個 topic 頻率所用的時間窗。 |
 | `nodes` | `[]` | 必須存在的節點名稱（顯示於 ROS 2 頁面，缺少時會產生警告）。 |
@@ -422,7 +422,7 @@ Topic 狀態：
 
 監看使用 raw 訂閱，只計數、不解碼訊息。長時間監看請盡量選擇輕量的 topic（例如用 `camera_info` 而非 `image_raw`）。
 
-### 4.7a `dso_watchdog`:維持 DSO 正常
+### 4.7a `dso_watchdog`：維持 DSO 正常
 
 ```yaml
 dso_watchdog:
@@ -431,25 +431,25 @@ dso_watchdog:
   service: dso
 ```
 
-只處理 DSO,不會動 AIO NAV。狀態在維護頁面的 ROS 2,首頁沒有任何操作,每個動作都有事件紀錄。
+只處理 DSO，不會動 AIO NAV。狀態在維護頁面的 ROS 2，首頁沒有任何操作，每個動作都有事件紀錄。
 
-* **里程計變成 NaN**(DSO 追蹤失敗):**立刻**重啟 DSO。
-* **DSO 沒有在跑、但應該要跑**(崩潰,或剛啟動就結束):先等 `retry_s`(30 秒)再啟動,之後等待時間加倍,最多 `retry_max_s`(300 秒);持續執行 `stay_up_s` 後重新計算。永不放棄。這次開機之前的啟動不算「應該要跑」。
-* **DSO 用了太多記憶體**(RAM 加 swap 超過 `max_memory_mb`):**立刻**重啟 DSO,避免失控的 DSO 把記憶體用完、讓整台機器卡死。
-* 你主動停掉的 DSO 會保持停止。「應該在跑」是在儀表板啟動或停止 AIO NAV、DSO 時記錄的(`state/processes.json`),正在執行的 DSO 也視為需要。
-* 如果 NaN 一直出現(`window_s` 內重啟 `fast_restarts` 次),之後的重啟也改成間隔 `retry_s`,避免畫面不好時一直迴圈重啟。
+* **里程計變成 NaN**（DSO 追蹤失敗）：**立刻**重新啟動 DSO。
+* **DSO 沒有在跑、但應該要跑**（崩潰，或剛啟動就結束）：先等 `retry_s`（30 秒）再啟動，之後等待時間加倍，最多 `retry_max_s`（300 秒）；持續執行 `stay_up_s` 後重新計算。永不放棄。這次開機之前的啟動不算「應該要跑」。
+* **DSO 用了太多記憶體**（RAM 加 swap 超過 `max_memory_mb`）：**立刻**重新啟動 DSO，避免失控的 DSO 把記憶體用完、讓整台機器卡死。
+* 您主動停掉的 DSO 會保持停止。「應該在跑」是在儀表板啟動或停止 AIO NAV、DSO 時記錄的（`state/processes.json`），正在執行的 DSO 也視為需要。
+* 如果 NaN 一直出現（`window_s` 內重新啟動 `fast_restarts` 次），之後的重新啟動也改成間隔 `retry_s`，避免畫面不好時一直反覆重新啟動。
 
 | 設定 | 預設 | 說明 |
 |-----|------|------|
-| `enabled` | `false`(預設設定檔:`true`) | 開啟監控。 |
+| `enabled` | `false`（預設設定檔：`true`） | 開啟監控。 |
 | `topic` | `/dso/odometry` | 要監看的 `nav_msgs/Odometry`。位置或速度中有任何 NaN 或無限大就算異常。 |
-| `service` | `dso` | 要重啟或啟動的 `services` 項目(需設定 `launch`)。 |
-| `bad_messages` | `1` | 連續幾筆 NaN 才重啟(1 = 立刻)。 |
-| `cooldown_s` | `2` | 兩次 NaN 重啟的最短間隔。 |
-| `settle_s` | `3` | 重啟後忽略里程計的時間。 |
-| `retry_s` | `30` | DSO 沒在跑時第一次重試前的等待,以及 NaN 持續出現時的重啟間隔。 |
-| `retry_max_s` | `300` | DSO 一直剛啟動就結束時,等待時間加倍到此上限。 |
-| `stay_up_s` | `120` | 持續執行這麼久後,等待時間重新計算。 |
+| `service` | `dso` | 要重新啟動或啟動的 `services` 項目（需設定 `launch`）。 |
+| `bad_messages` | `1` | 連續幾筆 NaN 才重新啟動（1 = 立刻）。 |
+| `cooldown_s` | `2` | 兩次 NaN 重新啟動的最短間隔。 |
+| `settle_s` | `3` | 重新啟動後忽略里程計的時間。 |
+| `retry_s` | `30` | DSO 沒在跑時第一次重試前的等待，以及 NaN 持續出現時的重新啟動間隔。 |
+| `retry_max_s` | `300` | DSO 一直剛啟動就結束時，等待時間加倍到此上限。 |
+| `stay_up_s` | `120` | 持續執行這麼久後，等待時間重新計算。 |
 | `fast_restarts` / `window_s` | `3` / `60` | 見上方說明。 |
 | `max_memory_mb` | `auto` | DSO 使用的記憶體（RAM 加 swap）超過這個值時，立刻重新啟動 DSO（不影響 AIO NAV）。`auto`：RAM 的 20%（16 GB 的 Orin NX 約 3.1 GB）；`0`：關閉。起因是 DSO 曾經保留每一張相機影像（約 25 MB/s），直到 RAM 與 swap 用完、整台機器卡死。 |
 
@@ -461,7 +461,7 @@ gnss:
   timeout_s: 3
 ```
 
-GNSS 燈號顯示接收機的定位品質,來自 `NavSatFix.status.status`(已用一段實際行車紀錄核對):**綠色** RTK fix(status 2,約 3 公分)、**黃色** RTK float(status 1,約 10 公分)、**紅色** SPP(status 0,10 公尺)。這個驅動也會送出*帶有*有效位置的 status -1(約 10 公分,出現在 RTK float 期間的單一時刻),所以只要訊息有可用的位置(有限的經緯度與已知的共變異數),就不會是「No signal」:status 沒有對應的種類時顯示 **Fix (type unknown)**,優於 1 公尺為琥珀色,否則為紅色。**No signal** 表示沒有可用的位置:超過 `timeout_s` 沒收到訊息,或 status 沒有附位置;提示會說明是哪一種(例如 *no GNSS message for 3 h*,也就是接收機驅動完全沒有送資料)。這只是提示,不會影響 Ready。它和 Navigation 頁面的「GNSS」輔助燈不同,後者是顯示導航濾波器最近一秒有沒有使用 GNSS。
+GNSS 燈號顯示接收機的定位品質，來自 `NavSatFix.status.status`（已用一段實際行車紀錄核對）：**綠色**「RTK 固定解」（status 2，約 3 公分）、**琥珀色**「RTK 浮動解」（status 1，約 10 公分）、**紅色**「單點定位（SPP）」（status 0，約 10 公尺）。這個驅動也會送出*帶有*有效位置的 status -1（約 10 公分，出現在 RTK 浮動解期間的單一時刻），所以只要訊息有可用的位置（有限的經緯度與已知的共變異數），就不會是「無訊號」（No signal）：status 沒有對應的種類時顯示「定位（類型不明）」（Fix (type unknown)），水平不確定度（1σ）優於 1 公尺時為琥珀色，否則為紅色。「無訊號」表示沒有可用的位置：超過 `timeout_s` 沒收到訊息，或 status 沒有附位置；提示會說明是哪一種（例如 *no GNSS message for 3 h*，也就是接收機驅動完全沒有送資料）。這只是提示，不會影響 Ready。它和 Navigation 頁面的「GNSS」輔助燈不同，後者是顯示導航濾波器最近一秒有沒有使用 GNSS。
 
 ### 4.8 `data`：資料下載頁面
 
@@ -534,7 +534,7 @@ modules:
 
 ## 5. 常見操作
 
-**填入相機與光達的 IP 位址。** 在現有的 `devices` 區段中填入 `host` 這一行，其他行保持不變：
+**填入相機與 LiDAR 的 IP 位址。** 在現有的 `devices` 區段中填入 `host` 這一行，其他行保持不變：
 ```yaml
 devices:
   camera:
@@ -585,5 +585,5 @@ nav:
 | Network 頁面顯示找不到 `aio_nav.yaml` | 將 `nav.aio_nav_config` 設為完整路徑（見第 5 節）。 |
 | ROS 2 頁面顯示 rclpy 無法使用 | `/opt/ros/humble` 沒有安裝 ROS 2 Humble，服務無法載入 ROS 2。 |
 | Live view 顯示「no PointCloud2 topic found」 | 沒有符合的 topic 正在發布。用 `ros2 topic list -t` 檢查，或設定 `preview.topic`。 |
-| 相機／光達顯示「Not set up」 | 沒有設定 `host`。若不需要 ping 檢查，這是正常的。 |
+| 相機／LiDAR 顯示「Not set up」 | 沒有設定 `host`。若不需要 ping 檢查，這是正常的。 |
 | Restart driver 出現 sudo 錯誤 | 安裝後更改過服務名稱，請重新執行安裝程式（見第 2 節）。 |

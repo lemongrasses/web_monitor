@@ -33,10 +33,10 @@ ZH = {
     # ------------------------------------------------------------------ Overview
     "Start-up progress": "啟動進度", "Select a step for details": "點選步驟可查看詳細資訊",
     "Follow vehicle": "跟隨車輛", "Position": "位置", "Latitude": "緯度", "Longitude": "經度",
-    "Height": "高度", "Motion": "運動", "Heading": "航向", "Speed": "速度", "Attitude": "姿態",
+    "Height": "高度", "Motion": "運動", "Heading": "航向", "Speed": "速率", "Attitude": "姿態",
     "Roll": "滾轉", "Pitch": "俯仰",
     "Showing the last known values. No fresh NAV data.": "顯示最後已知的數值，目前沒有新的導航資料。",
-    "Network": "網路", "Camera": "相機", "LiDAR": "光達", "Storage": "儲存空間", "Device uptime": "裝置運行時間",
+    "Network": "網路", "Camera": "相機", "LiDAR": "LiDAR", "Storage": "儲存空間", "Device uptime": "裝置運作時間",
     "For comparing with the vehicle log": "用於與車端記錄比對",
     "Ready signal #{0}, session {1}, updated {2}": "就緒訊號 #{0}，工作階段 {1}，更新於 {2}",
     "Ready to use": "可以使用", "Navigation status": "導航狀態", "Navigation output": "導航輸出",
@@ -77,7 +77,7 @@ ZH = {
     "Show whole trajectory": "顯示完整軌跡",
     "Track of the current run: the last 60 s in detail, older points once per second.":
         "本次執行的軌跡：最近 60 秒為完整資料，較早的每秒一點。",
-    "Velocity": "速度向量", "North": "北", "East": "東", "Up": "上", "Time": "時間", "NAV time": "導航時間",
+    "Velocity": "速度", "North": "北", "East": "東", "Up": "上", "Time": "時間", "NAV time": "導航時間",
     "Initial heading": "初始航向", "Fine alignment": "精對準", "GNSS": "GNSS",
     "ZUPT": "ZUPT", "ZIHR": "ZIHR", "NHC": "NHC", "VUPT": "VUPT",
     "Folder": "資料夾", "(missing)": "（不存在）", "not available on this device": "此裝置上沒有這個資料夾",
@@ -114,15 +114,15 @@ ZH = {
     "The network did not answer in time.": "網路沒有及時回應。",
     "This device is not set up to change Wi-Fi. Ask maintenance to run the installer with --with-wifi.":
         "此裝置尚未設定成可變更 Wi-Fi。請維護人員以 --with-wifi 執行安裝程式。",
-    "Position accuracy for Ready": "就緒所需的定位精度", "Require RTK before Ready": "就緒前需要 RTK",
+    "Position accuracy for Ready": "就緒所需的定位準確度", "Require RTK before Ready": "就緒前需要 RTK",
     "(recommended)": "（建議）", "GNSS now": "目前 GNSS", "Last changed": "上次變更",
     "Ready waits for RTK (float or fix): a position accurate to centimetres or decimetres.":
-        "等到 RTK（浮動解或固定解）才就緒：定位精度為公分到公寸等級。",
-    "Ready waits for an RTK fix: a position accurate to a few centimetres.": "等到 RTK 固定解才就緒：定位精度為數公分。",
-    "Ready does not wait for RTK. The position may be accurate to only a few metres.": "不等 RTK 即可就緒，定位精度可能只有數公尺。",
+        "等到 RTK（浮動解或固定解）才就緒：定位準確度為公分到公寸等級。",
+    "Ready waits for an RTK fix: a position accurate to a few centimetres.": "等到 RTK 固定解才就緒：定位準確度為數公分。",
+    "Ready does not wait for RTK. The position may be accurate to only a few metres.": "不等 RTK 即可就緒，定位準確度可能只有數公尺。",
     "Turn off the RTK requirement?": "要關閉 RTK 要求嗎？",
     "Ready can then be given with a normal GNSS position, accurate to a few metres. Use this only where RTK is not available.":
-        "關閉後，一般 GNSS 定位（精度數公尺）也可以就緒。請只在無法使用 RTK 的地方使用。",
+        "關閉後，一般 GNSS 定位（準確度數公尺）也可以就緒。請只在無法使用 RTK 的地方使用。",
     "Turn off": "關閉", "Keep RTK": "保留 RTK",
     "Automatic start": "自動啟動", "Paused": "已暫停",
     "AIO NAV does not start by itself. Press Start on the Overview page.": "AIO NAV 不會自動啟動。請在總覽頁面按「啟動」。",
@@ -145,7 +145,7 @@ ZH = {
     "Press Start to begin navigation.": "請按「啟動」開始導航。",
     "Waiting for the first navigation output": "等待第一筆導航輸出", "AIO NAV is starting up.": "AIO NAV 正在啟動。",
     "AIO NAV is running but sends no navigation output": "AIO NAV 正在執行，但沒有送出導航輸出",
-    "Navigation output stopped": "導航輸出已停止", "Navigation solution available": "導航解算可用",
+    "Navigation output stopped": "導航輸出已停止", "Navigation solution available": "導航解可用",
     "Navigation output frozen": "導航輸出凍結",
     "Keep the vehicle completely still (about 10 s).": "請讓車輛完全靜止（約 10 秒）。",
     "Drive straight at a steady speed under open sky.": "請在空曠處以穩定速度直線行駛。",
@@ -158,7 +158,7 @@ ZH = {
     "AIO NAV is not running": "AIO NAV 未執行", "No output yet": "尚無輸出", "No NAV packets received": "沒有收到導航封包",
     "Connected": "已連線", "Not set up": "未設定", "Link up": "已接上", "Link down": "未接上",
     "Sensor LAN link down": "感測器網路未接上", "Storage almost full": "儲存空間快滿了",
-    "Position accuracy is poor. Inertial navigation remains active.": "定位精度不佳，慣性導航仍在運作。",
+    "Position accuracy is poor. Inertial navigation remains active.": "定位準確度不佳，慣性導航仍在運作。",
     "Inertial navigation remains active.": "慣性導航仍在運作。",
     "Maintenance is needed before AIO NAV can be used.": "需要先維護才能使用 AIO NAV。",
     "Check the sensors; it starts as soon as they are there, or press Start.": "請檢查感測器；感測器就緒後會自動啟動，或按「啟動」。",
@@ -194,9 +194,9 @@ ZH = {
     "control is disabled": "已停用控制", "bad request": "請求格式錯誤", "action must be start, stop or restart": "動作必須是 start、stop 或 restart",
 
     # settings API (web/settings_api.py) and Wi-Fi (actions/wifi.py)
-    "the internet route (RTK corrections) goes over Wi-Fi": "網際網路路由（RTK 修正）經由 Wi-Fi",
+    "the internet route (RTK corrections) goes over Wi-Fi": "網際網路路由（RTK 修正資料）經由 Wi-Fi",
     "Without RTK, Ready may be reported with a position that is only accurate to a few metres.":
-        "不要求 RTK 時，可能在定位精度只有數公尺時就回報就緒。",
+        "不要求 RTK 時，可能在定位準確度只有數公尺時就回報就緒。",
     "RTK is required for Ready": "就緒需要 RTK", "Ready no longer waits for RTK": "就緒不再等待 RTK",
     "required must be true or false": "required 必須是 true 或 false", "ssid and password must be text": "SSID 與密碼必須是文字",
     "Wi-Fi settings are turned off (wifi.enabled)": "Wi-Fi 設定已關閉（wifi.enabled）",
@@ -216,7 +216,7 @@ ZH = {
         "已由操作人員停止；按下「恢復」或下次上電後會恢復自動啟動",
 
     # ------------------------------------------------------------------ Setup: lever arms (web/setup.py)
-    "Setup": "安裝", "Mounting: lever arms": "安裝位置：槓桿臂",
+    "Setup": "安裝", "Mounting: lever arms": "安裝位置：桿臂",
     "Where the GNSS antenna and the centre of the rear axle are, measured from the IMU in the AIO unit, in metres along the vehicle.":
         "GNSS 天線與後軸中心的位置，從 AIO 單元內的 IMU 量起，沿車身方向，單位為公尺。",
     "Measure them again whenever the AIO unit or the antenna is moved: wrong values make the position and heading worse.":
@@ -248,7 +248,7 @@ ZH = {
     "Saved. They apply when AIO NAV starts again (Restart, or the next power-on).":
         "已儲存。數值會在 AIO NAV 再次啟動時套用（重新啟動，或下次上電）。",
     "this page is out of date; reload it": "此頁面已過期；請重新載入",
-    "changing the lever arms here is turned off": "此處已關閉槓桿臂的變更",
+    "changing the lever arms here is turned off": "此處已關閉桿臂的變更",
     "the settings changed meanwhile (another page?); reload and enter them again": "設定已在其間被變更（其他頁面？）；請重新載入後再輸入",
     "not saved: the vehicle must stand still to restart AIO NAV (it aligns again). Stop, or press Save alone.":
         "未儲存：重新啟動 AIO NAV 需要車輛靜止（它會重新對準）。請停車，或只按「儲存」。",
@@ -269,8 +269,8 @@ PATTERNS = [
     (r"(\d+) Hz", "{0} Hz"),
     (r"GNSS: (.+)", "GNSS：{0}"),
     (r"No GNSS position: (.+)\. Inertial navigation remains active\.", "沒有 GNSS 位置：{0}。慣性導航仍在運作。"),
-    (r"horizontal accuracy (\d+) cm", "水平精度 {0} 公分"),
-    (r"horizontal accuracy ([\d.]+) m", "水平精度 {0} 公尺"),
+    (r"horizontal accuracy (\d+) cm", "水平不確定度 {0} 公分（1σ）"),
+    (r"horizontal accuracy ([\d.]+) m", "水平不確定度 {0} 公尺（1σ）"),
     (r"UDP output (stale|low rate|lost)", "UDP 輸出{0}"),
     (r"stale", "延遲"), (r"low rate", "頻率偏低"), (r"lost", "中斷"),
     (r"([\d.]+) GB free", "剩餘 {0} GB"),
@@ -291,8 +291,8 @@ PATTERNS = [
     (r"AIO NAV is running twice \(pids (.+)\)", "AIO NAV 同時執行了兩份（pid {0}）"),
     (r"(\S+) also starts AIO NAV at boot; disable it \(sudo systemctl disable (\S+)\)", "{0} 也會在開機時啟動 AIO NAV；請停用它（sudo systemctl disable {1}）"),
     (r"no GNSS message received yet on (.+)", "{0} 尚未收到 GNSS 訊息"),
-    (r"no GNSS message for (.+) \(the receiver driver sends none\)", "{0} 沒有 GNSS 訊息（接收器驅動程式沒有送出）"),
-    (r"the receiver reports no position \(status (.+)\)", "接收器回報沒有位置（狀態 {0}）"),
+    (r"no GNSS message for (.+) \(the receiver driver sends none\)", "{0} 沒有 GNSS 訊息（接收機驅動程式沒有送出）"),
+    (r"the receiver reports no position \(status (.+)\)", "接收機回報沒有位置（狀態 {0}）"),
     # automatic start
     (r"Waiting for (.+); AIO NAV may resume by itself", "等待 {0}；AIO NAV 可能會自行恢復"),
     (r"Restarting AIO NAV in (\d+) s if it does not resume", "若 AIO NAV 沒有恢復，{0} 秒後重新啟動"),
@@ -300,7 +300,7 @@ PATTERNS = [
     (r"the vehicle to be still \((.+)\)", "車輛靜止（{0}）"),
     (r"moving: rotation ([\d.]+) rad/s", "移動中：旋轉 {0} rad/s"),
     (r"moving: acceleration varies ([\d.]+) m/s2", "移動中：加速度變化 {0} m/s²"),
-    (r"moving: GNSS speed ([\d.]+) m/s", "移動中：GNSS 速度 {0} m/s"),
+    (r"moving: GNSS speed ([\d.]+) m/s", "移動中：GNSS 速率 {0} m/s"),
     (r"the system clock to match GNSS time \(off by ([-+\d.]+) s\)", "系統時鐘與 GNSS 時間一致（目前相差 {0} 秒）"),
     (r"Starting AIO NAV \(attempt (\d+)\)", "正在啟動 AIO NAV（第 {0} 次）"),
     (r"Waiting for another start or stop to finish \((.+)\)", "等待另一個啟動或停止完成（{0}）"),
