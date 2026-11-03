@@ -800,9 +800,14 @@ class HealthEngine:
         nav_key = self.cfg["nav"]["service"]
         for key, svc in services.items():
             state = svc.get("state")
-            self._track(f"svc:{key}", state or "unknown",
+            ustate = svc.get("unit_state") or {}
+            crash = bool(ustate.get("crash_loop"))
+            reason = ustate.get("reason") or ""
+            restarts = ustate.get("restarts") or ""
+            self._track(f"svc:{key}", "crash_loop" if crash else (state or "unknown"),
                         "success" if state == "running" else "warning", "service",
-                        f"{svc.get('label', key)} {state}")
+                        f"{svc.get('label', key)} keeps restarting" if crash else f"{svc.get('label', key)} {state}",
+                        reason if crash else "")
             # A sensor driver unit that does not exist is "not set up", not a problem.
             optional = (self.cfg["services"].get(key) or {}).get("optional")
             # AIO NAV stopped on purpose (nobody asked it to run) is a normal state, not an issue.
@@ -816,7 +821,13 @@ class HealthEngine:
                 if self.cfg["nav"]["allow_control"] and (svc.get("unit_state") or {}).get("file_state") == "enabled":
                     issue("services", WARNING, f"{unit} starts AIO NAV at boot, and the dashboard also controls it",
                           f"one manager only: sudo systemctl disable {unit}", "system")
-            if state in SERVICE_DOWN_STATES and not optional and (key == nav_key or state != "not_installed"):
+            if crash:
+                # A driver that dies and is restarted by systemd every few seconds is not "running",
+                # optional or not: say so, with the program's own last words (the reason) and the count.
+                detail = "; ".join(x for x in (f"restart {restarts}" if restarts else "", reason or svc.get("unit", "")) if x)
+                issue("services", FAULT if key == nav_key else WARNING,
+                      f"{svc.get('label', key)} keeps restarting", detail, "system")
+            elif state in SERVICE_DOWN_STATES and not optional and (key == nav_key or state != "not_installed"):
                 level = FAULT if key == nav_key else WARNING
                 issue("services", level, f"{svc.get('label', key)} {state.replace('_', ' ')}",
                       svc.get("unit", ""), "system")

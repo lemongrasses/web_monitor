@@ -147,6 +147,7 @@
       driverChip(key) {
         const s = this.services[key];
         if (!s) return this.lvl("unknown", "Unknown");
+        if (s.unit_state && s.unit_state.crash_loop) return this.lvl("fault", "Restarting");
         if (s.unit_state && s.unit_state.active === "activating") return this.lvl("warning", "Starting");
         if (s.state === "running") return this.lvl("healthy", "Running");
         if (s.state === "failed") return this.lvl("fault", "Failed");
@@ -167,6 +168,7 @@
         const group = (c.nav_group || []).concat(c.nav_service ? [c.nav_service] : []);
         // STARTING includes an automatic start that is still waiting for its prerequisites.
         if (group.includes(key) && ["STOPPED", "STARTING"].includes(this.productState) && s && s.state === "stopped") return this.lvl("idle", "Stopped");
+        if (s && s.unit_state && s.unit_state.crash_loop) return this.lvl("fault", "Restarting");
         const m = SERVICE[(s && s.state) || "unknown"] || SERVICE.unknown;
         return this.lvl(m[0], m[1]);
       },

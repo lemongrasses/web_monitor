@@ -85,9 +85,35 @@ def pgrep(pattern: str, timeout: float = 2.0, max_age_s: float = 1.0) -> List[in
     return [pid for pid, cmd in _command_lines(max_age_s) if rx.search(cmd)]
 
 
+# A unit whose restart count rose this recently is in a crash loop: it is reported as failed
+# even while systemd briefly shows it active again (Restart= brings it back every RestartSec).
+CRASH_LOOP_WINDOW_S = 60.0
+_SYSTEMD_OWN_LINE = re.compile(r"^(Started |Starting |Stopped |Stopping |Scheduled restart|Consumed |Deactivated )"
+                               r"|: (Main process exited|Failed with result|Scheduled restart|Consumed )")
+
+
+def unit_last_message(unit: str, user: bool = False, timeout: float = 2.0) -> str:
+    """The last line the unit's own program logged (journal), skipping systemd's lifecycle lines:
+    the reason a crash-looping driver gives ("/dev/ttyUSB0 not present"). "" when unreadable."""
+    try:
+        out = subprocess.run(
+            ["journalctl"] + (["--user"] if user else []) + ["-u", unit, "-n", "12", "-o", "cat", "--no-pager", "-q"],
+            capture_output=True, text=True, timeout=timeout, check=False,
+            env=user_bus_env() if user else None)
+    except (OSError, subprocess.TimeoutExpired):
+        return ""
+    lines = [l.strip() for l in out.stdout.splitlines() if l.strip()]
+    own = [l for l in lines if not _SYSTEMD_OWN_LINE.search(l)]
+    return (own or lines or [""])[-1][:200]
+
+
 def summarize(unit_state: Dict, pids: Optional[List[int]]) -> str:
     """running | stopped | failed | not_installed | unknown."""
     active = unit_state.get("active")
+    if unit_state.get("crash_loop"):
+        return "failed"   # keeps dying; systemd restarts it, but it is not doing its job
+    if active == "activating" and unit_state.get("sub") == "auto-restart":
+        return "failed"   # died, waiting for Restart= to bring it back
     if active in ("active", "reloading", "activating"):
         return "running"
     if pids:
@@ -105,10 +131,39 @@ class ServicesCollector(PeriodicCollector):
     name = "services"
     section = "services"
 
-    def __init__(self, store, cfg, fake=None):
+    def __init__(self, store, cfg, fake=None, clock=time.monotonic):
         super().__init__(store, 2.0)
         self.services = cfg["services"]
         self.fake = fake
+        self._clock = clock
+        self._restarts: Dict[str, int] = {}          # key -> NRestarts seen last
+        self._restarted_at: Dict[str, float] = {}    # key -> when the count last rose (or auto-restart was seen)
+        self._reason: Dict[str, tuple] = {}          # key -> (time, last log line) cache
+
+    def _crash_loop(self, key: str, unit_state: Dict) -> bool:
+        """True while the unit restarted within CRASH_LOOP_WINDOW_S. The count is read from systemd
+        (NRestarts); a sample taken during the restart wait (auto-restart) counts as well, so a unit
+        that was already looping when the dashboard started is caught on the first such sample."""
+        now = self._clock()
+        try:
+            count = int(unit_state.get("restarts") or 0)
+        except ValueError:
+            count = 0
+        prev = self._restarts.get(key)
+        self._restarts[key] = count
+        if (prev is not None and count > prev) or unit_state.get("sub") == "auto-restart":
+            self._restarted_at[key] = now
+        at = self._restarted_at.get(key)
+        return at is not None and now - at < CRASH_LOOP_WINDOW_S
+
+    def _unit_reason(self, key: str, unit: str, user: bool) -> str:
+        now = self._clock()
+        cached = self._reason.get(key)
+        if cached and now - cached[0] < 10.0:
+            return cached[1]
+        reason = unit_last_message(unit, user=user)
+        self._reason[key] = (now, reason)
+        return reason
 
     def poll(self) -> Dict:
         out = {}
@@ -126,6 +181,11 @@ class ServicesCollector(PeriodicCollector):
             else:
                 unit_state = systemd_unit_state(svc["unit"]) if svc.get("unit") else {"load": "none"}
             pids = pgrep(svc["process_pattern"]) if svc.get("process_pattern") else None
+            unit_name = svc.get("user_unit") or svc.get("unit", "")
+            if unit_name and unit_state.get("load") not in ("not-found", "unknown", None):
+                unit_state["crash_loop"] = self._crash_loop(key, unit_state)
+                if unit_state["crash_loop"] or unit_state.get("active") == "failed":
+                    unit_state["reason"] = self._unit_reason(key, unit_name, bool(svc.get("user_unit")))
             state = summarize(unit_state, pids)
             if state in ("not_installed", "unknown") and svc.get("process_pattern"):
                 state = "stopped"  # detected by process too (e.g. desktop app): no unit is fine

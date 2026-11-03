@@ -314,6 +314,7 @@ PATTERNS = [
     (r"(.+); next try in (\d+) s", "{0}；{1} 秒後重試"),
     # start / stop results
     (r"(.+) could not be (started|stopped|restarted)", "{0} 無法{1}"),
+    (r"(.+) keeps restarting", "{0} 不斷重新啟動"),
     (r"started", "啟動"), (r"stopped", "停止"), (r"restarted", "重新啟動"),
     (r"(.+): cannot start \((.+)\)", "{0}：無法啟動（{1}）"),
     (r"stopped (\d+) process\(es\)", "已停止 {0} 個程序"),

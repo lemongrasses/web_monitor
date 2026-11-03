@@ -58,7 +58,7 @@
           <td>{{ svc.label or key }}</td>
           <td class="mono small">{{ svc.unit }}</td>
           <td>{{ chip("serviceChip('" ~ key ~ "')") }}</td>
-          <td class="mono small" x-text="services['{{ key }}'] ? (services['{{ key }}'].unit_state.active || '') + ' ' + (services['{{ key }}'].unit_state.sub || '') : '—'"></td>
+          <td class="mono small"><span x-text="services['{{ key }}'] ? (services['{{ key }}'].unit_state.active || '') + ' ' + (services['{{ key }}'].unit_state.sub || '') : '—'"></span><span class="text-danger ms-2" x-show="services['{{ key }}'] && services['{{ key }}'].unit_state.reason" x-text="services['{{ key }}'] ? (services['{{ key }}'].unit_state.reason || '') : ''"></span></td>
           <td class="mono small" x-text="services['{{ key }}'] ? (services['{{ key }}'].pids || []).join(', ') : ''"></td>
           <td class="small" x-text="services['{{ key }}'] ? (services['{{ key }}'].unit_state.since || '') : ''"></td>
           <td class="num small" x-text="services['{{ key }}'] ? (services['{{ key }}'].unit_state.restarts || '') : ''"></td>
