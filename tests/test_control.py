@@ -146,8 +146,8 @@ class ControlActionsTest(unittest.TestCase):
 class LauncherTest(unittest.TestCase):
     def test_launcher_is_found_from_install_folder_only(self):
         with tempfile.TemporaryDirectory() as root:
-            cfgdir = os.path.join(root, "install", "aio_nav_ros", "share", "aio_nav_ros", "config")
-            libdir = os.path.join(root, "install", "aio_nav_ros", "lib", "aio_nav_ros")
+            cfgdir = os.path.join(root, "install", "aio_core_nav", "share", "aio_core_nav", "config")
+            libdir = os.path.join(root, "install", "aio_core_nav", "lib", "aio_core_nav")
             os.makedirs(cfgdir)
             os.makedirs(libdir)
             yml = os.path.join(cfgdir, "aio_nav.yaml")
@@ -167,8 +167,8 @@ class StartStabilityTest(unittest.TestCase):
         _isolate_state(self)
 
     def _cfg(self, root, body):
-        cfgdir = os.path.join(root, "install", "aio_nav_ros", "share", "aio_nav_ros", "config")
-        libdir = os.path.join(root, "install", "aio_nav_ros", "lib", "aio_nav_ros")
+        cfgdir = os.path.join(root, "install", "aio_core_nav", "share", "aio_core_nav", "config")
+        libdir = os.path.join(root, "install", "aio_core_nav", "lib", "aio_core_nav")
         os.makedirs(cfgdir)
         os.makedirs(libdir)
         yml = os.path.join(cfgdir, "aio_nav.yaml")
@@ -209,7 +209,7 @@ class WorkDirTest(unittest.TestCase):
 
     def test_programs_run_next_to_the_output_folder(self):
         with tempfile.TemporaryDirectory() as root:
-            cfgdir = os.path.join(root, "install", "aio_nav_ros", "share", "aio_nav_ros", "config")
+            cfgdir = os.path.join(root, "install", "aio_core_nav", "share", "aio_core_nav", "config")
             os.makedirs(cfgdir)
             os.makedirs(os.path.join(root, "output"))
             yml = os.path.join(cfgdir, "aio_nav.yaml")
@@ -392,8 +392,8 @@ class ConcurrentStartTest(unittest.TestCase):
     def test_two_simultaneous_starts_launch_one_process(self):
         import threading as th
         with tempfile.TemporaryDirectory() as root:
-            cfgdir = os.path.join(root, "install", "aio_nav_ros", "share", "aio_nav_ros", "config")
-            libdir = os.path.join(root, "install", "aio_nav_ros", "lib", "aio_nav_ros")
+            cfgdir = os.path.join(root, "install", "aio_core_nav", "share", "aio_core_nav", "config")
+            libdir = os.path.join(root, "install", "aio_core_nav", "lib", "aio_core_nav")
             os.makedirs(cfgdir)
             os.makedirs(libdir)
             yml = os.path.join(cfgdir, "aio_nav.yaml")

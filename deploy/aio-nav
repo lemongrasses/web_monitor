@@ -1,0 +1,33 @@
+#!/usr/bin/env bash
+# aio-nav — start AIO NAV (aio_nav_node of aio_core_nav) with a config file. The dashboard's
+# launcher (services.aio_nav.launch: aio-nav), installed to PREFIX/bin by deploy/install.sh.
+# aio_core_nav has no wrapper of its own, so this does what its aio_nav.launch.py does: run the
+# node with the YAML as its parameters file and as the config_file parameter.
+#
+#   aio-nav [path/to/aio_nav.yaml]      default: the package's share/aio_core_nav/config/aio_nav.yaml
+#
+# The aio_core_nav install/ folder: $AIO_CORE_NAV_INSTALL, else the newest of
+# /home/*/aio_core_nav/install and /opt/aio_core_nav/install. ROS_DOMAIN_ID / ROS_LOCALHOST_ONLY
+# come from the caller (the dashboard sets them from aio_nav.yaml or its own environment).
+# The node writes output/ relative to the current folder; the dashboard runs it next to install/.
+set -euo pipefail
+
+cfg="${1:-}"
+inst="${AIO_CORE_NAV_INSTALL:-}"
+if [[ -z "$inst" ]]; then
+  inst="$(ls -td /home/*/aio_core_nav/install /opt/aio_core_nav/install 2>/dev/null | head -1 || true)"
+fi
+[[ -n "$inst" && -f "$inst/setup.bash" ]] \
+  || { echo "aio-nav: aio_core_nav install/ folder not found (set AIO_CORE_NAV_INSTALL)" >&2; exit 1; }
+node="$inst/aio_core_nav/lib/aio_core_nav/aio_nav_node"
+[[ -x "$node" ]] || { echo "aio-nav: $node not found (build aio_core_nav first)" >&2; exit 1; }
+[[ -n "$cfg" ]] || cfg="$inst/aio_core_nav/share/aio_core_nav/config/aio_nav.yaml"
+[[ -f "$cfg" ]] || { echo "aio-nav: config file not found: $cfg" >&2; exit 1; }
+
+set +u
+# shellcheck disable=SC1091
+source /opt/ros/humble/setup.bash
+# shellcheck disable=SC1091
+source "$inst/setup.bash"
+set -u
+exec "$node" --ros-args -r __node:=aio_nav_node --params-file "$cfg" -p "config_file:=$cfg"

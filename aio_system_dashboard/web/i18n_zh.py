@@ -137,7 +137,7 @@ ZH = {
     # ------------------------------------------------------------------ product state (state/health.py)
     "Cannot receive navigation output": "無法接收導航輸出",
     "AIO NAV is not installed on this device": "此裝置沒有安裝 AIO NAV",
-    "Its launcher was not found in the aio-nav-ros install folder.": "在 aio-nav-ros 安裝資料夾中找不到它的啟動程式。",
+    "Its launcher was not found in the aio_core_nav install folder.": "在 aio_core_nav 安裝資料夾中找不到它的啟動程式。",
     "Starting AIO NAV": "正在啟動 AIO NAV", "This takes a few seconds.": "需要幾秒鐘。",
     "AIO NAV stopped unexpectedly": "AIO NAV 意外停止",
     "Press Start to run it again. If it keeps stopping, check the Maintenance page.": "請按「啟動」再次執行。若持續停止，請查看維護頁面。",

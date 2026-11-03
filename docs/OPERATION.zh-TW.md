@@ -324,7 +324,7 @@ ROS_DOMAIN_ID=13 ROS_LOCALHOST_ONLY=0 ros2 bag play <bag 資料夾> --clock 100
 
 1. 在維護頁面 → **AIO NAV config**（第 8 節）把 **UDP destination** 設成您電腦的 IP 與連接埠（例如 `192.0.2.50:9000`）。請改您使用的模式對應的檔案：`aio_nav.yaml`（Live）與 `aio_nav_bag.yaml`（Bag replay）；兩種都用的話，兩個檔案都要改。也可以直接在裝置上編輯檔案：
    ```bash
-   nano ~/aio-nav-ros/install/aio_nav_ros/share/aio_nav_ros/config/aio_nav.yaml
+   nano ~/aio_core_nav/install/aio_core_nav/share/aio_core_nav/config/aio_nav.yaml
    ```
    ```yaml
    output_udp: "192.0.2.50:9000"     # 您電腦的 IP 與連接埠
@@ -534,7 +534,7 @@ ROS domain 與網路設定必須和 AIO NAV 相同：**Live** 使用 domain 10�
 
 ### 7.2 紀錄檔（Data 頁面）
 
-在 `aio_nav.yaml` 啟用（`save_fusion_txt`、`save_parsed_txt`）後，AIO NAV 會在對準完成後，把以 Tab 分隔的文字紀錄寫到 aio-nav-ros 的 `output/` 資料夾（在 `install/` 旁邊；兩個設定檔都指向這裡）：
+在 `aio_nav.yaml` 啟用（`save_fusion_txt`、`save_parsed_txt`）後，AIO NAV 會在對準完成後，把以 Tab 分隔的文字紀錄寫到 aio_core_nav 的 `output/` 資料夾（在 `install/` 旁邊；兩個設定檔都指向這裡）：
 
 | 檔案 | 內容 |
 |------|------|
@@ -659,7 +659,7 @@ aio-dashboard password   # 設定維護頁面的密碼
 | **故障**：「AIO NAV 正在執行，但沒有送出導航輸出」 | 啟動後 60 秒內都沒有輸出（`nav.startup_timeout_s`） | **重新啟動** AIO NAV；到維護頁面檢查它的感測器（IMU／GNSS 驅動）。 |
 | **故障**：「導航輸出已停止」 | 濾波器停住，或其感測器停止輸出 | 到維護頁面檢查 IMU／GNSS 驅動；**重新啟動** AIO NAV。 |
 | 按鈕下方訊息「AIO NAV did not start: …」（此訊息含程式的錯誤內容，保持英文） | AIO NAV 結束了或無法啟動，訊息會說明原因 | 再按一次**啟動**。若重複發生，請收集 `/opt/aio-dashboard/logs/aio_nav.log` 交給導航團隊。 |
-| **故障**：「此裝置沒有安裝 AIO NAV」 | 此裝置上 aio-nav-ros 的 `install/` 資料夾不見或不完整 | 請管理員確認 aio-nav-ros 已安裝。 |
+| **故障**：「此裝置沒有安裝 AIO NAV」 | 此裝置上 aio_core_nav 的 `install/` 資料夾不見或不完整 | 請管理員確認 aio_core_nav 已安裝。 |
 | 即時作業：沒有相機或 IMU 資料 | 感測器驅動已停止（操作人員的停止會被保留：自動啟動與 watchdog 都不會再啟動它） | 維護頁面 → ROS 2 → Sensor drivers → **Start**，等約 15 秒。 |
 | Bag 重播：AIO NAV 收不到資料 | Bag 在別的 ROS domain 播放，或沒有啟動 AIO NAV | 見 4.6 節：從維護頁面 → Replay 播放（會使用正確的 domain），並在總覽頁面按啟動。用終端機時：`ROS_DOMAIN_ID=13 ROS_LOCALHOST_ONLY=0 ros2 bag play … --clock 100`。 |
 | 一直停在**初始化中** | 對準尚未完成 | 依照[對準 SOP](#sec5) 與 5.3 處理。 |

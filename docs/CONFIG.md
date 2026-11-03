@@ -163,10 +163,10 @@ authentication: it does not protect against a computer that spoofs that address 
 | Key | Default | Meaning |
 |-----|---------|---------|
 | `udp_bind` | `127.0.0.1:9000` | Where the dashboard listens for AIO NAV packets. `aio_nav_node` always sends to `127.0.0.1:9000`, so leave this unchanged. The dashboard is the only listener: the AIO Nav desktop app (`aio-nav-ui`) binds the same port, so do not run it together with the dashboard. |
-| `aio_nav_config` | `auto` | Path to AIO NAV's `aio_nav.yaml`. The dashboard reads the UDP destination (`output_udp`) and rate (`output_rate`) from it to display them. `auto` searches `/home/*/aio-nav-ros/install/...` and `~/.local/opt/aio-nav-ros/...` and uses the newest file. The `AIO_NAV_CONFIG` environment variable also works. Edits to the file are picked up within about 2 s, and **Start** / **Restart** always re-read it first, so AIO NAV starts with what is on disk. If the edit changes the ROS domain or localhost setting of the mode in use, the dashboard restarts itself after the start (a few seconds; AIO NAV keeps running) so its own ROS connection follows. |
+| `aio_nav_config` | `auto` | Path to AIO NAV's `aio_nav.yaml`. The dashboard reads the UDP destination (`output_udp`) and rate (`output_rate`) from it to display them. `auto` searches `/home/*/aio_core_nav/install/...` and `~/.local/opt/aio_core_nav/...` and uses the newest file. The `AIO_NAV_CONFIG` environment variable also works. Edits to the file are picked up within about 2 s, and **Start** / **Restart** always re-read it first, so AIO NAV starts with what is on disk. If the edit changes the ROS domain or localhost setting of the mode in use, the dashboard restarts itself after the start (a few seconds; AIO NAV keeps running) so its own ROS connection follows. |
 | `expected_rate_hz` | `null` | Expected packet rate. `null` = use `output_rate` from `aio_nav.yaml`. |
 | `service` | `aio_nav` | Which entry in `services` is AIO NAV. |
-| `allow_control` | `false` (shipped config: `true`) | `true` shows **Start / Restart / Stop** for AIO NAV on the Overview page. **Start** launches the filter and then DSO, **Stop** stops both, exactly like the AIO Nav desktop app (it does nothing for a process that is already running, so it never doubles one started from the app). The programs are the `aio-nav` and `aio-nav-dso` wrappers in the aio-nav-ros `install/` folder; no source code is needed. Stop and Restart ask for a second click. Only computers in `access.allowed_clients` can reach the page. |
+| `allow_control` | `false` (shipped config: `true`) | `true` shows **Start / Restart / Stop** for AIO NAV on the Overview page. **Start** launches the filter and then DSO, **Stop** stops both, exactly like the AIO Nav desktop app (it does nothing for a process that is already running, so it never doubles one started from the app). The programs are the `aio-nav` and `aio-nav-dso` wrappers in the aio_core_nav `install/` folder; no source code is needed. Stop and Restart ask for a second click. Only computers in `access.allowed_clients` can reach the page. |
 | `control_group` | `[aio_nav, dso]` | Which `services` entries Start/Stop acts on, in start order. Each needs a `launch` setting. |
 | `startup_grace_s` | `3.0` | For this long after the dashboard starts, it shows "Unknown" while it is still checking whether AIO NAV runs. |
 | `startup_timeout_s` | `60` | After AIO NAV starts, it shows **Starting** until the first output arrives. With no output for this long the state becomes **Fault** ("running but sends no navigation output"). AIO NAV not running and not asked to run is **Stopped**, never a fault. |
@@ -317,7 +317,7 @@ them. Every restart is in the event log (*Sensor drivers restarted*).
 
 ```yaml
 services:
-  aio_nav:   { label: AIO NAV, unit: aio-nav.service, process_pattern: lib/aio_nav_ros/aio_nav_node }
+  aio_nav:   { label: AIO NAV, unit: aio-nav.service, process_pattern: lib/aio_core_nav/aio_nav_node }
   camera:    { label: Camera driver, unit: camera.service, restartable: true }
   ouster:    { label: Ouster driver, unit: ouster.service, restartable: true }
   dashboard: { label: Dashboard, unit: aio-dashboard.service }
@@ -330,7 +330,7 @@ services:
 | `unit` | systemd unit name (`systemctl status <unit>`). |
 | `process_pattern` | Optional. Also counts the service as running when a process matches this text (`pgrep -f`). AIO NAV uses this, so starting it from the AIO Nav desktop app is detected too. |
 | `restartable` | `true` adds a **Restart driver** button on the Camera or LiDAR page. Re-run the installer after changing this (see section 2). |
-| `launch` | Name of a wrapper in the aio-nav-ros `install/aio_nav_ros/lib/aio_nav_ros/` folder (`aio-nav`, `aio-nav-dso`), or an absolute path. Lets the dashboard start and stop this program, which is found again by its `process_pattern`. The program runs as the dashboard's user in its own session; its ROS domain comes from `aio_nav.yaml`, not from the dashboard. Output goes to `logs/<name>.log`. The dashboard service uses `KillMode=process`, so AIO NAV keeps running when the dashboard restarts. |
+| `launch` | Name of a wrapper in the aio_core_nav `install/aio_core_nav/lib/aio_core_nav/` folder (`aio-nav`, `aio-nav-dso`), or an absolute path. Lets the dashboard start and stop this program, which is found again by its `process_pattern`. The program runs as the dashboard's user in its own session; its ROS domain comes from `aio_nav.yaml`, not from the dashboard. Output goes to `logs/<name>.log`. The dashboard service uses `KillMode=process`, so AIO NAV keeps running when the dashboard restarts. |
 | `optional` | `true` means the program being stopped is not a warning (used for DSO). |
 | `user_unit` | Name of a systemd **user** unit (`systemctl --user`), such as `openrtk330-basler-drivers.service` (the camera and IMU/GNSS drivers). It adds a **Sensor drivers** panel with Start / Stop / Restart on **Maintenance > ROS 2**, so the live drivers can be stopped before playing a bag (otherwise live and recorded data mix). It runs as the dashboard's user, with no sudo. Stop and Restart ask for confirmation; the driver unit waits about 15 s before the drivers publish. |
 
@@ -480,7 +480,7 @@ ros:
 |-----|---------|---------|
 | `enabled` | `true` | `false` turns ROS 2 monitoring off. Topic lamps then show Unknown. |
 | `mode` | `null` (shipped config: `live`) | The mode in use until someone picks another on **Maintenance > Replay** (that choice is stored in `state/ros_mode.json` and wins over this setting). Choosing a mode needs the optional replay module (4.12); without it this setting is the only one used, so a product machine stays on `live`. `null` keeps the environment of the service. |
-| `modes` | `live`: `aio_nav.yaml`; `bag`: `aio_nav_bag.yaml` | Each mode names an aio-nav-ros config file (in the folder of the normal `aio_nav.yaml`). AIO NAV and DSO are started with that file as their argument, and its `ros_domain_id` / `ros_localhost_only` become the dashboard's own ROS environment, so all three always agree. The file also decides `use_sim_time`. A mode may add `domain_id` / `localhost_only` to override the file. A mode whose file is missing cannot be selected. Switching stops AIO NAV and DSO and restarts the dashboard (a few seconds); start AIO NAV again afterwards. The camera and IMU drivers are not touched. |
+| `modes` | `live`: `aio_nav.yaml`; `bag`: `aio_nav_bag.yaml` | Each mode names an aio_core_nav config file (in the folder of the normal `aio_nav.yaml`). AIO NAV and DSO are started with that file as their argument, and its `ros_domain_id` / `ros_localhost_only` become the dashboard's own ROS environment, so all three always agree. The file also decides `use_sim_time`. A mode may add `domain_id` / `localhost_only` to override the file. A mode whose file is missing cannot be selected. Switching stops AIO NAV and DSO and restarts the dashboard (a few seconds); start AIO NAV again afterwards. The camera and IMU drivers are not touched. |
 | `isolation_restart` | `false` (shipped config: `true`) | Restart the dashboard when its own ROS connection is stuck. This happened once after a boot: the dashboard started before the sensor drivers and never discovered them, so the IMU, camera and GNSS looked missing. It acts only when the sensor driver process is running **in the same ROS domain and localhost setting** as the dashboard, yet no other node is visible for `isolation_grace_s` (30 s). It never acts while the drivers are stopped or in another domain, and at most once per `isolation_cooldown_s` (600 s), so it cannot loop. The restart is recorded in the event log. |
 | `sampling` | `enabled: false` (shipped config: `true`), `period_s: 5`, `window_s: 1.5`, `above_hz: 30` | Saves CPU on high-rate topics. A watched topic whose `expected_hz` is at least `above_hz` (the 100 Hz IMU) is listened to only `window_s` out of every `period_s`; the rate and freshness on the ROS 2 page are those of the last window and are marked *sampled*. Without it, a 100 Hz topic costs a Python callback per message (about 12% of one core). **Trade-off:** a topic that keeps its publisher but goes silent shows *Stale* up to `period_s` later (about 1 s without sampling), and a drop shorter than `period_s` can be missed. A topic that disappears is still *Missing* at once. It only changes this dashboard's own subscriptions: GNSS, the visual-odometry watch, the camera/LiDAR previews, the drivers and ROS itself are not affected. |
 | `graph_interval_s` | `2` | How often the list of nodes and topics is refreshed. |
@@ -580,13 +580,13 @@ data:
 ```
 
 `auto` offers AIO NAV's log folder. That is the folder of `fusion_txt_path` in
-`aio_nav.yaml` if it is an absolute path, otherwise `output/` next to aio-nav-ros's
+`aio_nav.yaml` if it is an absolute path, otherwise `output/` next to aio_core_nav's
 `install/` folder. To list folders yourself:
 
 ```yaml
 data:
   roots:
-    - { id: logs,  name: AIO NAV logs, path: /home/jetson/aio-nav-ros/output }
+    - { id: logs,  name: AIO NAV logs, path: /home/jetson/aio_core_nav/output }
     - { id: bags,  name: ROS bags,     path: /home/jetson/bags }
 ```
 
@@ -640,7 +640,7 @@ Without it the machine always runs Live.
 | `enabled` | `true` | `false` hides the module although it is installed (the machine then runs Live). |
 | `bag_roots` | `["~"]` | Folders searched for bags. A folder holding a `metadata.yaml` is a bag. `~` is the service user's home folder. Only bags found here can be played. |
 | `scan_depth` | `2` | How many folder levels below each root are searched. The search does not go into a bag or into hidden folders. |
-| `ros_setup` | `auto` | The `setup.bash` sourced before `ros2 bag play`. `auto`: the aio-nav-ros `install/setup.bash` (it also knows AIO NAV's own message types), else `/opt/ros/<distro>/setup.bash`. |
+| `ros_setup` | `auto` | The `setup.bash` sourced before `ros2 bag play`. `auto`: the aio_core_nav `install/setup.bash` (it also knows AIO NAV's own message types), else `/opt/ros/<distro>/setup.bash`. |
 | `log_file` | `logs/bag_play.log` | Output of the player (shown under *Player output*). |
 | `stop_grace_s` | `5` | Stop sends SIGINT, then SIGTERM, then SIGKILL; this is the wait after SIGINT. |
 
@@ -682,10 +682,10 @@ nav:
   ready_requires: [alignment, heading_valid, fine_alignment]
 ```
 
-**aio-nav-ros is installed somewhere unusual.** Change the `aio_nav_config` line in `nav`:
+**aio_core_nav is installed somewhere unusual.** Change the `aio_nav_config` line in `nav`:
 ```yaml
 nav:
-  aio_nav_config: /data/aio-nav-ros/install/aio_nav_ros/share/aio_nav_ros/config/aio_nav.yaml
+  aio_nav_config: /data/aio_core_nav/install/aio_core_nav/share/aio_core_nav/config/aio_nav.yaml
 ```
 
 After any change: `sudo systemctl restart aio-dashboard`.

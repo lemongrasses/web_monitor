@@ -255,6 +255,8 @@ else
 fi
 cp "$SRC"/docs/CONFIG*.md "$SRC"/docs/OPERATION*.md "$PREFIX/docs/" 2>/dev/null || true
 install -m 0755 "$SRC/deploy/aio-dashboard" "$PREFIX/bin/aio-dashboard"
+# AIO NAV launcher for aio_core_nav (services.aio_nav.launch: aio-nav); it has no wrapper of its own.
+[[ -f "$SRC/deploy/aio-nav" ]] && install -m 0755 "$SRC/deploy/aio-nav" "$PREFIX/bin/aio-nav"
 ln -sf "$PREFIX/bin/aio-dashboard" /usr/local/bin/aio-dashboard
 if [[ -f "$PREFIX/config/dashboard.yaml" && $RESET_CONFIG -eq 1 ]]; then
   cp "$PREFIX/config/dashboard.yaml" "$PREFIX/config/dashboard.yaml.bak"

@@ -37,8 +37,8 @@ class PickTopicTest(unittest.TestCase):
 class DiscoveryTest(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
-        root = os.path.join(self.tmp.name, "home", "jetson", "aio-nav-ros")
-        self.cfg_dir = os.path.join(root, "install", "aio_nav_ros", "share", "aio_nav_ros", "config")
+        root = os.path.join(self.tmp.name, "home", "jetson", "aio_core_nav")
+        self.cfg_dir = os.path.join(root, "install", "aio_core_nav", "share", "aio_core_nav", "config")
         os.makedirs(self.cfg_dir)
         self.yaml = os.path.join(self.cfg_dir, "aio_nav.yaml")
         with open(self.yaml, "w") as f:
@@ -54,8 +54,8 @@ class DiscoveryTest(unittest.TestCase):
         self.assertEqual(aio_nav_output_dir(self.yaml, "/data/logs/run_fusion.txt"), "/data/logs")
 
     def test_auto_config_and_data_root(self):
-        globs = (os.path.join(self.tmp.name, "home", "*", "aio-nav-ros", "install", "aio_nav_ros",
-                              "share", "aio_nav_ros", "config", "aio_nav.yaml"),)
+        globs = (os.path.join(self.tmp.name, "home", "*", "aio_core_nav", "install", "aio_core_nav",
+                              "share", "aio_core_nav", "config", "aio_nav.yaml"),)
         with mock.patch.object(config_mod, "AIO_NAV_CONFIG_GLOBS", globs), \
                 mock.patch.dict(os.environ, {"AIO_NAV_CONFIG": ""}):
             cfg = load_config("config/dashboard.yaml")

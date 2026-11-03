@@ -1,4 +1,4 @@
-"""Edit the aio-nav-ros config files (aio_nav.yaml, aio_nav_bag.yaml) from the Maintenance page.
+"""Edit the aio_core_nav config files (aio_nav.yaml, aio_nav_bag.yaml) from the Maintenance page.
 
 * Only the config files of the configured modes can be opened; the page names a mode, never a path.
 * The form changes values in place, line by line, so comments and layout stay as they are. The raw
@@ -408,11 +408,11 @@ _HINTS = [("Failed to parse global arguments",
 
 def node_program(config_path: str) -> Optional[Path]:
     """aio_nav_node of the install the config file belongs to:
-    <prefix>/share/aio_nav_ros/config/aio_nav.yaml -> <prefix>/lib/aio_nav_ros/aio_nav_node."""
+    <prefix>/share/aio_core_nav/config/aio_nav.yaml -> <prefix>/lib/aio_core_nav/aio_nav_node."""
     p = Path(config_path).resolve()
     if len(p.parents) < 4:
         return None
-    node = p.parents[3] / "lib" / "aio_nav_ros" / "aio_nav_node"
+    node = p.parents[3] / "lib" / "aio_core_nav" / "aio_nav_node"
     return node if os.access(node, os.X_OK) and (node.parent / "aio_nav_env.sh").is_file() else None
 
 

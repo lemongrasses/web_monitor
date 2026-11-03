@@ -1,4 +1,4 @@
-"""Switch between live and bag replay (two aio-nav-ros config files) from the maintenance page.
+"""Switch between live and bag replay (two aio_core_nav config files) from the maintenance page.
 
 The dashboard's own ROS connection and the AIO NAV / DSO processes must all use the same
 domain (the one in the chosen config file), so a switch (1) stops AIO NAV and DSO, (2) stores the choice in state/ros_mode.json,

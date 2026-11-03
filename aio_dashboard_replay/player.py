@@ -172,7 +172,7 @@ def _num(x: float) -> str:
 
 
 def find_ros_setup(configured: str, aio_nav_path: str = "") -> Optional[str]:
-    """setup.bash to source: the configured one, else the aio-nav-ros install (it knows its own
+    """setup.bash to source: the configured one, else the aio_core_nav install (it knows its own
     message types and sources ROS), else /opt/ros/<distro>."""
     if configured and configured != "auto":
         p = os.path.expanduser(configured)

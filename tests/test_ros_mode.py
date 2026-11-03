@@ -24,7 +24,7 @@ class RosModeTest(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
         self.addCleanup(self.tmp.cleanup)
-        cfgdir = Path(self.tmp.name) / "install" / "aio_nav_ros" / "share" / "aio_nav_ros" / "config"
+        cfgdir = Path(self.tmp.name) / "install" / "aio_core_nav" / "share" / "aio_core_nav" / "config"
         cfgdir.mkdir(parents=True)
         (cfgdir / "aio_nav.yaml").write_text(LIVE)
         (cfgdir / "aio_nav_bag.yaml").write_text(BAG)

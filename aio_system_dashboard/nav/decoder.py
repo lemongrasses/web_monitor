@@ -1,7 +1,7 @@
 """AIO NAV binary packet (msg_id 0x04) decoder.
 
 Derived from setup_env ``decoder.py:parse_nav_solution_packet`` with two fixes
-for the aio-nav-ros wire format (see ``nav_solution_udp_writer.cpp``):
+for the aio_core_nav wire format (see ``nav_solution_udp_writer.cpp``):
 
 * Flag bit 3 (after bit reversal) is VUPT / odometry update, not ``imu_valid``.
 * The third velocity component is velocity **Up** (``-vel_d``), so it is exposed

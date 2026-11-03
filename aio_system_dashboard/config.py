@@ -32,7 +32,7 @@ DEFAULTS: Dict[str, Any] = {
     "access": {"allowed_clients": []},
     "nav": {
         "udp_bind": "127.0.0.1:9000",
-        "aio_nav_config": "auto",  # "auto": search the usual aio-nav-ros install locations
+        "aio_nav_config": "auto",  # "auto": search the usual aio_core_nav install locations
         "expected_rate_hz": None,  # None: take output_rate from aio_nav_config
         "service": "aio_nav",
         "allow_control": False,    # True: the Overview page can start/stop AIO NAV (+ DSO)
@@ -55,7 +55,7 @@ DEFAULTS: Dict[str, Any] = {
     "system": {"interval_s": 2.0, "disk_paths": ["/"], "disk_warn_percent": 90, "temp_warn_c": 85},
     "ros": {"enabled": True, "graph_interval_s": 2.0, "rate_window_s": 2.0, "nodes": [], "topics": [],
             # Modes: the active one is chosen on Maintenance > ROS 2 (stored in state/ros_mode.json) or
-            # by ros.mode here. Each mode names an aio-nav-ros config file (in the folder of the
+            # by ros.mode here. Each mode names an aio_core_nav config file (in the folder of the
             # normal aio_nav.yaml); AIO NAV and DSO are started with it, and its ros_domain_id /
             # ros_localhost_only become the dashboard's own ROS environment. A mode may also set
             # domain_id / localhost_only itself to override the file. mode: null keeps the environment.
@@ -70,7 +70,7 @@ DEFAULTS: Dict[str, Any] = {
             "sampling": {"enabled": False, "period_s": 5.0, "window_s": 1.5, "above_hz": 30.0},
             "modes": {"live": {"label": "Live", "config": "aio_nav.yaml"},
                       "bag": {"label": "Bag replay", "config": "aio_nav_bag.yaml"}}},
-    "data": {"roots": "auto"},  # "auto": the aio-nav-ros output folder
+    "data": {"roots": "auto"},  # "auto": the aio_core_nav output folder
     # Optional modules (see modules.py), e.g. {replay: {enabled: false}}. A module is on when it is
     # installed, unless switched off here.
     "modules": {},
@@ -217,14 +217,14 @@ def parse_host_port(value: str, default_host: str = "127.0.0.1") -> Optional[tup
     return host, port_i
 
 
-# Where aio-nav-ros puts aio_nav.yaml: a colcon install in a clone, or a release prefix
-# (scripts/deploy_release.sh --prefix ~/.local/opt/aio-nav-ros).
+# Where aio_core_nav puts aio_nav.yaml: a colcon install in a clone, or a release prefix
+# (scripts/deploy_release.sh --prefix ~/.local/opt/aio_core_nav).
 AIO_NAV_CONFIG_GLOBS = (
-    "/home/*/aio-nav-ros/install/aio_nav_ros/share/aio_nav_ros/config/aio_nav.yaml",
-    "/home/*/*/aio-nav-ros/install/aio_nav_ros/share/aio_nav_ros/config/aio_nav.yaml",
-    "/home/*/.local/opt/aio-nav-ros/aio_nav_ros/share/aio_nav_ros/config/aio_nav.yaml",
-    "/root/aio-nav-ros/install/aio_nav_ros/share/aio_nav_ros/config/aio_nav.yaml",
-    "/opt/aio-nav-ros/install/aio_nav_ros/share/aio_nav_ros/config/aio_nav.yaml",
+    "/home/*/aio_core_nav/install/aio_core_nav/share/aio_core_nav/config/aio_nav.yaml",
+    "/home/*/*/aio_core_nav/install/aio_core_nav/share/aio_core_nav/config/aio_nav.yaml",
+    "/home/*/.local/opt/aio_core_nav/aio_core_nav/share/aio_core_nav/config/aio_nav.yaml",
+    "/root/aio_core_nav/install/aio_core_nav/share/aio_core_nav/config/aio_nav.yaml",
+    "/opt/aio_core_nav/install/aio_core_nav/share/aio_core_nav/config/aio_nav.yaml",
 )
 
 
@@ -240,7 +240,7 @@ def discover_aio_nav_config() -> str:
 def aio_nav_output_dir(config_path: str, fusion_txt_path: str = "") -> Optional[str]:
     """Folder where aio_nav_node writes its logs.
 
-    An absolute fusion_txt_path wins. Otherwise logs go to output/ in the aio-nav-ros
+    An absolute fusion_txt_path wins. Otherwise logs go to output/ in the aio_core_nav
     tree (the folder that contains install/, or the release prefix).
     """
     if fusion_txt_path and os.path.isabs(fusion_txt_path):
@@ -252,9 +252,13 @@ def aio_nav_output_dir(config_path: str, fusion_txt_path: str = "") -> Optional[
         if (parent / "output").is_dir():
             return str(parent / "output")
     for parent in p.parents:
-        if parent.name == "install" or parent.name == "aio-nav-ros":
-            root = parent.parent if parent.name == "install" else parent
-            return str(root / "output")
+        if parent.name == "install":
+            return str(parent.parent / "output")
+    # Release prefix (no install/): the outermost aio_core_nav folder. The package and its share/
+    # folder carry the same name, so the nearest ones are not the tree's root.
+    roots = [parent for parent in p.parents if parent.name == "aio_core_nav"]
+    if roots:
+        return str(roots[-1] / "output")
     return None
 
 
@@ -351,7 +355,7 @@ class Config:
 
     @property
     def aio_nav(self) -> Dict[str, Any]:
-        """Parameters of the active aio-nav-ros config file. Re-read when it is older than
+        """Parameters of the active aio_core_nav config file. Re-read when it is older than
         AIO_NAV_MAX_AGE_S, and the file is only parsed again when it changed on disk, so editing
         aio_nav.yaml takes effect without restarting the dashboard."""
         now = time.monotonic()
@@ -385,14 +389,14 @@ class Config:
         rate = self.data["nav"].get("expected_rate_hz")
         return float(rate) if rate else self.aio_nav.get("output_rate")
 
-    # ---- ROS mode -> aio-nav-ros config file
+    # ---- ROS mode -> aio_core_nav config file
     def _aio_nav_base(self) -> str:
-        """The normal aio_nav.yaml (configured, or found in the aio-nav-ros install folder)."""
+        """The normal aio_nav.yaml (configured, or found in the aio_core_nav install folder)."""
         configured = self.data["nav"].get("aio_nav_config", "auto")
         return discover_aio_nav_config() if configured in ("", "auto", None) else str(resolve_path(configured))
 
     def mode_config_path(self, mode: Optional[str] = None) -> Optional[str]:
-        """Path of the aio-nav-ros config file belonging to a mode (default: the active one)."""
+        """Path of the aio_core_nav config file belonging to a mode (default: the active one)."""
         mode = mode if mode is not None else self.ros_mode()
         name = (self.data["ros"]["modes"].get(mode) or {}).get("config") if mode else None
         base = self._aio_nav_base()
@@ -488,14 +492,19 @@ class Config:
         }
 
     def launcher(self, name: str) -> Optional[str]:
-        """Path of an aio-nav-ros wrapper (aio-nav, aio-nav-dso) from the install/ folder."""
+        """Path of a wrapper (aio-nav, aio-nav-dso): an absolute path, else lib/aio_core_nav/<name>
+        in the aio_core_nav install/ folder, else the dashboard's own bin/ (installed) or deploy/
+        (source checkout). aio_core_nav ships no wrapper, so deploy/aio-nav starts its aio_nav_node."""
         if os.path.isabs(name):
             return name if os.access(name, os.X_OK) else None
         path = self.aio_nav.get("path")
-        if not path:
-            return None
-        for parent in Path(path).resolve().parents:
-            cand = parent / "lib" / "aio_nav_ros" / name
+        if path:
+            for parent in Path(path).resolve().parents:
+                cand = parent / "lib" / "aio_core_nav" / name
+                if cand.is_file() and os.access(cand, os.X_OK):
+                    return str(cand)
+        app = Path(__file__).resolve().parents[1]
+        for cand in (app / "bin" / name, app / "deploy" / name):
             if cand.is_file() and os.access(cand, os.X_OK):
                 return str(cand)
         return None

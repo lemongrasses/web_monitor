@@ -112,7 +112,7 @@ def raw_product_state(nav: Dict, run: Dict, ncfg: Dict) -> Tuple[str, List[str],
     if not run.get("running") and not fresh:
         if state == "not_installed":
             return PRODUCT_FAULT, [NOT_INSTALLED,
-                                   "Its launcher was not found in the aio-nav-ros install folder."], None
+                                   "Its launcher was not found in the aio_core_nav install folder."], None
         wanted_age = run.get("wanted_age_s")
         if run.get("wanted") and wanted_age is not None and wanted_age < START_REQUEST_GRACE_S:
             return STARTING, ["Starting AIO NAV", "This takes a few seconds."], None

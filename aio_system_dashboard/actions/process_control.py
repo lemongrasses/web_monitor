@@ -1,13 +1,13 @@
 """Start / stop AIO NAV and DSO the way the AIO Nav desktop app (aio-nav-ui) does.
 
-* Start: for each member, spawn its wrapper (aio-nav, aio-nav-dso from the aio-nav-ros
+* Start: for each member, spawn its wrapper (aio-nav, aio-nav-dso from the aio_core_nav
   install/ folder) in its own session unless a process matching its pattern already runs
   (so it never doubles a node started from the app).
 * Stop: SIGTERM every matching process, then SIGKILL what is left after a grace period.
 * Processes are found by command-line pattern, so ones started by the app are controlled too.
 
 Targets come from config only (``services.<key>.launch``); the web request never carries a
-command. The children get a clean environment and the active mode's aio-nav-ros config file
+command. The children get a clean environment and the active mode's aio_core_nav config file
 (aio_nav.yaml for live, aio_nav_bag.yaml for bag replay) as their argument; that file decides
 ros_domain_id, ros_localhost_only and use_sim_time.
 """
@@ -34,8 +34,13 @@ GROUP = "nav_core"
 
 def child_env(cfg=None) -> Dict[str, str]:
     env = {k: os.environ[k] for k in KEEP_ENV if k in os.environ}
+    # The dashboard's own ROS domain (the drivers' one, from its systemd unit) is the default:
+    # aio_core_nav's aio_nav.yaml carries no ros_domain_id, and the mode may not set one either.
+    for k in ("ROS_DOMAIN_ID", "ROS_LOCALHOST_ONLY"):
+        if k in os.environ:
+            env[k] = os.environ[k]
     if cfg is not None:
-        env.update(cfg.ros_env())  # else the wrappers read ros_domain_id from aio_nav.yaml
+        env.update(cfg.ros_env())  # the mode's domain (its override or ros_domain_id of aio_nav.yaml)
     env.setdefault("DISPLAY", ":0")  # same default as the desktop app
     return env
 
@@ -250,7 +255,7 @@ def _start_one(cfg, key: str, wait_s: float, stable_s: float) -> Dict:
     launcher = cfg.launcher(svc["launch"])
     if not launcher:
         return {"ok": False, "text": f"{label}: launcher '{svc['launch']}' not found "
-                                     "(aio-nav-ros install folder)"}
+                                     "(aio_core_nav install folder)"}
     argv = [launcher] + ([cfg.mode_config_path()] if cfg.mode_config_path() else [])
     log = resolve_path(f"logs/{key}.log")
     try:
@@ -327,7 +332,7 @@ def _alive(pid: int) -> bool:
 def control(cfg, target: str, verb: str, grace_s: float, fake=None) -> Dict:
     keys = _keys(cfg, target)
     if verb in ("start", "restart"):
-        cfg.refresh_aio_nav()            # start with the aio-nav-ros config file as it is on disk now
+        cfg.refresh_aio_nav()            # start with the aio_core_nav config file as it is on disk now
     if cfg.fake:
         time.sleep(1.5)
         for k in keys:

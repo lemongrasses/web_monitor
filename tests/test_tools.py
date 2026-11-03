@@ -53,7 +53,7 @@ def install_fake_node(config_dir: Path) -> bool:
     """Put FAKE_NODE where test_start looks for aio_nav_node; False if this system cannot isolate it."""
     if subprocess.run(["unshare", "-rn", "true"], capture_output=True).returncode != 0:
         return False
-    lib = config_dir.parents[2] / "lib" / "aio_nav_ros"
+    lib = config_dir.parents[2] / "lib" / "aio_core_nav"
     lib.mkdir(parents=True)
     (lib / "aio_nav_node").write_text(FAKE_NODE)
     (lib / "aio_nav_node").chmod(0o755)
@@ -133,7 +133,7 @@ class ConfigFilesTest(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
         self.addCleanup(self.tmp.cleanup)
-        d = Path(self.tmp.name) / "install" / "aio_nav_ros" / "share" / "aio_nav_ros" / "config"
+        d = Path(self.tmp.name) / "install" / "aio_core_nav" / "share" / "aio_core_nav" / "config"
         d.mkdir(parents=True)
         (d / "aio_nav.yaml").write_text(LIVE)
         (d / "aio_nav_bag.yaml").write_text(BAG)
@@ -287,7 +287,7 @@ class GuardWebTest(unittest.TestCase):
         self.tmp = tempfile.TemporaryDirectory()
         self.addCleanup(self.tmp.cleanup)
         base = Path(self.tmp.name)
-        d = base / "install" / "aio_nav_ros" / "share" / "aio_nav_ros" / "config"
+        d = base / "install" / "aio_core_nav" / "share" / "aio_core_nav" / "config"
         d.mkdir(parents=True)
         (d / "aio_nav.yaml").write_text(LIVE)
         (d / "aio_nav_bag.yaml").write_text(BAG)

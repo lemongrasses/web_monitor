@@ -35,7 +35,7 @@ class SetupTest(unittest.TestCase):
         self.tmp = tempfile.TemporaryDirectory()
         self.addCleanup(self.tmp.cleanup)
         base = Path(self.tmp.name)
-        d = base / "install" / "aio_nav_ros" / "share" / "aio_nav_ros" / "config"
+        d = base / "install" / "aio_core_nav" / "share" / "aio_core_nav" / "config"
         d.mkdir(parents=True)
         (d / "aio_nav.yaml").write_text(LIVE)
         (d / "aio_nav_bag.yaml").write_text(BAG)
