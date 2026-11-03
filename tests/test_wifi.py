@@ -235,6 +235,13 @@ class ParseTest(unittest.TestCase):
         self.assertTrue(nets[0]["in_use"])
 
 
+    def test_nmcli_runs_in_a_utf8_locale_so_chinese_names_survive(self):
+        # In the plain C locale nmcli prints a Chinese SSID as "?????" and it cannot be joined.
+        rc, out = w._nm_runner(["sh", "-c", 'echo "$LC_ALL"; printf "%s\\n" "$1"', "sh", "粉紅豬小妹"], 5)
+        self.assertEqual(rc, 0)
+        self.assertEqual(out.splitlines(), ["C.UTF-8", "粉紅豬小妹"])
+
+
 class ConnectTest(unittest.TestCase):
     def mgr(self, nm):
         self.events, self.clock = Events(), Clock()

@@ -95,11 +95,21 @@ def scrub(text: str, secret: Optional[str]) -> str:
     return text.replace(secret, "********") if secret else text
 
 
+NM_LOCALE = "C.UTF-8"       # English messages (failure_code matches them) in a UTF-8 locale
+
+
 def _nm_runner(argv: List[str], timeout: float) -> Tuple[int, str]:
-    """Run nmcli with English messages; (exit code, stdout + stderr)."""
-    env = dict(os.environ, LC_ALL="C", LANG="C")
+    """Run nmcli with English messages; (exit code, stdout + stderr).
+
+    The locale must be UTF-8, not plain "C": in the C locale nmcli prints every non-ASCII
+    character of a network name as "?", so a Chinese SSID scanned as "?????" and could not be
+    joined (seen on the Jetson, 2026-11-03). C.UTF-8 is built into glibc 2.35+, so it is there
+    whatever locales are installed. The output is decoded as UTF-8 as well, whatever locale the
+    dashboard's own process was started with (systemd gives it none)."""
+    env = dict(os.environ, LC_ALL=NM_LOCALE, LANG=NM_LOCALE)
     try:
-        r = subprocess.run(argv, capture_output=True, text=True, timeout=timeout, env=env, check=False)
+        r = subprocess.run(argv, capture_output=True, encoding="utf-8", errors="replace",
+                           timeout=timeout, env=env, check=False)
     except subprocess.TimeoutExpired:
         return 124, "timed out"
     except OSError as e:
