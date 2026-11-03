@@ -8,7 +8,7 @@
 # DIR (default: ~/aio-dashboard-backup-<time>) first.
 # The recorder's records (/var/log/aio-sysmon) and the persistent-journal setting are kept: they
 # are the evidence about past freezes. Delete them yourself if you want them gone.
-# Not touched: network services, sensor drivers, aio_core_nav, and AIO NAV / DSO processes that
+# Not touched: network services, sensor drivers, the navigation package (aio_nav_ros / aio_core_nav), and AIO NAV / DSO processes that
 # were started from the dashboard (they run in their own sessions; stop them from the Overview page).
 set -euo pipefail
 

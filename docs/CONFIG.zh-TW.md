@@ -133,9 +133,10 @@ access:
 | 項目 | 預設值 | 說明 |
 |------|--------|------|
 | `udp_bind` | `127.0.0.1:9000` | 儀表板接收 AIO NAV 封包的位址。`aio_nav_node` 一律送往 `127.0.0.1:9000`，請勿修改。只有儀表板在監聽：AIO Nav 桌面程式（`aio-nav-ui`）綁定同一個連接埠，所以不要與儀表板同時使用。 |
-| `aio_nav_config` | `auto` | AIO NAV 的 `aio_nav.yaml` 路徑。儀表板從中讀取 UDP 目的地（`output_udp`）與輸出頻率（`output_rate`）來顯示。`auto` 會搜尋 `/home/*/aio_core_nav/install/...` 與 `~/.local/opt/aio_core_nav/...`，並使用最新的檔案；也可以用環境變數 `AIO_NAV_CONFIG` 指定。修改檔案後約 2 秒內就會生效，而且 **Start**／**Restart** 一定會先重新讀取，讓 AIO NAV 以磁碟上最新的設定啟動。如果修改了目前模式的 ROS domain 或 localhost 設定，儀表板會在啟動後自己重新啟動（幾秒鐘；AIO NAV 不受影響），讓它自己的 ROS 連線跟上。 |
+| `aio_nav_config` | `auto` | AIO NAV 的 `aio_nav.yaml` 路徑。儀表板從中讀取 UDP 目的地（`output_udp`）與輸出頻率（`output_rate`）來顯示。`auto` 會對兩種導航套件（`aio_nav_ros`、`aio_core_nav`）搜尋 `/home/*/<clone>/install/<pkg>/...` 與 `~/.local/opt/<name>/<pkg>/...`，並使用最新的檔案；也可以用環境變數 `AIO_NAV_CONFIG` 指定。修改檔案後約 2 秒內就會生效，而且 **Start**／**Restart** 一定會先重新讀取，讓 AIO NAV 以磁碟上最新的設定啟動。如果修改了目前模式的 ROS domain 或 localhost 設定，儀表板會在啟動後自己重新啟動（幾秒鐘；AIO NAV 不受影響），讓它自己的 ROS 連線跟上。 |
 | `expected_rate_hz` | `null` | 預期的封包頻率。`null` = 使用 `aio_nav.yaml` 中的 `output_rate`。 |
 | `service` | `aio_nav` | `services` 中哪一個項目代表 AIO NAV。 |
+| `package` | `auto` | AIO NAV 是哪個導航套件：`auto` = 找到安裝的那一個（從設定檔路徑的 `share/<pkg>/` 判斷）；兩者都裝時可指定 `aio_nav_ros` 或 `aio_core_nav`。其餘都跟著它決定：`lib/<pkg>/` 資料夾、啟動程式（`aio_nav_ros` 自帶 `aio-nav` / `aio-nav-dso`；`aio_core_nav` 則由儀表板自己的 `bin/aio-nav` 啟動 `aio_nav_node`）與 `output/` 資料夾。維護頁的 ROS 2 與 Network 會顯示偵測到的套件。 |
 | `allow_control` | `false`（預設設定檔：`true`） | `true` 時，首頁會顯示 AIO NAV 的 **Start / Restart / Stop**。**Start** 會先啟動濾波器再啟動 DSO，**Stop** 兩者一起停止，做法與 AIO Nav 桌面程式相同（程序已在執行就不會重複啟動，所以不會跟桌面程式啟動的那份重複）。啟動的是 aio_core_nav `install/` 資料夾內的 `aio-nav` 與 `aio-nav-dso`，不需要原始碼。Stop 與 Restart 需要再按一次確認。只有 `access.allowed_clients` 內的電腦連得到頁面。 |
 | `control_group` | `[aio_nav, dso]` | Start/Stop 作用在 `services` 的哪些項目，依序啟動。每個項目都需要設定 `launch`。 |
 | `startup_grace_s` | `3.0` | 儀表板啟動後的這段時間內，還在確認 AIO NAV 是否執行時顯示「Unknown」。 |
@@ -255,7 +256,7 @@ Jetson 斷電後不會保留時間，野外也沒有 NTP。儀表板把 IMU 的 
 
 ```yaml
 services:
-  aio_nav:   { label: AIO NAV, unit: aio-nav.service, process_pattern: lib/aio_core_nav/aio_nav_node }
+  aio_nav:   { label: AIO NAV, unit: aio-nav.service, process_pattern: 'lib/(aio_nav_ros|aio_core_nav)/aio_nav_node' }
   camera:    { label: Camera driver, unit: camera.service, restartable: true }
   ouster:    { label: Ouster driver, unit: ouster.service, restartable: true }
   dashboard: { label: Dashboard, unit: aio-dashboard.service }
@@ -268,7 +269,7 @@ services:
 | `unit` | systemd 服務名稱（`systemctl status <unit>`）。 |
 | `process_pattern` | 選填。若有程序符合這段文字（`pgrep -f`），也視為正在執行。AIO NAV 使用這個設定，因此從 AIO Nav 桌面應用程式啟動也能偵測到。 |
 | `restartable` | `true` 會在相機或 LiDAR 頁面加上 **Restart driver** 按鈕。修改後請重新執行安裝程式（見第 2 節）。 |
-| `launch` | aio_core_nav `install/aio_core_nav/lib/aio_core_nav/` 資料夾內的啟動程式名稱（`aio-nav`、`aio-nav-dso`），或絕對路徑。設定後儀表板可以啟動與停止這個程式，並用 `process_pattern` 找到它。程式以儀表板的使用者身分在獨立的 session 中執行，ROS 網域由 `aio_nav.yaml` 決定，不是儀表板的設定。輸出寫到 `logs/<name>.log`。儀表板服務使用 `KillMode=process`，所以重新啟動儀表板時 AIO NAV 不會被停掉。 |
+| `launch` | 導航套件 `install/<pkg>/lib/<pkg>/` 資料夾內的啟動程式名稱（`aio-nav`、`aio-nav-dso`；`aio_nav_ros` 有），否則用儀表板 `bin/` 內的（`aio_core_nav` 用 `aio-nav`），或絕對路徑。設定後儀表板可以啟動與停止這個程式，並用 `process_pattern` 找到它。程式以儀表板的使用者身分在獨立的 session 中執行，ROS 網域由 `aio_nav.yaml` 決定，不是儀表板的設定。輸出寫到 `logs/<name>.log`。儀表板服務使用 `KillMode=process`，所以重新啟動儀表板時 AIO NAV 不會被停掉。 |
 | `optional` | `true` 代表這個程式停止時不算警告（DSO 使用）。 |
 | `user_unit` | systemd **使用者**服務名稱（`systemctl --user`），例如 `openrtk330-basler-drivers.service`（相機與 IMU/GNSS 驅動）。設定後，維護頁面 **ROS 2** 會多一個 **Sensor drivers** 面板，可以 Start / Stop / Restart，方便播 bag 前先停掉即時驅動（否則即時與錄製的資料會混在一起）。以儀表板的使用者身分執行，不需要 sudo。Stop 與 Restart 需要確認；驅動服務啟動後約 15 秒才會開始發布資料。 |
 
@@ -391,7 +392,7 @@ ros:
 |------|--------|------|
 | `enabled` | `true` | `false` 會關閉 ROS 2 監看，topic 指示燈會顯示 Unknown。 |
 | `mode` | `null`（預設設定檔：`live`） | 在維護頁面 **Replay** 另外選擇之前使用的模式（選擇存在 `state/ros_mode.json`，優先於這個設定）。選擇模式需要選配的 replay 模組（4.12）；沒有安裝時只會使用這個設定，所以產品機固定在 `live`。`null` 表示沿用服務的環境變數。 |
-| `modes` | `live`：`aio_nav.yaml`；`bag`：`aio_nav_bag.yaml` | 每個模式對應一份 aio_core_nav 設定檔（與一般的 `aio_nav.yaml` 同一個資料夾）。啟動 AIO NAV 與 DSO 時會把該檔案當參數，檔案裡的 `ros_domain_id` / `ros_localhost_only` 也會成為儀表板自己的 ROS 環境，所以三者一定一致。`use_sim_time` 也由該檔案決定。模式可另加 `domain_id` / `localhost_only` 覆蓋檔案的值。找不到設定檔的模式無法選取。切換會停止 AIO NAV 與 DSO 並重新啟動儀表板（幾秒鐘），之後需要再次啟動 AIO NAV。相機與 IMU 驅動不受影響。 |
+| `modes` | `live`：`aio_nav.yaml`；`bag`：`aio_nav_bag.yaml` | 每個模式對應一份 AIO NAV 設定檔（與一般的 `aio_nav.yaml` 同一個資料夾）。啟動 AIO NAV 與 DSO 時會把該檔案當參數，檔案裡的 `ros_domain_id` / `ros_localhost_only` 也會成為儀表板自己的 ROS 環境，所以三者一定一致。`use_sim_time` 也由該檔案決定。模式可另加 `domain_id` / `localhost_only` 覆蓋檔案的值。找不到設定檔的模式無法選取。切換會停止 AIO NAV 與 DSO 並重新啟動儀表板（幾秒鐘），之後需要再次啟動 AIO NAV。相機與 IMU 驅動不受影響。 |
 | `isolation_restart` | `false`（預設設定檔：`true`） | 儀表板自己的 ROS 連線卡住時，自動重新啟動儀表板。曾經發生過：開機後儀表板比感測器驅動先啟動，之後一直沒有發現驅動，導致 IMU、相機與 GNSS 看起來都不見了。只有在感測器驅動程序**與儀表板在同一個 ROS domain 和 localhost 設定**下執行，但連續 `isolation_grace_s`（30 秒）都看不到任何其他節點時才會動作；驅動停止或在別的 domain 時不會動作；而且最多每 `isolation_cooldown_s`（600 秒）一次，所以不會形成重新啟動的迴圈。重新啟動會記錄在事件紀錄中。 |
 | `sampling` | `enabled: false`（預設設定檔：`true`）、`period_s: 5`、`window_s: 1.5`、`above_hz: 30` | 降低高頻 topic 的 CPU 使用。被監看的 topic 若 `expected_hz` 大於等於 `above_hz`（例如 100 Hz 的 IMU），每 `period_s` 秒只聽 `window_s` 秒；ROS 2 頁面顯示的頻率與即時性是上一個視窗的結果，並標示 *sampled*。不啟用時，100 Hz 的 topic 每筆訊息都要在 Python 裡處理一次，約佔單一核心的 12%。**代價：**發布者還在但資料凍結時，*Stale* 最多晚 `period_s` 秒才顯示（不取樣時約 1 秒）；短於 `period_s` 的中斷可能看不到。topic 整個消失仍會立刻顯示 *Missing*。這只改變儀表板自己的訂閱，不影響 GNSS、視覺里程計監控、相機／LiDAR 預覽、驅動程式與 ROS 本身。 |
 | `graph_interval_s` | `2` | 重新整理節點與 topic 清單的間隔。 |
@@ -471,7 +472,7 @@ data:
   roots: auto
 ```
 
-`auto` 會提供 AIO NAV 的紀錄資料夾：若 `aio_nav.yaml` 的 `fusion_txt_path` 是絕對路徑，就用它所在的資料夾；否則使用 aio_core_nav 的 `install/` 旁邊的 `output/`。也可以自行列出資料夾：
+`auto` 會提供 AIO NAV 的紀錄資料夾：若 `aio_nav.yaml` 的 `fusion_txt_path` 是絕對路徑，就用它所在的資料夾；否則使用導航套件 `install/` 旁邊的 `output/`。也可以自行列出資料夾：
 
 ```yaml
 data:
@@ -527,7 +528,7 @@ modules:
 | `enabled` | `true` | `false`：已安裝但隱藏這個模組（機器改為固定 Live）。 |
 | `bag_roots` | `["~"]` | 搜尋 bag 的資料夾。含有 `metadata.yaml` 的資料夾就是一個 bag。`~` 是服務使用者的家目錄。只有在這裡找到的 bag 才能播放。 |
 | `scan_depth` | `2` | 每個資料夾往下搜尋幾層。不會進入 bag 內部，也不會搜尋隱藏資料夾。 |
-| `ros_setup` | `auto` | 執行 `ros2 bag play` 前要 source 的 `setup.bash`。`auto`：aio_core_nav 的 `install/setup.bash`（它也認得 AIO NAV 自己的訊息型別），找不到再用 `/opt/ros/<版本>/setup.bash`。 |
+| `ros_setup` | `auto` | 執行 `ros2 bag play` 前要 source 的 `setup.bash`。`auto`：導航套件的 `install/setup.bash`（它也認得 AIO NAV 自己的訊息型別），找不到再用 `/opt/ros/<版本>/setup.bash`。 |
 | `log_file` | `logs/bag_play.log` | 播放器的輸出（顯示在 *Player output*）。 |
 | `stop_grace_s` | `5` | Stop 依序送出 SIGINT、SIGTERM、SIGKILL；這是送出 SIGINT 後等待的秒數。 |
 
@@ -567,7 +568,7 @@ nav:
   ready_requires: [alignment, heading_valid, fine_alignment]
 ```
 
-**aio_core_nav 安裝在非預設位置。** 修改 `nav` 中的 `aio_nav_config` 這一行：
+**導航套件（aio_nav_ros / aio_core_nav）安裝在非預設位置。** 修改 `nav` 中的 `aio_nav_config` 這一行：
 ```yaml
 nav:
   aio_nav_config: /data/aio_core_nav/install/aio_core_nav/share/aio_core_nav/config/aio_nav.yaml

@@ -69,7 +69,7 @@
     </table>
   </div>
   <div class="panel-b border-top small muted">
-    Config <span class="mono" x-text="d && d.config ? d.config.aio_nav.path : ''"></span>
+    Config <span class="mono" x-text="d && d.config ? d.config.aio_nav.path : ''"></span><span class="muted" x-show="d && d.config && d.config.aio_nav.package" x-text="' (' + (d && d.config ? d.config.aio_nav.package : '') + ')'"></span>
     <span x-show="d && d.config && !d.config.aio_nav.loaded" class="text-danger ms-2">not loaded</span>.
     "Streaming" means aio_nav_node is sending packets. UDP has no acknowledgement, so reception by the remote application is not confirmed.
   </div>

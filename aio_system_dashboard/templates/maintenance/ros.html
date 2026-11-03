@@ -13,7 +13,7 @@
   <div class="panel-b">
     <div class="vrow"><span class="k">Active</span>
       <span><strong x-text="rosMode.label"></strong>
-        <span class="muted small" x-show="rosMode.domain_id !== null" x-text="rosMode.config + ': domain ' + rosMode.domain_id + ', ' + (rosMode.localhost_only ? 'this computer only' : 'network')"></span>
+        <span class="muted small" x-show="rosMode.domain_id !== null" x-text="(rosMode.package ? rosMode.package + ' ' : '') + rosMode.config + ': domain ' + rosMode.domain_id + ', ' + (rosMode.localhost_only ? 'this computer only' : 'network')"></span>
         <span class="muted small" x-show="rosMode.domain_id === null">taken from the service environment</span></span></div>
     {% if 'replay' in modules %}
     <p class="muted small mt-2 mb-0">Switch between Live and Bag replay, and play bags, on the <a href="/replay">Replay</a> page.</p>

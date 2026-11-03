@@ -672,7 +672,7 @@ ROS domain and network settings must match AIO NAV's: **Live** uses domain 10 (t
 ### 7.2 Log files (Data page)
 
 When enabled in `aio_nav.yaml` (`save_fusion_txt`, `save_parsed_txt`), AIO NAV writes
-tab-separated text logs once alignment is complete, in the `output/` folder of aio_core_nav (next to `install/`; both settings files point there):
+tab-separated text logs once alignment is complete, in the `output/` folder of the navigation package (next to `install/`; both settings files point there):
 
 | File | Content |
 |------|---------|
@@ -826,7 +826,7 @@ another network at the same time.
 | **Fault**: AIO NAV is running but sends no navigation output | Nothing came out within 60 s of starting (`nav.startup_timeout_s`) | **Restart** AIO NAV; check its sensors (IMU/GNSS driver) on the Maintenance view. |
 | **Fault**: Navigation output stopped | The filter froze or its sensors stopped | Check the IMU/GNSS driver on the Maintenance view; **Restart** AIO NAV. |
 | Message *AIO NAV did not start: …* under the buttons | AIO NAV exited or could not start; the message gives the reason | Click **Start** again. If it repeats, collect `/opt/aio-dashboard/logs/aio_nav.log` for the navigation team. |
-| **Fault**: AIO NAV is not installed on this device | The aio_core_nav `install/` folder is missing or incomplete on this device | Ask the administrator to check that aio_core_nav is installed. |
+| **Fault**: AIO NAV is not installed on this device | The navigation package's (`aio_core_nav` or `aio-nav-ros`) `install/` folder is missing or incomplete on this device | Ask the administrator to check that the navigation package is installed. |
 | Live: no camera or IMU data | The sensor drivers are stopped (an operator Stop is kept: neither the automatic start nor the watchdog starts them again) | Maintenance → ROS 2 → Sensor drivers → **Start**; wait about 15 s. |
 | Bag replay: AIO NAV receives no data | The bag is played in another ROS domain, or AIO NAV was not started | Section 4.6: play from Maintenance → Replay (it uses the right domain), and click Start on the Overview page. From a terminal: `ROS_DOMAIN_ID=13 ROS_LOCALHOST_ONLY=0 ros2 bag play … --clock 100`. |
 | Stuck at **Initializing** | Alignment not finished | Follow the [Alignment SOP](#5-alignment-sop) and 5.3. |

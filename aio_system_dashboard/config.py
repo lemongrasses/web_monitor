@@ -32,7 +32,8 @@ DEFAULTS: Dict[str, Any] = {
     "access": {"allowed_clients": []},
     "nav": {
         "udp_bind": "127.0.0.1:9000",
-        "aio_nav_config": "auto",  # "auto": search the usual aio_core_nav install locations
+        "aio_nav_config": "auto",  # "auto": search the usual AIO NAV install locations
+        "package": "auto",         # which navigation package: auto (the one found), aio_nav_ros, aio_core_nav
         "expected_rate_hz": None,  # None: take output_rate from aio_nav_config
         "service": "aio_nav",
         "allow_control": False,    # True: the Overview page can start/stop AIO NAV (+ DSO)
@@ -55,7 +56,7 @@ DEFAULTS: Dict[str, Any] = {
     "system": {"interval_s": 2.0, "disk_paths": ["/"], "disk_warn_percent": 90, "temp_warn_c": 85},
     "ros": {"enabled": True, "graph_interval_s": 2.0, "rate_window_s": 2.0, "nodes": [], "topics": [],
             # Modes: the active one is chosen on Maintenance > ROS 2 (stored in state/ros_mode.json) or
-            # by ros.mode here. Each mode names an aio_core_nav config file (in the folder of the
+            # by ros.mode here. Each mode names an AIO NAV config file (in the folder of the
             # normal aio_nav.yaml); AIO NAV and DSO are started with it, and its ros_domain_id /
             # ros_localhost_only become the dashboard's own ROS environment. A mode may also set
             # domain_id / localhost_only itself to override the file. mode: null keeps the environment.
@@ -70,7 +71,7 @@ DEFAULTS: Dict[str, Any] = {
             "sampling": {"enabled": False, "period_s": 5.0, "window_s": 1.5, "above_hz": 30.0},
             "modes": {"live": {"label": "Live", "config": "aio_nav.yaml"},
                       "bag": {"label": "Bag replay", "config": "aio_nav_bag.yaml"}}},
-    "data": {"roots": "auto"},  # "auto": the aio_core_nav output folder
+    "data": {"roots": "auto"},  # "auto": the navigation package's output folder
     # Optional modules (see modules.py), e.g. {replay: {enabled: false}}. A module is on when it is
     # installed, unless switched off here.
     "modules": {},
@@ -217,30 +218,57 @@ def parse_host_port(value: str, default_host: str = "127.0.0.1") -> Optional[tup
     return host, port_i
 
 
-# Where aio_core_nav puts aio_nav.yaml: a colcon install in a clone, or a release prefix
-# (scripts/deploy_release.sh --prefix ~/.local/opt/aio_core_nav).
-AIO_NAV_CONFIG_GLOBS = (
-    "/home/*/aio_core_nav/install/aio_core_nav/share/aio_core_nav/config/aio_nav.yaml",
-    "/home/*/*/aio_core_nav/install/aio_core_nav/share/aio_core_nav/config/aio_nav.yaml",
-    "/home/*/.local/opt/aio_core_nav/aio_core_nav/share/aio_core_nav/config/aio_nav.yaml",
-    "/root/aio_core_nav/install/aio_core_nav/share/aio_core_nav/config/aio_nav.yaml",
-    "/opt/aio_core_nav/install/aio_core_nav/share/aio_core_nav/config/aio_nav.yaml",
+# The navigation packages the dashboard knows. Both have the colcon layout
+# <root>/install/<pkg>/share/<pkg>/config/aio_nav.yaml and <root>/install/<pkg>/lib/<pkg>/aio_nav_node;
+# only the package name differs (aio_nav_ros, the older aio-nav-ros clone, ships the aio-nav and
+# aio-nav-dso wrappers in lib/ and ros_domain_id in its YAML; aio_core_nav has neither).
+NAV_PACKAGES = ("aio_core_nav", "aio_nav_ros")
+
+# Where a package puts aio_nav.yaml: a colcon install in a clone (any clone folder name), or a
+# release prefix (scripts/deploy_release.sh --prefix ~/.local/opt/<name>).
+_CONFIG_GLOB_TEMPLATES = (
+    "/home/*/*/install/{pkg}/share/{pkg}/config/aio_nav.yaml",
+    "/home/*/*/*/install/{pkg}/share/{pkg}/config/aio_nav.yaml",
+    "/home/*/.local/opt/*/{pkg}/share/{pkg}/config/aio_nav.yaml",
+    "/root/*/install/{pkg}/share/{pkg}/config/aio_nav.yaml",
+    "/opt/*/install/{pkg}/share/{pkg}/config/aio_nav.yaml",
 )
+AIO_NAV_CONFIG_GLOBS = tuple(t.format(pkg=pkg) for pkg in NAV_PACKAGES for t in _CONFIG_GLOB_TEMPLATES)
 
 
-def discover_aio_nav_config() -> str:
-    """Newest aio_nav.yaml in the usual install locations, or "" if none is found."""
+def nav_package_of(config_path: str) -> str:
+    """Name of the navigation package a config file belongs to: the folder after share/
+    (<prefix>/share/<pkg>/config/aio_nav.yaml), else a known package name among its folders
+    (a symlink install resolves into the source tree), else ""."""
+    if not config_path:
+        return ""
+    for p in (Path(config_path), Path(config_path).resolve()):
+        parents = p.parents
+        if len(parents) > 2 and parents[2].name == "share":
+            return parents[1].name
+    for p in (Path(config_path), Path(config_path).resolve()):
+        for parent in p.parents:
+            if parent.name in NAV_PACKAGES:
+                return parent.name
+    return ""
+
+
+def discover_aio_nav_config(package: str = "auto") -> str:
+    """Newest aio_nav.yaml in the usual install locations, or "" if none is found. With a package
+    name only that package's files count; $AIO_NAV_CONFIG always wins."""
     env = os.environ.get("AIO_NAV_CONFIG")
     if env and os.path.isfile(env):
         return env
     found = [f for pattern in AIO_NAV_CONFIG_GLOBS for f in glob.glob(pattern)]
+    if package not in ("", "auto", None):
+        found = [f for f in found if nav_package_of(f) == package]
     return max(found, key=os.path.getmtime) if found else ""
 
 
 def aio_nav_output_dir(config_path: str, fusion_txt_path: str = "") -> Optional[str]:
     """Folder where aio_nav_node writes its logs.
 
-    An absolute fusion_txt_path wins. Otherwise logs go to output/ in the aio_core_nav
+    An absolute fusion_txt_path wins. Otherwise logs go to output/ in the navigation package's
     tree (the folder that contains install/, or the release prefix).
     """
     if fusion_txt_path and os.path.isabs(fusion_txt_path):
@@ -254,9 +282,11 @@ def aio_nav_output_dir(config_path: str, fusion_txt_path: str = "") -> Optional[
     for parent in p.parents:
         if parent.name == "install":
             return str(parent.parent / "output")
-    # Release prefix (no install/): the outermost aio_core_nav folder. The package and its share/
-    # folder carry the same name, so the nearest ones are not the tree's root.
-    roots = [parent for parent in p.parents if parent.name == "aio_core_nav"]
+    # Release prefix (no install/): the outermost folder named like the package (aio_core_nav, or
+    # aio-nav-ros for aio_nav_ros). The package and its share/ folder carry the same name, so the
+    # nearest ones are not the tree's root.
+    names = {pkg for pkg in NAV_PACKAGES} | {pkg.replace("_", "-") for pkg in NAV_PACKAGES}
+    roots = [parent for parent in p.parents if parent.name in names]
     if roots:
         return str(roots[-1] / "output")
     return None
@@ -265,21 +295,21 @@ def aio_nav_output_dir(config_path: str, fusion_txt_path: str = "") -> Optional[
 _PARAMS_CACHE: Dict[Any, Dict[str, Any]] = {}
 
 
-def read_aio_nav_params(path: str) -> Dict[str, Any]:
+def read_aio_nav_params(path: str, package: str = "auto") -> Dict[str, Any]:
     """Read output_udp / output_rate / ROS domain ... from an aio_nav.yaml (ROS 2 params file).
 
     The parsed result is cached by file (path, modification time, size): the pure-Python YAML
     parser costs tens of milliseconds, and this is asked for several times a second. Editing the
     file changes its time or size, so the next call parses it again."""
-    p = Path(discover_aio_nav_config() if path in ("", "auto", None) else str(resolve_path(path)))
+    p = Path(discover_aio_nav_config(package) if path in ("", "auto", None) else str(resolve_path(path)))
     try:
         st = p.stat()
-        key = (str(p), st.st_mtime_ns, st.st_size, path in ("", "auto", None))
+        key = (str(p), st.st_mtime_ns, st.st_size, path in ("", "auto", None), package)
     except OSError:
         key = None
     if key is not None and key in _PARAMS_CACHE:
         return copy.deepcopy(_PARAMS_CACHE[key])
-    result = _read_aio_nav_params(path)
+    result = _read_aio_nav_params(path, package)
     if key is not None:
         for old in [k for k in _PARAMS_CACHE if k[0] == key[0]]:
             del _PARAMS_CACHE[old]          # drop the outdated version of this file
@@ -287,19 +317,22 @@ def read_aio_nav_params(path: str) -> Dict[str, Any]:
     return result
 
 
-def _read_aio_nav_params(path: str) -> Dict[str, Any]:
+def _read_aio_nav_params(path: str, package: str = "auto") -> Dict[str, Any]:
     """Uncached reader behind read_aio_nav_params."""
     auto = path in ("", "auto", None)
     if auto:
-        path = discover_aio_nav_config()
-    result: Dict[str, Any] = {"path": path, "auto": auto, "loaded": False, "output_udp": "",
-                              "output_rate": None, "fusion_txt_path": "", "ros_domain_id": None,
-                              "ros_localhost_only": None, "use_sim_time": None, "vupt": False}
+        path = discover_aio_nav_config(package)
+    result: Dict[str, Any] = {"path": path, "auto": auto, "loaded": False, "package": "",
+                              "output_udp": "", "output_rate": None, "fusion_txt_path": "",
+                              "ros_domain_id": None, "ros_localhost_only": None, "use_sim_time": None,
+                              "vupt": False}
     if not path:
-        result["error"] = "aio_nav.yaml not found in the usual locations; set nav.aio_nav_config"
+        which = f"{package} " if package not in ("", "auto", None) else ""
+        result["error"] = f"{which}aio_nav.yaml not found in the usual locations; set nav.aio_nav_config"
         return result
     p = resolve_path(path)
     result["path"] = str(p)
+    result["package"] = nav_package_of(path)
     try:
         doc = yaml.safe_load(p.read_text(encoding="utf-8")) or {}
     except (OSError, yaml.YAMLError) as e:
@@ -355,12 +388,12 @@ class Config:
 
     @property
     def aio_nav(self) -> Dict[str, Any]:
-        """Parameters of the active aio_core_nav config file. Re-read when it is older than
+        """Parameters of the active AIO NAV config file. Re-read when it is older than
         AIO_NAV_MAX_AGE_S, and the file is only parsed again when it changed on disk, so editing
         aio_nav.yaml takes effect without restarting the dashboard."""
         now = time.monotonic()
         if self._aio_nav is None or now - self._aio_nav_at > self.AIO_NAV_MAX_AGE_S:
-            params = read_aio_nav_params(self._aio_nav_path())
+            params = read_aio_nav_params(self._aio_nav_path(), self.nav_package_setting())
             if self.data["nav"].get("aio_nav_config", "auto") in ("", "auto", None):
                 params["auto"] = True  # found in the install folder, not named in the config
             self._aio_nav, self._aio_nav_at = params, now
@@ -389,14 +422,25 @@ class Config:
         rate = self.data["nav"].get("expected_rate_hz")
         return float(rate) if rate else self.aio_nav.get("output_rate")
 
-    # ---- ROS mode -> aio_core_nav config file
+    # ---- ROS mode -> AIO NAV config file
+    def nav_package_setting(self) -> str:
+        """nav.package: "auto" (the package whose install is found), or a package name."""
+        v = self.data["nav"].get("package", "auto")
+        return "auto" if v in ("", "auto", None) else str(v)
+
+    def nav_package(self) -> str:
+        """The navigation package in use (aio_nav_ros / aio_core_nav), from the active config file."""
+        return self.aio_nav.get("package") or ""
+
     def _aio_nav_base(self) -> str:
-        """The normal aio_nav.yaml (configured, or found in the aio_core_nav install folder)."""
+        """The normal aio_nav.yaml (configured, or found in the navigation package's install folder)."""
         configured = self.data["nav"].get("aio_nav_config", "auto")
-        return discover_aio_nav_config() if configured in ("", "auto", None) else str(resolve_path(configured))
+        if configured in ("", "auto", None):
+            return discover_aio_nav_config(self.nav_package_setting())
+        return str(resolve_path(configured))
 
     def mode_config_path(self, mode: Optional[str] = None) -> Optional[str]:
-        """Path of the aio_core_nav config file belonging to a mode (default: the active one)."""
+        """Path of the AIO NAV config file belonging to a mode (default: the active one)."""
         mode = mode if mode is not None else self.ros_mode()
         name = (self.data["ros"]["modes"].get(mode) or {}).get("config") if mode else None
         base = self._aio_nav_base()
@@ -480,29 +524,35 @@ class Config:
             listed.append({"name": name, "label": m["label"], "config": m.get("config") or "",
                            "found": bool(path), "domain_id": ros["domain_id"],
                            "localhost_only": ros["localhost_only"],
-                           "use_sim_time": params.get("use_sim_time")})
+                           "use_sim_time": params.get("use_sim_time"),
+                           "package": params.get("package") or ""})
         cur = next((m for m in listed if m["name"] == mode), None)
         return {
             "mode": mode,
             "label": cur["label"] if cur else "Environment",
             "config": cur["config"] if cur else "",
+            "package": cur["package"] if cur else self.nav_package(),
             "domain_id": cur["domain_id"] if cur else None,
             "localhost_only": cur["localhost_only"] if cur else None,
             "modes": listed,
         }
 
     def launcher(self, name: str) -> Optional[str]:
-        """Path of a wrapper (aio-nav, aio-nav-dso): an absolute path, else lib/aio_core_nav/<name>
-        in the aio_core_nav install/ folder, else the dashboard's own bin/ (installed) or deploy/
-        (source checkout). aio_core_nav ships no wrapper, so deploy/aio-nav starts its aio_nav_node."""
+        """Path of a wrapper (aio-nav, aio-nav-dso): an absolute path, else lib/<package>/<name> in
+        the navigation package's install/ folder (aio_nav_ros ships them), else the dashboard's own
+        bin/ (installed) or deploy/ (source checkout): deploy/aio-nav starts aio_nav_node of
+        whichever package the config file belongs to (aio_core_nav has no wrapper)."""
         if os.path.isabs(name):
             return name if os.access(name, os.X_OK) else None
         path = self.aio_nav.get("path")
         if path:
+            pkg = self.nav_package()
+            pkgs = [pkg] + [p for p in NAV_PACKAGES if p != pkg] if pkg else list(NAV_PACKAGES)
             for parent in Path(path).resolve().parents:
-                cand = parent / "lib" / "aio_core_nav" / name
-                if cand.is_file() and os.access(cand, os.X_OK):
-                    return str(cand)
+                for pkg in pkgs:
+                    cand = parent / "lib" / pkg / name
+                    if cand.is_file() and os.access(cand, os.X_OK):
+                        return str(cand)
         app = Path(__file__).resolve().parents[1]
         for cand in (app / "bin" / name, app / "deploy" / name):
             if cand.is_file() and os.access(cand, os.X_OK):

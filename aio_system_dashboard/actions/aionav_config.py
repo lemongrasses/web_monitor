@@ -1,4 +1,4 @@
-"""Edit the aio_core_nav config files (aio_nav.yaml, aio_nav_bag.yaml) from the Maintenance page.
+"""Edit the AIO NAV config files (aio_nav.yaml, aio_nav_bag.yaml) from the Maintenance page.
 
 * Only the config files of the configured modes can be opened; the page names a mode, never a path.
 * The form changes values in place, line by line, so comments and layout stay as they are. The raw
@@ -34,6 +34,8 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
 import yaml
+
+from ..config import NAV_PACKAGES, nav_package_of
 
 MAX_BACKUPS = 30
 BACKUP_ID = r"\.\d{8}-\d{6}(?:-\d+)?\.bak"      # name.YYYYMMDD-HHMMSS[-n].bak
@@ -408,12 +410,17 @@ _HINTS = [("Failed to parse global arguments",
 
 def node_program(config_path: str) -> Optional[Path]:
     """aio_nav_node of the install the config file belongs to:
-    <prefix>/share/aio_core_nav/config/aio_nav.yaml -> <prefix>/lib/aio_core_nav/aio_nav_node."""
+    <prefix>/share/<pkg>/config/aio_nav.yaml -> <prefix>/lib/<pkg>/aio_nav_node, for a package that
+    ships aio_nav_env.sh next to it (aio_nav_ros; the test start sources it)."""
     p = Path(config_path).resolve()
     if len(p.parents) < 4:
         return None
-    node = p.parents[3] / "lib" / "aio_core_nav" / "aio_nav_node"
-    return node if os.access(node, os.X_OK) and (node.parent / "aio_nav_env.sh").is_file() else None
+    pkg = nav_package_of(config_path)
+    for name in ([pkg] if pkg else []) + [n for n in NAV_PACKAGES if n != pkg]:
+        node = p.parents[3] / "lib" / name / "aio_nav_node"
+        if os.access(node, os.X_OK) and (node.parent / "aio_nav_env.sh").is_file():
+            return node
+    return None
 
 
 def test_start(config_path: str, text: str, wait_s: float = TEST_START_S) -> Dict[str, Any]:

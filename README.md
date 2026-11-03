@@ -8,7 +8,7 @@ Web dashboard for the Jetson AIO navigation system.
 | Maintenance | `:8081` | Engineers (password) | Overview · System · ROS 2 · Camera · LiDAR · Network · Diagnostics · AIO NAV config · Terminal (· Replay with the replay module) |
 
 The main data source is the **AIO NAV 0x04 binary packet** that `aio_nav_node`
-(`../aio_core_nav`) always sends to `127.0.0.1:9000`. The dashboard can start and stop AIO NAV and
+(the navigation package: `aio_core_nav`, or the older `aio-nav-ros`; the dashboard detects which one is installed) always sends to `127.0.0.1:9000`. The dashboard can start and stop AIO NAV and
 DSO (`nav.allow_control`), restarts DSO when it fails, and watches the rest. AIO NAV and DSO run in
 their own sessions, so a dashboard crash or restart never stops them.
 
@@ -26,7 +26,7 @@ Ideas discussed and kept for later (in Traditional Chinese): [docs/IDEAS.md](doc
 ```
 aio_system_dashboard/
   __main__.py          one process, shared state, two HTTP servers (:8080, :8081)
-  config.py            config/dashboard.yaml + the active aio_core_nav config file (re-read when it changes)
+  config.py            config/dashboard.yaml + the active AIO NAV config file of either package (re-read when it changes)
   modules.py           optional modules (installed only with --with-<name>)
   nav/decoder.py       0x04 packet decoder (from setup_env, with the VUPT + velocity_up fixes)
   nav/trajectory.py    session trajectory: last 60 s @10 Hz + older @1 Hz, incremental fetch
@@ -200,8 +200,8 @@ manual: [English](docs/CONFIG.md) · [繁體中文](docs/CONFIG.zh-TW.md). At st
 
 | Setting | `auto` behaviour |
 |---------|------------------|
-| `nav.aio_nav_config` | newest `aio_nav.yaml` under `/home/*/aio_core_nav/install/...` or `~/.local/opt/aio_core_nav/...` (or `$AIO_NAV_CONFIG`) |
-| `data.roots` | folder of an absolute `fusion_txt_path`, else `output/` next to aio_core_nav `install/` |
+| `nav.aio_nav_config` | newest `aio_nav.yaml` of `aio_nav_ros` or `aio_core_nav` under `/home/*/<clone>/install/...` or `~/.local/opt/<name>/...` (or `$AIO_NAV_CONFIG`); `nav.package` picks one when both are installed |
+| `data.roots` | folder of an absolute `fusion_txt_path`, else `output/` next to the navigation package's `install/` |
 | `network.sensor_interface` | interface that routes to the sensors, else the default-route interface |
 | ROS topics, Live view topics | first topic of the right message type (`hint` prefers a name, `strict` requires it) |
 

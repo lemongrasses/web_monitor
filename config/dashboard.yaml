@@ -16,9 +16,11 @@ access:
 
 nav:
   udp_bind: 127.0.0.1:9000       # aio_nav_node always sends here; the dashboard is its only listener (aio-nav-ui is not used)
-  # auto: newest aio_nav.yaml under /home/*/aio_core_nav/install/... or ~/.local/opt/aio_core_nav/...
+  # auto: newest aio_nav.yaml of a known navigation package (aio_nav_ros or aio_core_nav) under
+  # /home/*/<clone>/install/... or ~/.local/opt/<name>/...
   # The destination (output_udp) and rate (output_rate) shown in the UI are read from it.
   aio_nav_config: auto
+  package: auto                  # auto = the package whose install is found; or aio_nav_ros / aio_core_nav when both are installed
   expected_rate_hz: null         # null = output_rate from aio_nav.yaml
   service: aio_nav
   allow_control: true            # Overview Start/Stop launches AIO NAV + DSO, like the AIO Nav app
@@ -38,7 +40,7 @@ nav:
 # Units with restartable: true get a Restart button (re-run install.sh after changing). A system
 # unit restarts through sudoers; a user_unit (the sensor drivers' point-lab units) with systemctl --user.
 services:
-  aio_nav:   { label: AIO NAV, unit: aio-nav.service, process_pattern: '^[^ ]*lib/aio_core_nav/aio_nav_node', launch: aio-nav }   # aio-nav: PREFIX/bin/aio-nav (deploy/aio-nav) starts aio_core_nav's aio_nav_node
+  aio_nav:   { label: AIO NAV, unit: aio-nav.service, process_pattern: '^[^ ]*lib/(aio_nav_ros|aio_core_nav)/aio_nav_node', launch: aio-nav }   # aio-nav: the package's wrapper, else PREFIX/bin/aio-nav (deploy/aio-nav)
   dso:       { label: DSO, process_pattern: '^[^ ]*lib/dso_ros/dso_live', launch: aio-nav-dso, optional: true }
   drivers:   { label: Sensor drivers, unit: aio-openrtk-ros-driver.service, process_pattern: '^[^ ]*aceinna_openrtk330_driver_node', optional: true }   # aio_install system unit (GNSS/IMU)
   camera:    { label: Camera driver, unit: aio-basler-ros-driver.service, restartable: true, process_pattern: '^[^ ]*pylon_ros2_camera_wrapper' }   # Basler, aio_install system unit
@@ -72,7 +74,7 @@ system:
 # strict: true requires it). An auto topic that finds nothing shows "Not found", no warning.
 ros:
   enabled: true
-  # Mode = which aio_core_nav config file AIO NAV and DSO are started with. That file also sets
+  # Mode = which AIO NAV config file AIO NAV and DSO are started with. That file also sets
   # the ROS domain (live: aio_nav.yaml, 10 / localhost only; bag: aio_nav_bag.yaml, 13 / network),
   # which the dashboard uses for its own ROS connection too. Switch on Maintenance > Replay (only
   # with the optional replay module; without it `mode` below is always used); the choice is kept
@@ -87,7 +89,7 @@ ros:
   # every period_s, to save CPU. Their rate/freshness are then the last window's, marked "sampled".
   sampling: { enabled: true, period_s: 5, window_s: 1.5, above_hz: 30 }
   modes:
-    live: { label: Live,       config: aio_nav.yaml, domain_id: 10, localhost_only: 1 }   # aio_core_nav's aio_nav.yaml has no ros_domain_id; 10 / 1 = the aio_install driver standard
+    live: { label: Live,       config: aio_nav.yaml, domain_id: 10, localhost_only: 1 }   # aio_core_nav's aio_nav.yaml has no ros_domain_id (aio_nav_ros's has); 10 / 1 = the aio_install driver standard
     bag:  { label: Bag replay, config: aio_nav_bag.yaml }
   nodes: [/basler/pylon_ros2_camera_node, /openrtk330_driver]
   topics:
@@ -116,7 +118,7 @@ gnss:
   topic: /openrtk330/gnss/fix
   timeout_s: 3
 
-# auto = the aio_core_nav output folder (from fusion_txt_path, or output/ next to install/).
+# auto = the navigation package's output folder (from fusion_txt_path, or output/ next to install/).
 # Or list folders: roots: [{ id: logs, name: AIO NAV logs, path: /home/jetson/aio_core_nav/output }]
 data:
   roots: auto

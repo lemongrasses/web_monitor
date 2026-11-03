@@ -13,7 +13,7 @@ nav:
   trajectory: { recent_window_s: 60, recent_hz: 10, older_hz: 1 }
 
 services:
-  aio_nav:   { label: AIO NAV, unit: aio-nav.service, process_pattern: '^[^ ]*lib/aio_core_nav/aio_nav_node', launch: aio-nav }
+  aio_nav:   { label: AIO NAV, unit: aio-nav.service, process_pattern: '^[^ ]*lib/(aio_nav_ros|aio_core_nav)/aio_nav_node', launch: aio-nav }
   dso:       { label: DSO, process_pattern: '^[^ ]*lib/dso_ros/dso_live', launch: aio-nav-dso, optional: true }
   drivers:   { label: Sensor drivers, user_unit: point-lab.target, process_pattern: '^[^ ]*aceinna_openrtk330_driver_node', optional: true }
   camera:    { label: Camera driver, user_unit: point-lab-sensor@basler.service, restartable: true }

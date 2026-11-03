@@ -115,7 +115,7 @@
           if (j.error) this.loadError = j.error;
           const pick = this.files.find((f) => f.active) || this.files[0];
           if (pick) await this.load(pick.mode);
-          else if (!this.loadError) this.loadError = "No aio_core_nav config file was found on this device.";
+          else if (!this.loadError) this.loadError = "No AIO NAV config file (aio_nav.yaml) was found on this device.";
         } catch (e) { this.loadError = "Cannot load the config files: " + e.message; }
         window.addEventListener("beforeunload", (ev) => { if (this.dirty()) { ev.preventDefault(); ev.returnValue = ""; } });
       },
