@@ -446,8 +446,15 @@ class Config:
         base = self._aio_nav_base()
         if not name or not base:
             return None
-        cand = Path(base).resolve().parent / name
-        return str(cand) if cand.is_file() else None
+        # The folder of the normal aio_nav.yaml as given (install/<pkg>/share/<pkg>/config/): a
+        # colcon symlink install links its files into src/<pkg>/config/, and AIO NAV must be started
+        # on the install path (the launcher reads package and prefix from it). The resolved folder
+        # is tried second, for a mode file that exists only in the source tree.
+        for folder in (Path(base).parent, Path(base).resolve().parent):
+            cand = folder / name
+            if cand.is_file():
+                return str(cand)
+        return None
 
     def _aio_nav_path(self) -> str:
         return self.mode_config_path() or self.data["nav"].get("aio_nav_config", "auto")

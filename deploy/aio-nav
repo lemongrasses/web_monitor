@@ -27,8 +27,20 @@ fi
 # <prefix>/share/<pkg>/config/aio_nav.yaml -> pkg, prefix, and the install/ folder above it
 cfgdir="$(cd "$(dirname "$cfg")" && pwd)"            # keeps symlinks (a symlink install points into src/)
 pkg="$(basename "$(dirname "$cfgdir")")"
-[[ "$(basename "$(dirname "$(dirname "$cfgdir")")")" == share ]] || die "not a <prefix>/share/<pkg>/config/ file: $cfg"
-prefix="$(dirname "$(dirname "$(dirname "$cfgdir")")")"
+if [[ "$(basename "$(dirname "$(dirname "$cfgdir")")")" == share ]]; then
+  prefix="$(dirname "$(dirname "$(dirname "$cfgdir")")")"
+else
+  # <root>/src/<pkg>/config/aio_nav.yaml: a colcon symlink install resolved into the source tree
+  # (what a caller gets from realpath). The prefix is <root>/install/<pkg> for the nearest <root>
+  # above the file that has the node built.
+  prefix=""
+  d="$cfgdir"
+  while [[ "$d" != / ]]; do
+    if [[ -x "$d/install/$pkg/lib/$pkg/aio_nav_node" ]]; then prefix="$d/install/$pkg"; break; fi
+    d="$(dirname "$d")"
+  done
+  [[ -n "$prefix" ]] || die "not a <prefix>/share/<pkg>/config/ file, and no install/$pkg above it: $cfg"
+fi
 inst="$(dirname "$prefix")"
 node="$prefix/lib/$pkg/aio_nav_node"
 [[ -x "$node" ]] || die "$node not found (build $pkg first)"

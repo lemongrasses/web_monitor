@@ -45,6 +45,23 @@ class RosModeTest(unittest.TestCase):
         self.assertEqual(cfg.mode_config_path(), str(self.cfgdir / "aio_nav.yaml"))
         self.assertEqual(cfg.ros_env(), {"ROS_DOMAIN_ID": "10", "ROS_LOCALHOST_ONLY": "1"})
 
+    def test_symlink_install_keeps_the_install_path(self):
+        # colcon --symlink-install: share/<pkg>/config/*.yaml are links into src/<pkg>/config/. The
+        # mode file must stay the install path: the launcher reads package and prefix from it
+        # (2026-11-03: AIO NAV never started, "not a <prefix>/share/<pkg>/config/ file: .../src/...").
+        src = Path(self.tmp.name) / "src" / "aio_core_nav" / "config"
+        src.mkdir(parents=True)
+        for name in ("aio_nav.yaml", "aio_nav_bag.yaml"):
+            (src / name).write_text((self.cfgdir / name).read_text())
+            (self.cfgdir / name).unlink()
+            os.symlink(src / name, self.cfgdir / name)
+        cfg = self.make()
+        self.assertEqual(cfg.mode_config_path(), str(self.cfgdir / "aio_nav.yaml"))
+        self.assertEqual(cfg.mode_config_path("bag"), str(self.cfgdir / "aio_nav_bag.yaml"))
+        (src / "aio_nav_test.yaml").write_text(BAG)          # only in the source tree: still found
+        cfg.data["ros"]["modes"]["test"] = {"label": "T", "config": "aio_nav_test.yaml"}
+        self.assertEqual(cfg.mode_config_path("test"), str(src / "aio_nav_test.yaml"))
+
     def test_bag_mode_reads_the_bag_file_after_a_restart(self):
         cfg = self.make()
         cfg.save_ros_mode("bag")
