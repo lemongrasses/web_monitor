@@ -202,6 +202,61 @@
         const e = m[this.dso.state] || ["unknown", "Unknown"];
         return this.lvl(e[0], e[1]);
       },
+      // ---------- GNSS / RTK (collectors/gnss_diag.py; levels as in diagnostic_msgs)
+      get gd() { return (this.d && this.d.gnss_diag) || {}; },
+      get gdSol() { return this.gd.solution || {}; },
+      get gdSig() { return this.gd.signal || {}; },
+      get gdCor() { return this.gd.corrections || {}; },
+      gdChip(section) {
+        const s = this.gd[section];
+        if (!this.gd.available || !s) return this.lvl("unknown", "No data");
+        if (section === "solution") {
+          const fixLevel = { "RTK fix": "healthy", "RTK float": "warning", SPP: "warning" }[s.fix];
+          return this.lvl(fixLevel || "fault", s.fix || "No position");
+        }
+        const m = [["healthy", "OK"], ["warning", "Warning"], ["fault", "Fault"], ["unknown", "No data"]][s.level];
+        return this.lvl(m ? m[0] : "unknown", section === "corrections" && s.level === 3 ? "Off" : m ? m[1] : "Unknown");
+      },
+      gdN(v, digits) { return AIO.isNum(v) ? v.toFixed(digits) : "—"; },
+      gdM(v) { return AIO.isNum(v) ? (v < 1 ? (v * 100).toFixed(0) + " cm" : v.toFixed(1) + " m") : "—"; },
+      gdRate(v) { return AIO.isNum(v) ? (v >= 1000 ? (v / 1000).toFixed(1) + " kB/s" : v.toFixed(0) + " B/s") : "—"; },
+      gdDur(s) {
+        if (!AIO.isNum(s) || s < 0) return "—";
+        return s < 120 ? s.toFixed(0) + " s" : s < 7200 ? (s / 60).toFixed(0) + " min" : (s / 3600).toFixed(1) + " h";
+      },
+      gdBarClass(p) { return !AIO.isNum(p) ? "bg-secondary" : p >= 50 ? "bg-success" : p >= 20 ? "bg-warning" : "bg-danger"; },
+      get gdCharts() {
+        const fixNum = { "RTK fix": 3, "RTK float": 2, SPP: 1 };
+        return [
+          { key: "fix", label: "Fix", min: 0, max: 3, ref: null, value: (h) => (h.fix in fixNum ? fixNum[h.fix] : 0),
+            text: (v) => ["none", "SPP", "RTK float", "RTK fix"][v] },
+          { key: "cnr", label: "C/N0 median (dBHz)", min: 15, max: 50, ref: 35, value: (h) => h.cnr_median_dbhz,
+            text: (v) => v.toFixed(0) + " dBHz" },
+          { key: "pct", label: "Signals ≥ 35 dBHz", min: 0, max: 100, ref: 50, value: (h) => h.pct_ge35,
+            text: (v) => v.toFixed(0) + "%" },
+          { key: "cor", label: "Corrections (B/s)", min: 0, max: 2000, ref: null, value: (h) => h.caster_rate_Bps,
+            text: (v) => this.gdRate(v) },
+          { key: "sats", label: "Satellites used", min: 0, max: 40, ref: null, value: (h) => h.satellites_used,
+            text: (v) => v.toFixed(0) },
+        ];
+      },
+      gdY(row, v) {
+        const f = Math.min(Math.max((v - row.min) / (row.max - row.min), 0), 1);
+        return (38 - f * 36).toFixed(1);
+      },
+      gdPoints(row) {
+        const h = this.gd.history || [];
+        if (h.length < 2) return "";
+        const t1 = h[h.length - 1].ts, span = 600;                // the last 10 minutes, right-aligned
+        return h.map((p) => [p, row.value(p)]).filter((pv) => AIO.isNum(pv[1]))
+          .map((pv) => (600 - ((t1 - pv[0].ts) / span) * 600).toFixed(1) + "," + this.gdY(row, pv[1])).join(" ");
+      },
+      gdLast(row) {
+        const h = this.gd.history || [];
+        const v = h.length ? row.value(h[h.length - 1]) : null;
+        return AIO.isNum(v) ? row.text(v) : "—";
+      },
+
       topicChip(t) { const m = TOPIC[t.state] || ["unknown", "Unknown"]; return this.lvl(m[0], m[1]); },
       topicsFor(group) { return (this.ros.watched || []).filter((t) => t.group === group); },
       rateText(r, exp) { return AIO.isNum(r) ? fmt.hz(r) + (AIO.isNum(exp) ? " / " + fmt.hz(exp) : "") : "—"; },
@@ -217,7 +272,15 @@
         const up = this.net.sensor_link_up;
         return up === true ? this.lvl("healthy", "Up") : up === false ? this.lvl("fault", "Down") : this.lvl("unknown", "Unknown");
       },
-      ifaceChip(i) { return i.up && i.carrier !== false ? this.lvl("healthy", "Up") : this.lvl("fault", i.up ? "No carrier" : "Down"); },
+      internetChip() {
+        const r = (this.net.internet || {}).reachable;
+        return r === true ? this.lvl("healthy", "Connected") : r === false ? this.lvl("warning", "Not connected") : this.lvl("unknown", "Not checked");
+      },
+      internetText() {
+        const i = this.net.internet || {};
+        return i.reachable ? "via " + i.target : (i.error || "");
+      },
+            ifaceChip(i) { return i.up && i.carrier !== false ? this.lvl("healthy", "Up") : this.lvl("fault", i.up ? "No carrier" : "Down"); },
       get product() { return (this.d && this.d.product) || {}; },
       udpChip() { const u = this.product.udp; return u ? this.lvl(u.level, u.label) : this.lvl("unknown"); },
 

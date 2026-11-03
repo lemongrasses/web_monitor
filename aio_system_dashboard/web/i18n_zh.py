@@ -40,7 +40,7 @@ ZH = {
     "For comparing with the vehicle log": "用於與車端記錄比對",
     "Ready signal #{0}, session {1}, updated {2}": "就緒訊號 #{0}，工作階段 {1}，更新於 {2}",
     "Ready to use": "可以使用", "Navigation status": "導航狀態", "Navigation output": "導航輸出",
-    "Sensor network": "感測器網路", "Connections": "連線", "Map with the vehicle and its recent track": "車輛位置與最近軌跡的地圖",
+    "Sensor network": "感測器網路", "Internet": "網際網路", "Connections": "連線", "Map with the vehicle and its recent track": "車輛位置與最近軌跡的地圖",
     "Map with the whole track of this run": "本次執行完整軌跡的地圖", "Alignment and aiding": "對準與輔助",
     "{0} packets": "{0} 個封包", "1 item": "1 個項目", "Loading basemap…": "正在載入底圖…",
     "Map background offline: position and track are still shown": "底圖無法載入：仍會顯示位置與軌跡",

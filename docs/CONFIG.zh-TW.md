@@ -321,8 +321,9 @@ ros2 param get /ouster/os_driver sensor_hostname   # Ouster IP（節點名稱可
 
 | 項目 | 預設值 | 說明 |
 |------|--------|------|
-| `sensor_interface` | `auto` | 連接感測器網路的網路介面，例如 `eth0`。`auto` = 通往裝置 `host` 的介面，若沒有則使用預設路由的介面。顯示為 **Network** 指示燈（連線中或中斷）。可用 `ip -br link` 列出所有介面。 |
-| `ping_interval_s` | `5` | 每次 ping 裝置 `host` 之間的秒數。 |
+| `sensor_interface` | `auto` | 連接感測器網路的網路介面，例如 `eth0`。`auto` = 通往裝置 `host` 的介面，若沒有則使用預設路由的介面。其連線狀態顯示在 Maintenance > Network；未接上時會有提醒。可用 `ip -br link` 列出所有介面。 |
+| `ping_interval_s` | `5` | 每次 ping 裝置 `host`（以及檢查網際網路）之間的秒數。 |
+| `internet_check` | `["1.1.1.1:443", "8.8.8.8:443"]` | **網際網路**指示燈的檢查目標（`host:port`）：依序嘗試 TCP 連線，任一個連得上就顯示「已連線」（不傳送任何資料）。只接上網路線、或 Wi-Fi 沒有對外連線時顯示「未連線」。`[]` = 不檢查，顯示「未設定」。若所在網路封鎖這些位址，請改用該網路允許的伺服器。 |
 
 ### 4.5a `wifi`：設定頁與維護頁面的 Wi-Fi
 

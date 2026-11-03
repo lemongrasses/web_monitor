@@ -1,4 +1,4 @@
-"""Network state: interfaces, default route, NAV destination route, device reachability."""
+"""Network state: interfaces, default route, NAV destination route, device reachability, Internet."""
 
 import ipaddress
 import re
@@ -52,6 +52,30 @@ def default_route() -> Optional[Dict]:
             gw = socket.inet_ntoa(int(parts[2], 16).to_bytes(4, "little"))
             return {"interface": parts[0], "gateway": gw}
     return None
+
+
+def internet(targets: List[str], timeout_s: float = 1.5) -> Dict:
+    """Internet access: a TCP connection to one of ``targets`` (host:port, from config) succeeds.
+    A plugged-in cable or a Wi-Fi without a way out is not enough; nothing is sent over it."""
+    if not targets:
+        return {"reachable": None, "error": "not set up"}
+    if default_route() is None:
+        return {"reachable": False, "error": "no default route"}
+    error = ""
+    for target in targets:
+        host, _, port = str(target).rpartition(":")
+        if not valid_host(host) or not port.isdigit():
+            error = f"invalid target {target}"
+            continue
+        t0 = time.monotonic()
+        try:
+            with socket.create_connection((host, int(port)), timeout=timeout_s):
+                pass
+        except OSError as e:
+            error = f"{target}: {e.strerror or e}"
+            continue
+        return {"reachable": True, "target": target, "rtt_ms": (time.monotonic() - t0) * 1000.0}
+    return {"reachable": False, "error": error}
 
 
 def route_to(host: str) -> Dict:
@@ -114,6 +138,15 @@ class NetworkCollector(PeriodicCollector):
         result.update({"host": host, "checked": time.time()})
         return result
 
+    def check_internet(self) -> Dict:
+        targets = self.cfg["network"].get("internet_check") or []
+        if self.fake is not None:
+            result = {"reachable": self.fake.internet() if targets else None}
+        else:
+            result = internet(targets)
+        result["checked"] = time.time()
+        return result
+
     def _auto_interface(self, ifaces: List[Dict]) -> str:
         """Interface used to reach the sensors, else the default-route one, else the first link up."""
         for dev in self.cfg["devices"].values():
@@ -148,4 +181,5 @@ class NetworkCollector(PeriodicCollector):
             "default_route": default_route(),
             "nav_routes": routes,
             "devices": {k: self.check_device(k) for k in self.cfg["devices"]},
+            "internet": self.check_internet(),
         }

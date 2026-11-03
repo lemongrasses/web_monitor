@@ -16,8 +16,9 @@ from .tools import register_tools
 
 logger = logging.getLogger(__name__)
 
-PAGES = ("overview", "system", "ros", "camera", "lidar", "network", "diagnostics")
+PAGES = ("overview", "system", "ros", "gnss", "camera", "lidar", "network", "diagnostics")
 NAV = [("overview", "Overview", "/"), ("system", "System", "/system"), ("ros", "ROS 2", "/ros"),
+       ("gnss", "GNSS / RTK", "/gnss"),
        ("camera", "Camera", "/camera"), ("lidar", "LiDAR", "/lidar"),
        ("network", "Network", "/network"), ("diagnostics", "Diagnostics", "/diagnostics"),
        ("still", "Still detection", "/still"), ("config", "AIO NAV config", "/config"),
@@ -69,6 +70,7 @@ def create_maintenance_app(ctx):
             "ros": ctx.store.get("ros", {}),
             "watchdog": ctx.store.get("watchdog", {}),
             "gnss": ctx.store.get("gnss", {}),
+            "gnss_diag": ctx.store.get("gnss_diag", {}),
             "readiness": ctx.store.get("readiness", {}),
             "status_udp": ctx.store.get("status_udp", {}) or {"enabled": False},
             "product": {k: product.get(k) for k in ("health", "udp", "nav", "indicators", "aiding")},

@@ -270,6 +270,20 @@ class EngineTest(unittest.TestCase):
         self.assertEqual(product["readiness"]["state"], "READY")
         self.assertEqual(r["nav"]["flags_c"], 0xE8)
 
+    def test_internet_lamp_follows_the_connection_out_not_the_cable(self):
+        eng = self.engine()
+        lamp = lambda: self.store.get("product")["indicators"]["internet"]
+        self.store.set("network", {"sensor_link_up": True, "internet": {"reachable": False}})
+        self.run_for(eng, 8)
+        self.assertEqual(lamp(), {"level": "warning", "label": "Not connected"})
+        self.assertNotIn("internet", str(self.store.get("product")["advisories"]).lower())
+        self.store.set("network", {"sensor_link_up": True, "internet": {"reachable": True}})
+        self.run_for(eng, 8)
+        self.assertEqual(lamp(), {"level": "healthy", "label": "Connected"})
+        self.store.set("network", {"internet": {"reachable": None, "error": "not set up"}})
+        self.run_for(eng, 8)
+        self.assertEqual(lamp()["label"], "Not set up")
+
     def test_required_rtk_float_with_stable_time_then_degraded(self):
         eng = self.engine(require=["gnss_quality"], gnss_min_quality="float", gnss_stable_s=3.0)
         self.aligned()

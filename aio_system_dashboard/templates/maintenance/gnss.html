@@ -1,0 +1,109 @@
+{% extends "maintenance/base.html" %}
+{% from "macros.html" import chip %}
+{% block title %}GNSS / RTK{% endblock %}
+{% block heading %}GNSS / RTK{% endblock %}
+{% block content %}
+<div class="alert alert-secondary py-2" x-show="d && !gd.available" x-cloak>
+  No GNSS diagnostics: <span class="mono" x-text="gd.reason || 'starting'"></span>
+</div>
+
+<section class="panel mb-3" aria-labelledby="gnss-diag-title">
+  <div class="panel-h"><strong id="gnss-diag-title">Diagnosis</strong>
+    <span class="muted small">checked in order: receiver, antenna signal, corrections, use of the corrections</span></div>
+  <div class="panel-b">
+    <div class="muted" x-show="d && gd.available && !(gd.findings || []).length">
+      No problem found: <span x-text="(gd.solution || {}).fix || ''"></span>, good signal, corrections arriving.</div>
+    <template x-for="(f, idx) in (gd.findings || [])" :key="idx + f.title">
+      <div class="vrow align-items-start">
+        <span>{{ chip("lvl(f.level === 'info' ? 'unknown' : f.level, f.level === 'fault' ? 'Fault' : f.level === 'warning' ? 'Warning' : 'Info')") }}
+          <strong class="ms-2" x-text="f.title"></strong>
+          <span class="muted small mono ms-1" x-text="f.detail"></span>
+          <span class="d-block small mt-1" x-show="f.hint" x-text="f.hint"></span></span>
+      </div>
+    </template>
+  </div>
+</section>
+
+<div class="row g-3">
+  <div class="col-lg-4">
+    <section class="panel h-100" aria-labelledby="gnss-sol-title">
+      <div class="panel-h"><strong id="gnss-sol-title">Receiver solution</strong>{{ chip("gdChip('solution')") }}</div>
+      <div class="panel-b">
+        <div class="vrow"><span class="k">Fix</span><strong x-text="gdSol.fix || gdSol.message || '—'"></strong></div>
+        <div class="vrow"><span class="k">Satellites used / seen</span>
+          <span class="mono" x-text="gdN(gdSol.satellites_used, 0) + ' / ' + gdN(gdSol.satellites_seen, 0)"></span></div>
+        <div class="vrow"><span class="k">HDOP</span><span class="mono" x-text="gdN(gdSol.hdop, 1)"></span></div>
+        <div class="vrow"><span class="k">Correction age (diffage)</span>
+          <span class="mono" x-text="AIO.isNum(gdSol.diffage_s) ? gdSol.diffage_s.toFixed(1) + ' s' : '—'"></span></div>
+        <div class="vrow"><span class="k">Position σ lat / lon / h</span>
+          <span class="mono" x-text="gdM(gdSol.sigma_lat_m) + ' / ' + gdM(gdSol.sigma_lon_m) + ' / ' + gdM(gdSol.sigma_h_m)"></span></div>
+        <p class="muted small mt-2 mb-0">From the receiver's g1 packet. A diffage of 0 means it uses no corrections.</p>
+      </div>
+    </section>
+  </div>
+
+  <div class="col-lg-4">
+    <section class="panel h-100" aria-labelledby="gnss-sig-title">
+      <div class="panel-h"><strong id="gnss-sig-title">Antenna signal</strong>{{ chip("gdChip('signal')") }}</div>
+      <div class="panel-b">
+        <div class="vrow"><span class="k">Satellites tracked</span><span class="mono" x-text="gdN(gdSig.satellites, 0)"></span></div>
+        <div class="vrow"><span class="k">C/N0 median</span>
+          <span class="mono" x-text="AIO.isNum(gdSig.cnr_median_dbhz) ? gdSig.cnr_median_dbhz.toFixed(0) + ' dBHz' : '—'"></span></div>
+        <div class="vrow"><span class="k">Signals ≥ 35 dBHz</span><span class="mono" x-text="pct(gdSig.pct_ge35)"></span></div>
+        <table class="table table-sm mt-2 mb-0">
+          <thead><tr><th>System</th><th class="text-end">Sats</th><th class="text-end">C/N0</th><th style="width:40%">≥ 35 dBHz</th></tr></thead>
+          <tbody>
+            <template x-for="s in (gdSig.systems || [])" :key="s.name">
+              <tr><td x-text="s.name"></td>
+                  <td class="text-end mono" x-text="gdN(s.satellites, 0)"></td>
+                  <td class="text-end mono" x-text="gdN(s.cnr_median_dbhz, 0)"></td>
+                  <td><div class="progress" style="height:.6rem" role="img" :aria-label="pct(s.pct_ge35) + ' strong signals'">
+                    <div class="progress-bar" :class="gdBarClass(s.pct_ge35)" :style="'width:' + (s.pct_ge35 || 0) + '%'"></div></div></td></tr>
+            </template>
+          </tbody>
+        </table>
+        <p class="muted small mt-2 mb-0">RTK needs most signals at 35 dBHz or more; open sky gives 40–50.</p>
+      </div>
+    </section>
+  </div>
+
+  <div class="col-lg-4">
+    <section class="panel h-100" aria-labelledby="gnss-cor-title">
+      <div class="panel-h"><strong id="gnss-cor-title">RTK corrections (NTRIP)</strong>{{ chip("gdChip('corrections')") }}</div>
+      <div class="panel-b">
+        <div class="vrow"><span class="k">State</span><span x-text="gdCor.message || '—'"></span></div>
+        <div class="vrow"><span class="k">Caster</span><span class="mono small" x-text="(gdCor.caster || '—') + (gdCor.mountpoint ? ' /' + gdCor.mountpoint : '')"></span></div>
+        <div class="vrow"><span class="k">From caster</span><span class="mono" x-text="gdRate(gdCor.caster_rate_Bps)"></span></div>
+        <div class="vrow"><span class="k">To receiver</span><span class="mono" x-text="gdRate(gdCor.to_receiver_rate_Bps)"></span></div>
+        <div class="vrow"><span class="k">Last correction</span>
+          <span class="mono" x-text="AIO.isNum(gdCor.data_age_s) && gdCor.data_age_s >= 0 ? gdCor.data_age_s.toFixed(1) + ' s ago' : '—'"></span></div>
+        <div class="vrow"><span class="k">Connected for</span><span class="mono" x-text="gdDur(gdCor.connected_s)"></span></div>
+        <div class="vrow"><span class="k">Connects / failures</span>
+          <span class="mono" x-text="gdN(gdCor.connects, 0) + ' / ' + gdN(gdCor.failures, 0)"></span></div>
+        <div class="vrow align-items-start"><span class="k">Last error</span>
+          <span class="small text-end"><span x-text="gdCor.last_error || 'none'"></span>
+            <span class="muted d-block" x-show="gdCor.last_error && AIO.isNum(gdCor.last_error_age_s)" x-text="gdDur(gdCor.last_error_age_s) + ' ago'"></span></span></div>
+      </div>
+    </section>
+  </div>
+</div>
+
+<section class="panel mt-3" aria-labelledby="gnss-hist-title">
+  <div class="panel-h"><strong id="gnss-hist-title">Last 10 minutes</strong>
+    <span class="muted small" x-text="(gd.history || []).length + ' s recorded'"></span></div>
+  <div class="panel-b">
+    <template x-for="row in gdCharts" :key="row.key">
+      <div class="vrow align-items-center">
+        <span class="k" style="min-width:11rem" x-text="row.label"></span>
+        <svg viewBox="0 0 600 40" preserveAspectRatio="none" style="width:100%;height:40px" role="img" :aria-label="row.label + ' over the last 10 minutes'">
+          <line x1="0" x2="600" :y1="gdY(row, row.ref)" :y2="gdY(row, row.ref)" stroke="currentColor" stroke-opacity=".25" stroke-dasharray="4 4" x-show="row.ref !== null"></line>
+          <polyline fill="none" stroke="currentColor" stroke-width="1.5" :points="gdPoints(row)"></polyline>
+        </svg>
+        <span class="mono small ms-2" style="min-width:5rem;text-align:right" x-text="gdLast(row)"></span>
+      </div>
+    </template>
+    <p class="muted small mt-2 mb-0">Fix: 0 none, 1 SPP, 2 RTK float, 3 RTK fix. Dashed lines: 35 dBHz, and 50% strong signals.
+      Correction drops and recoveries are listed under <a href="/diagnostics">Diagnostics</a> (category GNSS).</p>
+  </div>
+</section>
+{% endblock %}

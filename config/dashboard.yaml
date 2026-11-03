@@ -12,7 +12,7 @@ maintenance:  { host: 0.0.0.0, port: 8081 }
 # (this Jetson is 192.168.116.1 on eno1). This Jetson itself (127.0.0.1) is always allowed.
 # IPs or CIDRs; empty list = no restriction.
 access:
-  allowed_clients: [192.168.116.154]
+  allowed_clients: [192.168.116.154,127.0.0.1]
 
 nav:
   udp_bind: 127.0.0.1:9000       # aio_nav_node always sends here; the dashboard is its only listener (aio-nav-ui is not used)
@@ -40,8 +40,8 @@ nav:
 services:
   aio_nav:   { label: AIO NAV, unit: aio-nav.service, process_pattern: '^[^ ]*lib/aio_nav_ros/aio_nav_node', launch: aio-nav }
   dso:       { label: DSO, process_pattern: '^[^ ]*lib/dso_ros/dso_live', launch: aio-nav-dso, optional: true }
-  drivers:   { label: Sensor drivers, user_unit: point-lab.target, process_pattern: '^[^ ]*aceinna_openrtk330_driver_node', optional: true }
-  camera:    { label: Camera driver, user_unit: point-lab-sensor@basler.service, restartable: true, process_pattern: '^[^ ]*pylon_ros2_camera_wrapper' }   # Basler, its own unit under point-lab.target
+  drivers:   { label: Sensor drivers, user_unit: openrtk330-basler-drivers.service, process_pattern: '^[^ ]*aceinna_openrtk330_driver_node', optional: true }
+  camera:    { label: Camera driver, process_pattern: '^[^ ]*pylon_ros2_camera_wrapper' }   # Basler, inside openrtk330-basler-drivers.service (old driver package: no unit of its own)
   dashboard: { label: Dashboard, unit: aio-dashboard.service }
 
 # host (optional): IP to ping. Empty = shown as "Not set up", no warnings.
@@ -58,6 +58,9 @@ devices:
 network:
   sensor_interface: auto         # auto = interface used to reach the sensors / default route
   ping_interval_s: 5
+  # Internet lamp: "Connected" only when a TCP connection to one of these opens (a plugged-in
+  # cable alone is not enough). host:port; [] = not checked, shown as "Not set up".
+  internet_check: ["1.1.1.1:443", "8.8.8.8:443"]
 
 system:
   interval_s: 2

@@ -49,7 +49,9 @@ DEFAULTS: Dict[str, Any] = {
     },
     "services": {},
     "devices": {},
-    "network": {"sensor_interface": "auto", "ping_interval_s": 5.0},
+    "network": {"sensor_interface": "auto", "ping_interval_s": 5.0,
+                # Internet lamp: connected when a TCP connection to one of these opens (host:port)
+                "internet_check": ["1.1.1.1:443", "8.8.8.8:443"]},
     "system": {"interval_s": 2.0, "disk_paths": ["/"], "disk_warn_percent": 90, "temp_warn_c": 85},
     "ros": {"enabled": True, "graph_interval_s": 2.0, "rate_window_s": 2.0, "nodes": [], "topics": [],
             # Modes: the active one is chosen on Maintenance > ROS 2 (stored in state/ros_mode.json) or
@@ -74,6 +76,8 @@ DEFAULTS: Dict[str, Any] = {
     "modules": {},
     # Receiver quality lamp (RTK fix / RTK float / SPP / no signal) from this NavSatFix topic.
     "gnss": {"topic": "/openrtk330/gnss/fix", "timeout_s": 3.0},
+    # RTK troubleshooting (collectors/gnss_diag.py): the receiver driver's diagnostics, 1 Hz.
+    "gnss_diag": {"topic": "/openrtk330/gnss/diagnostics", "timeout_s": 5.0, "history_s": 600},
     # Watches DSO's odometry and restarts DSO (only DSO) when it turns NaN.
     "dso_watchdog": {"enabled": False, "topic": "/dso/odometry", "service": "dso",
                      "bad_messages": 1,       # NaN messages in a row before restarting (1 = at once)

@@ -27,6 +27,8 @@
       <div class="panel-b border-top small">
         Default route:
         <span class="mono" x-text="net.default_route ? net.default_route.gateway + ' via ' + net.default_route.interface : 'none'"></span>
+        <span class="ms-3">Internet {{ chip("internetChip()") }}
+          <span class="muted" x-text="internetText()"></span></span>
       </div>
     </div>
   </div>

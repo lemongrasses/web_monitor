@@ -142,7 +142,7 @@ alignment, GNSS and aiding. Each item is a name, a colored dot and a word:
 |------|-------|
 | **Navigation output** | Whether the navigation output (UDP, section 6) is sent, at what rate and to where, for example *100 Hz to 192.0.2.50:9000*. Grey when AIO NAV is stopped (normal), amber for *Low rate* (under 80% of the expected rate) or *Stale* (no packet for 0.5 s), red when nothing was sent for 2 s while it should (the state becomes Fault). UDP has no acknowledgement: it confirms that the device sends, not that your application receives. |
 | **Camera / LiDAR** (if fitted) | The sensor answers on the network. "Not set up" means no IP is configured; this is normal if not needed. |
-| **Sensor network** | The sensor network link is up. |
+| **Internet** | This device reaches the Internet (a test connection out succeeds, checked every few seconds). A plugged-in network cable or a joined Wi-Fi without a way out shows *Not connected*. Only RTK corrections need it; navigation runs without it. |
 | **Coarse alignment**, **Initial heading**, **Fine alignment** (Navigation page) | The three alignment steps in order: **Done**, **In progress** (the current step), **Waiting** (a later step), or **—** while AIO NAV sends no output. |
 | **GNSS** (Navigation page) | Position quality of the GNSS receiver: green = *RTK fix* (centimeter level), amber = *RTK float* (about 10 cm) or *Fix (type unknown)*, red = *SPP* (single-point positioning, meters) or *No signal*. Amber and red are warnings only: inertial navigation continues, but accuracy slowly degrades. |
 | **ZUPT / ZIHR / NHC / VUPT** (Navigation page) | Which aiding the filter is using at the moment (see the [glossary](#10-glossary)). Idle is normal. |

@@ -1,5 +1,5 @@
 {
-  "_help": "Edit while the dashboard runs (fake mode). services: running|stopped|failed|not_installed. devices: true/false reachable. ros.topics: healthy|low_rate|stale|missing or {state, hz}. pids: change aio_nav pid to simulate a node restart. vehicle: still|moving (IMU motion and speed).",
+  "_help": "Edit while the dashboard runs (fake mode). services: running|stopped|failed|not_installed. devices: true/false reachable. internet: true/false. ros.topics: healthy|low_rate|stale|missing or {state, hz}. pids: change aio_nav pid to simulate a node restart. vehicle: still|moving (IMU motion and speed).",
   "services": {
     "aio_nav": "stopped",
     "camera": "running",
@@ -14,6 +14,7 @@
     "camera": true,
     "lidar": true
   },
+  "internet": true,
   "ros": {
     "nodes": {
       "/aio_nav_node": true,

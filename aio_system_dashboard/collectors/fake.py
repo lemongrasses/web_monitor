@@ -48,6 +48,9 @@ class FakeState:
     def reachable(self, device: str) -> bool:
         return bool(self.get().get("devices", {}).get(device, True))
 
+    def internet(self) -> bool:
+        return bool(self.get().get("internet", True))
+
     def topic(self, name: str) -> Dict[str, Any]:
         """Return {'state': healthy|low_rate|stale|missing, 'hz': float|None} for a ROS topic."""
         spec = self.get().get("ros", {}).get("topics", {}).get(name, "healthy")

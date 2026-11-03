@@ -36,7 +36,7 @@
 <div class="u-links" aria-label="{{ _('Connections') }}">
   {{ link(_("Navigation output"), "udp", "outputText()") }}
   {% for key, dev in devices.items() %}{{ link(_(dev.label), "ind('" ~ key ~ "')") }}{% endfor %}
-  {{ link(_("Sensor network"), "ind('network')") }}
+  {{ link(_("Internet"), "ind('internet')") }}
 </div>
 
 <!-- Advisories inform; they never change Ready -->

@@ -386,8 +386,9 @@ ros2 param get /ouster/os_driver sensor_hostname   # Ouster IP (node name may di
 
 | Key | Default | Meaning |
 |-----|---------|---------|
-| `sensor_interface` | `auto` | Network interface connected to the sensor LAN, e.g. `eth0`. `auto` = the interface that routes to a device `host`, else the one with the default route. Shown as the **Network** lamp (link up or down). List interfaces with `ip -br link`. |
-| `ping_interval_s` | `5` | Seconds between ping checks of device `host`s. |
+| `sensor_interface` | `auto` | Network interface connected to the sensor LAN, e.g. `eth0`. `auto` = the interface that routes to a device `host`, else the one with the default route. Its link is shown on Maintenance > Network; a link down is an advisory. List interfaces with `ip -br link`. |
+| `ping_interval_s` | `5` | Seconds between ping checks of device `host`s (and of the Internet). |
+| `internet_check` | `["1.1.1.1:443", "8.8.8.8:443"]` | `host:port` targets for the **Internet** lamp: *Connected* when a TCP connection to one of them opens (tried in order; nothing is sent). A cable or Wi-Fi without a way out shows *Not connected*. `[]` = not checked, shown as *Not set up*. On a network that blocks these, use a server it does allow. |
 
 ### 4.5a `wifi`: Wi-Fi on the Settings page and the Maintenance page
 

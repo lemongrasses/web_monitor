@@ -183,6 +183,7 @@ class HealthEngine:
         self.devices = {k: DebouncedStatus(ping_s * 1.2, ping_s * 0.8, clock=clock)
                         for k in cfg["devices"]}
         self.link = DebouncedStatus(2.0, 2.0, clock=clock)
+        self.internet = DebouncedStatus(ping_s * 1.2, ping_s * 0.8, clock=clock)
         self._product_reasons: List[str] = []
         self._udp_label = ("Waiting", "")
         self._prev: Dict[str, str] = {}
@@ -387,6 +388,15 @@ class HealthEngine:
         if l_level == WARNING:
             advisories.append({"level": WARNING, "title": "Sensor LAN link down",
                                "detail": network.get("sensor_interface", "")})
+        # Internet: only a working connection out counts, not a plugged-in cable. No advisory:
+        # the system runs without it (only RTK corrections and the map background need it).
+        net = network.get("internet") or {}
+        reach = net.get("reachable")
+        i_level = self.internet.update(UNKNOWN if reach is None else (HEALTHY if reach else WARNING), now)
+        indicators["internet"] = {"level": i_level, "label": {HEALTHY: "Connected",
+                                  WARNING: "Not connected"}.get(i_level, "Unknown")}
+        if net.get("error") == "not set up":
+            indicators["internet"]["label"] = "Not set up"
         if u_shown == WARNING:
             advisories.append({"level": WARNING, "title": f"UDP output {self._udp_label[0].lower()}",
                                "detail": self._udp_label[1]})
@@ -854,6 +864,11 @@ class HealthEngine:
         else:
             dataflow.append({"name": "ROS 2", "level": UNKNOWN, "rate_hz": None,
                              "detail": ros.get("error") or "starting", "link": "ros"})
+
+        # GNSS / RTK (collectors/gnss_diag.py): its findings on the Diagnostics page and the sidebar.
+        for f in (self.store.get("gnss_diag", {}) or {}).get("findings") or []:
+            if f["level"] in (FAULT, WARNING):
+                issue("dataflow", f["level"], f"GNSS: {f['title']}", f.get("detail", ""), "gnss")
 
         # Network layer
         if network.get("sensor_link_up") is False:

@@ -21,6 +21,7 @@ from .actions.registry import ActionRegistry
 from .collectors.fake import FakeState
 from .actions import process_control
 from .collectors.dso_watchdog import DsoWatchdog
+from .collectors.gnss_diag import GnssDiagnostics
 from .collectors.gnss_monitor import GnssMonitor
 from .collectors.speed import SpeedMonitor
 from .actions.wifi import hotspot_enabled
@@ -80,6 +81,7 @@ class DashboardContext:
             memory_mb=lambda: process_control.memory_mb(cfg, dso),
             total_memory_mb=process_control.total_memory_mb())
         self.gnss = GnssMonitor(cfg, self.store)
+        self.gnss_diag = GnssDiagnostics(cfg, self.store, self.events)
         self.speed = SpeedMonitor(cfg, self.store)
         gt = cfg["gnss_time"]
         self.gnss_clock = (GnssClockFeeder(float(gt["latency_ms"]) / 1000.0, ChronyShm(int(gt["shm_unit"])))
@@ -90,7 +92,7 @@ class DashboardContext:
             driver_pids=lambda: process_control.running_pids(cfg, drivers) if drivers else [],
             restart=self.request_restart, state_file=cfg.state_file("ros_self_restart.json"))
         self.ros = Ros2Collector(self.store, cfg, self.fake, self.preview,
-                                 watchers=[self.dso_watchdog, self.gnss, self.speed] if not cfg.fake else [],
+                                 watchers=[self.dso_watchdog, self.gnss, self.gnss_diag, self.speed] if not cfg.fake else [],
                                  guard=None if cfg.fake else self.guard, clock_feeder=self.gnss_clock)
         self.speed.window_open = self.ros.sampling_window_open     # listen together with the IMU
         self.health = HealthEngine(cfg, self.store, self.nav, self.events)
