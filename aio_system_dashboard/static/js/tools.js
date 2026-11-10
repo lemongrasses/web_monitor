@@ -50,7 +50,8 @@
       },
       confirmed() {
         const p = this.pending;
-        if (p === "start") this.startHotspot(true); else if (p === "stop") this.stopHotspot(true); else this.connect(true);
+        if (p === "start") this.startHotspot(true); else if (p === "stop") this.stopHotspot(true);
+        else if (p === "disconnect") this.disconnect(true); else this.connect(true);
       },
       async hotspot(body, confirm, doing) {
         this.busy = "hotspot"; this.confirmText = ""; this.msg = doing; this.msgClass = "";
@@ -89,6 +90,16 @@
         if (j.needs_confirm) { this.confirmText = j.summary; this.msg = ""; return; }
         this.msg = j.summary || ""; this.msgClass = j.success ? "ok" : "bad";
         if (j.success) this.password = "";
+        await this.refresh();
+      },
+      async disconnect(confirm) {
+        this.pending = "disconnect";
+        this.busy = "disconnect"; this.confirmText = "";
+        this.msg = "Disconnecting from " + (this.st.connection || "Wi-Fi") + "…"; this.msgClass = "";
+        const j = await this.toolFetch("/api/maint/wifi/disconnect", { method: "POST", body: JSON.stringify({ confirm: !!confirm }) });
+        this.busy = "";
+        if (j.needs_confirm) { this.confirmText = j.summary; this.msg = ""; return; }
+        this.msg = j.summary || ""; this.msgClass = j.success ? "ok" : "bad";
         await this.refresh();
       },
       stageText() {

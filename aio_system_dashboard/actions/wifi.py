@@ -6,7 +6,7 @@ Safety rules:
   change. See ``client_path``.
 * No root while running. ``install.sh --with-wifi`` installs, once, a polkit rule that lets the
   dashboard's user manage NetworkManager. The code only ever creates, deletes or activates Wi-Fi
-  (802-11-wireless) profiles; wired profiles are never touched.
+  (802-11-wireless) profiles, or disconnects the Wi-Fi device; wired profiles are never touched.
 * A connection attempt records the active Wi-Fi profile first. If the new network fails (wrong
   password, no association, no IPv4 within ``ip_timeout_s``), the profiles it created are deleted
   and the previous Wi-Fi connection is brought back.
@@ -149,6 +149,8 @@ class WifiManager:
     def device(self) -> Optional[Dict]:
         if self.fake:
             on = bool(self._fake_hotspot and self._fake_hotspot["autostart"])
+            if not on and not self._fake_connected:
+                return {"device": "wlan0", "state": "disconnected", "connection": ""}
             return {"device": "wlan0", "state": "connected", "connection": HOTSPOT if on else self._fake_connected}
         rc, out = self.nm("-t", "-f", "DEVICE,TYPE,STATE,CONNECTION", "device")
         if rc != 0:
@@ -451,6 +453,47 @@ class WifiManager:
         restored = self._rollback(created, previous, dev)
         return {"success": False, "stages": stages, "device": dev, "code": code,
                 "restored": self._restored, "kept": self._kept, "summary": f"{why}; {restored}"}
+
+    def disconnect(self) -> Dict:
+        """Leave the current network. The saved profile (and its password) is kept, but the Wi-Fi
+        stays off until a network is chosen again or the device is restarted: ``nmcli device
+        disconnect`` blocks automatic connections on the device until then."""
+        if (self.device() or {}).get("connection") == HOTSPOT:
+            raise WifiError("the Wi-Fi is a hotspot now; it is switched off on Maintenance > Network", 409)
+        if not self._lock.acquire(blocking=False):
+            raise WifiError("another Wi-Fi change is in progress", 409)
+        try:
+            result = self._fake_disconnect() if self.fake else self._disconnect()
+        finally:
+            self._lock.release()
+        self.last_result = dict(result, at=time.time(), disconnect=True)
+        if result["success"] and result.get("disconnected"):
+            self.events.add("info", "network", f"Wi-Fi disconnected from {result['disconnected']}", result["summary"])
+        elif not result["success"]:
+            self.events.add("warning", "network", "Wi-Fi disconnect failed", result["summary"])
+        return result
+
+    def _disconnect(self) -> Dict:
+        d = self.device()
+        if d is None:
+            raise WifiError("no Wi-Fi adapter managed by NetworkManager", 404)
+        dev = d["device"]
+        name = d["connection"] if d["state"].startswith("connected") else ""
+        if not name:
+            return {"success": True, "device": dev, "disconnected": "", "summary": "Wi-Fi was not connected"}
+        rc, out = self.nm("--wait", "15", "device", "disconnect", dev, timeout=25)
+        if rc != 0:
+            return {"success": False, "device": dev, "code": failure_code(out),
+                    "summary": self._why(out, "could not disconnect")}
+        return {"success": True, "device": dev, "disconnected": name,
+                "summary": f"disconnected from {name}; the Wi-Fi stays off until a network is chosen or the device restarts"}
+
+    def _fake_disconnect(self) -> Dict:
+        name, self._fake_connected = self._fake_connected, ""
+        if not name:
+            return {"success": True, "device": "wlan0", "disconnected": "", "summary": "Wi-Fi was not connected"}
+        return {"success": True, "device": "wlan0", "disconnected": name,
+                "summary": f"disconnected from {name}; the Wi-Fi stays off until a network is chosen or the device restarts"}
 
     def _rollback(self, created: List[str], previous: Optional[str], dev: str) -> str:
         """Delete only the Wi-Fi profiles this attempt created; bring the previous one back if it was left."""

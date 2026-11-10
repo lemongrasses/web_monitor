@@ -97,6 +97,28 @@ def register_settings(ctx, app, prefix: str, rtk_path: str, guard=None, where: s
             return jsonify({"success": False, "summary": str(e)}), e.status
 
     @protect
+    def api_wifi_disconnect():
+        """Leave the current network: {"confirm": bool}. Same cable rule and confirm as a change."""
+        if bad_request():
+            return jsonify({"success": False, "summary": "bad request"}), 400
+        b = body()
+        st = wifi.status()
+        if not st.get("available"):
+            return jsonify({"success": False, "summary": st.get("reason", "no Wi-Fi")}), 404
+        ok, why, risks = wifi_gate(st["device"])
+        if not ok:
+            return jsonify({"success": False, "summary": why}), 403
+        if risks and b.get("confirm") is not True:
+            return jsonify({"success": False, "needs_confirm": True, "risks": risks,
+                            "summary": "Changing Wi-Fi now may interrupt: " + "; ".join(risks)}), 409
+        _events(ctx).add("info", "network", "Wi-Fi disconnect requested",
+                         f"on the {where} from {request.remote_addr} ({why})")
+        try:
+            return jsonify(wifi.disconnect())
+        except wifi_mod.WifiError as e:
+            return jsonify({"success": False, "summary": str(e)}), e.status
+
+    @protect
     def api_wifi_hotspot():
         """Start or stop the hotspot (Maintenance only): {"action": "start", "ssid", "password"} or
         {"action": "stop"}; same cable rule as a Wi-Fi change, and a confirm when it disturbs."""
@@ -177,6 +199,7 @@ def register_settings(ctx, app, prefix: str, rtk_path: str, guard=None, where: s
     app.add_url_rule(f"{prefix}/wifi", f"{name}_wifi", api_wifi)
     app.add_url_rule(f"{prefix}/wifi/scan", f"{name}_wifi_scan", api_wifi_scan, methods=["POST"])
     app.add_url_rule(f"{prefix}/wifi/connect", f"{name}_wifi_connect", api_wifi_connect, methods=["POST"])
+    app.add_url_rule(f"{prefix}/wifi/disconnect", f"{name}_wifi_disconnect", api_wifi_disconnect, methods=["POST"])
     if guard is not None:                             # the hotspot is switched on Maintenance only
         app.add_url_rule(f"{prefix}/wifi/hotspot", f"{name}_wifi_hotspot", api_wifi_hotspot, methods=["POST"])
         app.add_url_rule(f"{prefix}/wifi/hotspot/relay", f"{name}_wifi_hotspot_relay", api_wifi_hotspot_relay,

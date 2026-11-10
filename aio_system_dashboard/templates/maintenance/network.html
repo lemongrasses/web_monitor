@@ -89,6 +89,9 @@
         <div class="d-flex gap-2 align-items-center mb-2" x-show="st.mode !== 'hotspot'">
           <button type="button" class="btn btn-sm btn-outline-secondary" :disabled="!!busy" @click="scan()">
             <span x-text="busy === 'scan' ? 'Scanning…' : 'Scan for networks'"></span></button>
+          <button type="button" class="btn btn-sm btn-outline-danger" :disabled="!!busy" @click="disconnect(false)"
+                  x-show="st.connection && st.may_change" x-text="busy === 'disconnect' ? 'Disconnecting…' : 'Disconnect'"
+                  title="Leave the network. The saved password is kept; Wi-Fi stays off until a network is chosen or the device restarts."></button>
           <span class="small muted" x-text="stageText()"></span>
         </div>
         <table class="table table-sm mb-3" x-show="networks.length && st.mode !== 'hotspot'">
@@ -149,7 +152,8 @@
         </template>
         <div class="alert alert-warning py-2 mt-2 mb-0" x-show="confirmText">
           <span x-text="confirmText"></span>
-          <button type="button" class="btn btn-sm btn-warning ms-2" @click="confirmed()">Change Wi-Fi anyway</button>
+          <button type="button" class="btn btn-sm btn-warning ms-2" @click="confirmed()"
+                  x-text="pending === 'disconnect' ? 'Disconnect anyway' : 'Change Wi-Fi anyway'"></button>
           <button type="button" class="btn btn-sm btn-outline-secondary ms-1" @click="confirmText = ''">Cancel</button>
         </div>
         <div class="small mt-2" :class="msgClass === 'bad' ? 'text-danger' : (msgClass === 'ok' ? 'text-success' : 'muted')" x-text="msg"></div>

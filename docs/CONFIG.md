@@ -420,6 +420,9 @@ Rules:
   password on the Maintenance page. Every change is recorded in the event log; the Wi-Fi password
   is never logged, shown or returned.
 - A failed change that never left the current network does not drop it: the page says *Still on …*.
+- **Disconnect:** both pages have a *Disconnect* button while a network is joined. The saved profile
+  (and its password) is kept, but the Wi-Fi stays off until a network is chosen again or the device
+  is restarted (`nmcli device disconnect`). The same cable rule and confirm apply.
 
 **Hotspot** (`wifi.hotspot`, installer part `hotspot`): on **Maintenance → Network** the Wi-Fi can
 become a network of its own for phones and tablets instead of joining one (one radio cannot do

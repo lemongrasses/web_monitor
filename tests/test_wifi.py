@@ -60,6 +60,9 @@ class FakeNM:
         if "up" in a:
             self.active = a[-1]
             return 0, ""
+        if a[-3:-1] == ["device", "disconnect"]:
+            self.active = None
+            return 0, f"Device '{a[-1]}' successfully disconnected."
         return 1, "unexpected call"
 
 
@@ -294,6 +297,26 @@ class ConnectTest(unittest.TestCase):
         self.assertIn("--with-wifi", r["summary"])
         self.assertEqual(r["code"], "denied")
 
+    def test_disconnect_leaves_the_network_and_keeps_its_profile(self):
+        nm = HotspotNM()                                             # its device state follows "active"
+        r = self.mgr(nm).disconnect()
+        self.assertTrue(r["success"], r)
+        self.assertEqual(r["disconnected"], "office")
+        self.assertIn(["nmcli", "--wait", "15", "device", "disconnect", "wlan0"], nm.calls)
+        self.assertFalse(any("delete" in c or "down" in c for c in nm.calls))     # the profile stays
+        self.assertIsNone(nm.active)
+        self.assertTrue(any("disconnected from office" in e for e in self.events.items))
+        r = self.mgr(nm).disconnect()                                # already off: nothing to do
+        self.assertEqual((r["success"], r["disconnected"]), (True, ""))
+
+    def test_disconnect_is_refused_while_the_hotspot_runs(self):
+        nm = HotspotNM(saved={"ssid": "AIO-NAV", "autoconnect": "yes"})
+        nm.active = "u-hs"
+        with self.assertRaises(w.WifiError) as cm:
+            self.mgr(nm).disconnect()
+        self.assertEqual(cm.exception.status, 409)
+        self.assertFalse(any("disconnect" in c for c in nm.calls))
+
     def test_input_checks(self):
         m = self.mgr(FakeNM())
         for ssid, pw in (("", SECRET), ("x" * 33, SECRET), ("lab", "short")):
@@ -397,6 +420,20 @@ class WifiWebTest(unittest.TestCase):
         self.assertEqual(r.status_code, 409)
         self.assertTrue(self.post("/api/maint/wifi/hotspot", {"action": "stop", "confirm": True}).get_json()["success"])
 
+    def test_disconnect_needs_the_password_then_a_confirm_while_in_use(self):
+        self.assertEqual(self.post("/api/maint/wifi/disconnect", {}).status_code, 401)
+        self.post("/api/maint/auth/unlock", {"password": "right-password"})
+        self.store["readiness"] = {"state": "READY"}
+        r = self.post("/api/maint/wifi/disconnect", {})
+        self.assertEqual(r.status_code, 409)
+        self.assertTrue(r.get_json()["needs_confirm"])
+        self.assertFalse(any("disconnect" in c for c in self.nm.calls))
+        r = self.post("/api/maint/wifi/disconnect", {"confirm": True}).get_json()
+        self.assertEqual((r["success"], r["disconnected"]), (True, "office"))
+        st = self.c.get("/api/maint/wifi").get_json()
+        self.assertEqual((st["state"], st["connection"]), ("disconnected", ""))
+        self.assertTrue(any("disconnect requested" in e for e in self.events.items))
+
     def test_packet_copies_switch_needs_the_password(self):
         self.assertEqual(self.post("/api/maint/wifi/hotspot/relay", {"enabled": False}).status_code, 401)
         self.post("/api/maint/auth/unlock", {"password": "right-password"})
@@ -459,8 +496,15 @@ class UserPageSettingsTest(unittest.TestCase):
                                                                             "connect with a network cable to change Wi-Fi")):
             r = self.post("/api/wifi/connect", {"ssid": "lab", "password": SECRET})
             self.assertEqual(r.status_code, 403)
+            self.assertEqual(self.post("/api/wifi/disconnect", {"confirm": True}).status_code, 403)
             self.assertFalse(self.c.get("/api/wifi").get_json()["may_change"])
         self.assertFalse(any("connect" in c for c in self.nm.calls))
+
+    def test_disconnect_from_the_user_page(self):
+        r = self.post("/api/wifi/disconnect", {}).get_json()
+        self.assertEqual((r["success"], r["disconnected"]), (True, "office"), r)
+        self.assertIn(["nmcli", "--wait", "15", "device", "disconnect", "wlan0"], self.nm.calls)
+        self.assertTrue(any("user page" in e for e in self.events.items))
 
     def test_the_hotspot_is_shown_but_switched_on_maintenance_only(self):
         self.ctx.cfg.data["wifi"]["hotspot"]["enabled"] = True

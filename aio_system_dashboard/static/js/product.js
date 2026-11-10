@@ -246,7 +246,7 @@
     return {
       wifi: null, cfg: null, networks: [], scanning: false,
       choice: "", ssid: "", password: "", showPw: false,
-      busy: "", result: "", resultClass: "", confirmRisks: [],
+      busy: "", result: "", resultClass: "", confirmRisks: [], pending: "",
       rtkBusy: false, rtkAsk: false, rtkMsg: "", rtkClass: "",
 
       async init() {
@@ -300,9 +300,21 @@
         if (this.choice === "__other__") return p === 0 || p >= 8;   // a hidden network may be open
         return !this.needsPassword() || p >= 8;
       },
+      confirmed() { if (this.pending === "disconnect") this.disconnect(true); else this.connect(true); },
+      async disconnect(confirm) {
+        const name = this.wifi && this.wifi.connection;
+        this.pending = "disconnect"; this.busy = "disconnect"; this.result = ""; this.confirmRisks = [];
+        const { status, j } = await postJson("/api/wifi/disconnect", { confirm: !!confirm });
+        this.busy = "";
+        if (status === 409 && j.needs_confirm) { this.confirmRisks = j.risks && j.risks.length ? j.risks : [j.summary]; return; }
+        if (j.success) { this.result = trf("Disconnected from {0}.", j.disconnected || name); this.resultClass = "ok"; }
+        else { this.result = j.summary || tr("Could not disconnect."); this.resultClass = "bad"; }
+        await this.loadWifi();
+        this.scan("auto");
+      },
       async connect(confirm) {
         const name = this.target();
-        this.busy = "connect"; this.result = ""; this.confirmRisks = [];
+        this.pending = "connect"; this.busy = "connect"; this.result = ""; this.confirmRisks = [];
         const { status, j } = await postJson("/api/wifi/connect",
           { ssid: name, password: this.password, hidden: this.choice === "__other__", confirm: !!confirm });
         this.busy = "";

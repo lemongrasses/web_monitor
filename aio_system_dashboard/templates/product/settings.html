@@ -35,6 +35,17 @@
           </div>
         </div>
       </template>
+      <template x-if="wifi && wifi.available && wifi.may_change && wifi.mode !== 'hotspot' && wifi.connection">
+        <div class="u-item">
+          <div class="u-item-main">
+            <div class="u-item-sub">{{ _("Disconnecting keeps the saved password. Wi-Fi stays off until you connect again or the device is restarted.") }}</div>
+          </div>
+          <button type="button" class="u-btn u-btn-sm u-btn-quiet" :disabled="!!busy" @click="disconnect(false)">
+            <span x-show="busy === 'disconnect'" class="spinner-border spinner-border-sm" aria-hidden="true"></span>
+            <span x-text="busy === 'disconnect' ? AIO.tr('Disconnecting…') : AIO.tr('Disconnect')"></span>
+          </button>
+        </div>
+      </template>
       <template x-if="wifi && wifi.available && wifi.may_change && wifi.mode !== 'hotspot'">
         <form class="u-item stack" @submit.prevent="connect(false)" autocomplete="off">
           <label class="u-field" for="wifi-net"><span class="u-label">{{ _("Network") }}</span></label>
@@ -69,7 +80,7 @@
             <strong>{{ _("Change Wi-Fi now?") }}</strong>
             <ul><template x-for="r in confirmRisks" :key="r"><li x-text="r"></li></template></ul>
             <div class="d-flex gap-2">
-              <button type="button" class="u-btn u-btn-sm" @click="connect(true)">{{ _("Change Wi-Fi") }}</button>
+              <button type="button" class="u-btn u-btn-sm" @click="confirmed()" x-text="pending === 'disconnect' ? AIO.tr('Disconnect') : AIO.tr('Change Wi-Fi')"></button>
               <button type="button" class="u-btn u-btn-sm u-btn-quiet" @click="confirmRisks = []">{{ _("Cancel") }}</button>
             </div>
           </div>

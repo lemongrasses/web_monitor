@@ -105,6 +105,10 @@ ZH = {
     "Could not search for networks.": "無法搜尋網路。", "Could not connect.": "無法連線。",
     "Back on {0}.": "已回到 {0}。", "Still on {0}.": "仍連線在 {0}。", "Wi-Fi is not connected now.": "目前沒有連線 Wi-Fi。",
     "Hotspot: {0}": "熱點：{0}",
+    "Disconnect": "斷線", "Disconnecting…": "斷線中…", "Disconnected from {0}.": "已與 {0} 斷線。",
+    "Could not disconnect.": "無法斷線。",
+    "Disconnecting keeps the saved password. Wi-Fi stays off until you connect again or the device is restarted.":
+        "斷線後會保留已儲存的密碼。Wi-Fi 會維持未連線，直到您再次連線或裝置重新開機。",
     "Phones and tablets join it and open http://{0}:{1}": "手機和平板連上後，開啟 http://{0}:{1}",
     "The Wi-Fi is running as a hotspot for phones and tablets.": "Wi-Fi 目前作為手機和平板的熱點。",
     "It is switched on and off on the Maintenance page.": "熱點在維護頁面開啟或關閉。",
@@ -206,6 +210,9 @@ ZH = {
     "the network name (SSID) must be 1 to 32 bytes": "網路名稱（SSID）必須是 1 到 32 個位元組",
     "a WPA password has 8 to 63 characters": "WPA 密碼長度為 8 到 63 個字元",
     "invalid characters": "含有無效字元", "another Wi-Fi change is in progress": "另一個 Wi-Fi 變更正在進行中",
+    "Wi-Fi was not connected": "Wi-Fi 原本就沒有連線", "could not disconnect": "無法斷線",
+    "Wi-Fi disconnect requested": "已要求 Wi-Fi 斷線", "Wi-Fi disconnect failed": "Wi-Fi 斷線失敗",
+    "the Wi-Fi is a hotspot now; it is switched off on Maintenance > Network": "Wi-Fi 目前是熱點；請在維護頁面 > Network 關閉",
     "this computer": "本機", "READY": "就緒", "DEGRADED": "降級", "unknown client address": "無法判斷用戶端位址",
     "cannot tell how your computer is connected": "無法判斷您的電腦如何連線",
 
@@ -329,4 +336,7 @@ PATTERNS = [
     (r"Ethernet \((.+)\)", "乙太網路（{0}）"),
     (r"cannot save: (.+)", "無法儲存：{0}"),
     (r"Wi-Fi change to (.+) requested", "已要求將 Wi-Fi 變更為 {0}"),
+    (r"disconnected from (.+); the Wi-Fi stays off until a network is chosen or the device restarts",
+     "已與 {0} 斷線；Wi-Fi 會維持未連線，直到選擇網路或裝置重新開機"),
+    (r"Wi-Fi disconnected from (.+)", "Wi-Fi 已與 {0} 斷線"),
 ]
