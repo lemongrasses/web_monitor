@@ -115,7 +115,8 @@ DEFAULTS: Dict[str, Any] = {
                   "still_speed_topic": "/openrtk330/odometry"},
     # Run AIO NAV (+ DSO, the nav.control_group) without an operator: start after power-on, restart
     # after failures, never give up (actions/autostart.py). Needs nav.allow_control.
-    "autostart": {"enabled": True,
+    # enabled "auto": yes, unless the installer's "autostart" switch is off (a development machine).
+    "autostart": {"enabled": "auto",
                   "prerequisites": ["imu"],      # readiness conditions to wait for: imu, gnss
                   "prerequisite_stable_s": 2.0,
                   "prerequisite_timeout_s": 120.0,  # still missing after this: a fault (it keeps waiting)
@@ -197,6 +198,21 @@ def installed_options() -> set:
     except OSError:
         return set()
     return {w for line in text.splitlines() if not line.lstrip().startswith("#") for w in line.split()}
+
+
+def autostart_enabled(cfg) -> bool:
+    """Does the dashboard start AIO NAV by itself (at power-on, and again after a failure)?
+    autostart.enabled: true / false, or "auto" (the default): yes, unless the installer's
+    "autostart" switch is off (deploy/install.sh --dev or --without-autostart writes "no-autostart"
+    to config/installed-options; an earlier installer's "no-boot" means the same). Off is for a
+    development machine: the navigation runs only when it is started on the Overview page."""
+    try:
+        v = (cfg["autostart"] or {}).get("enabled", "auto")
+    except KeyError:
+        v = "auto"
+    if v == "auto":
+        return not ({"no-autostart", "no-boot"} & installed_options())
+    return v is not False
 
 
 def security_enabled(cfg) -> bool:
@@ -618,6 +634,11 @@ def _kind_ok(value: Any, default: Any) -> bool:
     return True
 
 
+# Switches whose default is "auto" (the installer's switch decides): true, false or "auto" only.
+# Their "auto" default would otherwise make any value pass, and "yes-please" counts as on.
+_SWITCH_KEYS = {"autostart.enabled", "access.security"}
+
+
 def _sanitize(data: Dict, defaults: Dict, prefix: str = "") -> List[str]:
     """Replace values of the wrong kind (text where a number belongs, ...) by the default, in place.
     A valid YAML file with one wrong value must not stop the fully automatic system: it would fail
@@ -628,7 +649,8 @@ def _sanitize(data: Dict, defaults: Dict, prefix: str = "") -> List[str]:
             continue
         name = f"{prefix}{key}"
         value = data[key]
-        if not _kind_ok(value, default):
+        ok = (isinstance(value, bool) or value == "auto") if name in _SWITCH_KEYS else _kind_ok(value, default)
+        if not ok:
             data[key] = copy.deepcopy(default)
             problems.append(f"{name}: {value!r} is not a valid value; using the default {default!r}")
         elif isinstance(default, dict) and default:

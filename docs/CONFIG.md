@@ -246,7 +246,7 @@ and the automatic start never gives up.
 
 | Key | Default | Meaning |
 |-----|---------|---------|
-| `enabled` | `true` | Start AIO NAV and DSO (`nav.control_group`) by itself. Needs `nav.allow_control: true` (the shipped config sets it). `false` = Start / Stop by hand only. |
+| `enabled` | `auto` | Start AIO NAV and DSO (`nav.control_group`) by itself. Needs `nav.allow_control: true` (the shipped config sets it). `auto`: yes, unless the installer switched it off (`deploy/install.sh --dev` or `--without-autostart`, saved as `no-autostart`); `true` / `false` decide here instead. Off = Start / Stop by hand only (Overview page). |
 | `prerequisites` | `[imu]` | Readiness conditions (see 4.2a, e.g. `imu`, `gnss`) that must hold before a start, so AIO NAV does not start while the sensors are still coming up. |
 | `prerequisite_stable_s` | `2.0` | How long the prerequisites must hold. |
 | `prerequisite_timeout_s` | `120` | A prerequisite still missing after this is a **Fault** (for example *IMU data not available after 120 s*). It keeps waiting and starts as soon as the prerequisite appears. Waiting for the vehicle to be still or for the clock is never a fault. |

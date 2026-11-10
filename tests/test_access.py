@@ -43,7 +43,7 @@ class SecuritySwitchTest(unittest.TestCase):
             self.assertTrue(security_enabled(cfg_with()))
         with self.options("sysmon", "wifi", "security"):
             self.assertTrue(security_enabled(cfg_with()))
-        with self.options("sysmon", "no-boot", "no-security"):
+        with self.options("sysmon", "no-autostart", "no-security"):
             self.assertFalse(security_enabled(cfg_with()))
 
     def test_the_config_decides_when_it_says_so(self):
@@ -70,3 +70,40 @@ class SecuritySwitchTest(unittest.TestCase):
         self.assertEqual(guard.status()["disabled"], True)
         self.assertTrue(guard.status()["unlocked"])
 
+
+
+class AutostartSwitchTest(unittest.TestCase):
+    """AIO NAV by itself or by hand: the installer's "autostart" switch (a development machine: --dev)."""
+
+    def options(self, *words):
+        return mock.patch.object(config, "installed_options", return_value=set(words))
+
+    def cfg(self, **autostart):
+        data = copy.deepcopy(DEFAULTS)
+        data["autostart"].update(autostart)
+        return Config(data, None)
+
+    def test_on_unless_the_installer_switched_it_off(self):
+        with self.options():                                   # a source checkout: no options file
+            self.assertTrue(config.autostart_enabled(self.cfg()))
+        with self.options("sysmon", "autostart", "no-security"):
+            self.assertTrue(config.autostart_enabled(self.cfg()))
+        with self.options("sysmon", "no-autostart", "no-security"):
+            self.assertFalse(config.autostart_enabled(self.cfg()))
+
+    def test_an_earlier_installers_no_boot_means_the_same(self):
+        with self.options("sysmon", "no-boot", "no-security"):
+            self.assertFalse(config.autostart_enabled(self.cfg()))
+
+    def test_the_config_decides_when_it_says_so(self):
+        with self.options("no-autostart"):
+            self.assertTrue(config.autostart_enabled(self.cfg(enabled=True)))
+        with self.options():
+            self.assertFalse(config.autostart_enabled(self.cfg(enabled=False)))
+
+    def test_the_coordinator_stays_off_on_a_development_machine(self):
+        from aio_system_dashboard.actions.autostart import StartupCoordinator
+        with self.options("no-autostart"):
+            c = StartupCoordinator(self.cfg(), SimpleNamespace(get=lambda k, d=None: d), None, None, boot_id=lambda: "b")
+        self.assertFalse(c.enabled)
+        self.assertEqual(c.state, "disabled")

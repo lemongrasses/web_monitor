@@ -3,7 +3,8 @@ starts them after power-on, restarts them after a failure once the conditions al
 says at every moment what it is doing (readiness reasons, the 0x05 status, events).
 
 Rules, in order:
-* Off unless ``autostart.enabled`` and ``nav.allow_control`` (the dashboard owns AIO NAV).
+* Off unless ``autostart.enabled`` ("auto": the installer's "autostart" switch, off on a
+  development machine) and ``nav.allow_control`` (the dashboard owns AIO NAV).
 * An operator Stop is a *hold*: nothing starts automatically until someone presses Start or the
   computer is switched on again (kept with the kernel boot id, so a dashboard restart keeps it).
 * It never gives up (``max_attempts: 0``): after a failure it waits ``retry_backoff_s`` (the last
@@ -38,6 +39,7 @@ from typing import Callable, Dict, Optional
 
 from . import process_control
 from .registry import ActionError
+from ..config import autostart_enabled
 from ..state.readiness import Condition
 
 logger = logging.getLogger(__name__)
@@ -68,7 +70,7 @@ class StartupCoordinator:
         self.on_start = on_start
         self._clock, self._boot_id, self.interval_s = clock, boot_id(), interval_s
         a = cfg["autostart"]
-        self.enabled = bool(a["enabled"] and cfg["nav"]["allow_control"])
+        self.enabled = bool(autostart_enabled(cfg) and cfg["nav"]["allow_control"])
         self.prereq = {n: Condition(float(a["prerequisite_stable_s"]), 0.0) for n in a["prerequisites"]}
         self.still = Condition(float(a["still_stable_s"]), 0.0)
         self.require_still = bool(a["require_still"])

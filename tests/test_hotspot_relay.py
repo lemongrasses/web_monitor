@@ -327,26 +327,47 @@ class InstallerTest(unittest.TestCase):
         self.assertNotIn("left out", out)
         self.assertIn("optional parts: wifi hotspot", out)
 
-    # ---- switches: start at power-on, password and client list (both off = development machine)
+    # ---- switches: AIO NAV by itself, password and client list (both off = development machine).
+    # The dashboard itself always starts at power-on: the pages are how the machine is operated.
     def test_switches_are_on_by_default(self):
         rc, out = self.dry_run(self.ALL_TOOLS, args=())
         self.assertEqual(rc, 0, out)
-        self.assertIn("start at power-on: yes; password and client list: on", out)
+        self.assertIn("AIO NAV at power-on: starts by itself; password and client list: on", out)
 
     def test_dev_switches_both_off(self):
         rc, out = self.dry_run(self.ALL_TOOLS, args=("--dev",))
         self.assertEqual(rc, 0, out)
         self.assertIn("optional parts: sysmon replay wifi hotspot", out)      # the parts are not touched
-        self.assertIn("start at power-on: no (manual start); password and client list: off", out)
+        self.assertIn("AIO NAV at power-on: by hand (Overview page); password and client list: off", out)
 
     def test_switched_off_switch_stays_off_until_asked(self):
+        saved = "sysmon replay wifi hotspot no-autostart no-security\n"
+        rc, out = self.dry_run(self.ALL_TOOLS, args=(), saved=saved)
+        self.assertIn("AIO NAV at power-on: by hand (Overview page); password and client list: off", out)
+        rc, out = self.dry_run(self.ALL_TOOLS, args=("--with-security",), saved=saved)
+        self.assertIn("AIO NAV at power-on: by hand (Overview page); password and client list: on", out)
+        rc, out = self.dry_run(self.ALL_TOOLS, args=("--all",), saved=saved)
+        self.assertIn("AIO NAV at power-on: starts by itself; password and client list: on", out)
+
+    def test_an_earlier_no_boot_meant_the_navigation(self):
+        # "no-boot" kept the dashboard itself from starting; what was wanted is AIO NAV by hand
         saved = "sysmon replay wifi hotspot no-boot no-security\n"
         rc, out = self.dry_run(self.ALL_TOOLS, args=(), saved=saved)
-        self.assertIn("start at power-on: no (manual start); password and client list: off", out)
-        rc, out = self.dry_run(self.ALL_TOOLS, args=("--with-security",), saved=saved)
-        self.assertIn("start at power-on: no (manual start); password and client list: on", out)
-        rc, out = self.dry_run(self.ALL_TOOLS, args=("--all",), saved=saved)
-        self.assertIn("start at power-on: yes; password and client list: on", out)
+        self.assertEqual(rc, 0, out)
+        self.assertIn("AIO NAV at power-on: by hand (Overview page); password and client list: off", out)
+        rc, out = self.dry_run(self.ALL_TOOLS, args=("--with-autostart",), saved=saved)
+        self.assertIn("AIO NAV at power-on: starts by itself", out)
+
+    def test_the_old_boot_flags_do_nothing(self):
+        rc, out = self.dry_run(self.ALL_TOOLS, args=("--without-boot",))
+        self.assertEqual(rc, 0, out)
+        self.assertIn("the dashboard always starts at power-on", out)
+        self.assertIn("AIO NAV at power-on: starts by itself", out)
+
+    def test_the_dashboard_is_always_enabled_at_power_on(self):
+        text = (ROOT / "deploy" / "install.sh").read_text()
+        self.assertIn("systemctl enable aio-dashboard.service", text)
+        self.assertNotIn("systemctl disable aio-dashboard.service", text)
 
 
 if __name__ == "__main__":

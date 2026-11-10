@@ -175,11 +175,13 @@ and both are on unless switched off:
 
 | Switch | On (a device in the field, the default) | Off (`--without-<switch>`) |
 |--------|------|------|
-| `boot` | `aio-dashboard.service` starts at power-on | manual start: `aio-dashboard start` (an update still restarts a dashboard that is running) |
+| `autostart` | AIO NAV (and DSO) start by themselves at power-on and restart after a failure | the navigation runs only when it is started on the Overview page (`autostart.enabled: true` / `false` in the config decides instead, when set) |
 | `security` | the maintenance password and `access.allowed_clients` apply | no password is asked, any client may open the pages, and the service user may run `aio-dashboard start / stop / restart` without the sudo password. The password file and the client list are kept and apply again after `--with-security` |
 
-`--dev` switches both off (a development machine); `--with-boot --with-security` or `--all`
-switches both on again. `aio-dashboard status` shows the two switches.
+`--dev` switches both off (a development machine); `--with-autostart --with-security` or `--all`
+switches both on again. The dashboard itself always starts at power-on: the pages are how the
+machine is operated. (`--with-boot` / `--without-boot` of an earlier installer do nothing now, and
+a saved `no-boot` is read as `no-autostart`.) `aio-dashboard status` shows the two switches.
 
 | Option | Does |
 |--------|------|
@@ -188,8 +190,8 @@ switches both on again. `aio-dashboard status` shows the two switches.
 | `--choose` | show the menu again |
 | `--list` | what is installed and chosen (no sudo needed) |
 | `--dry-run` | what an install would add or remove, then stop (no sudo needed) |
-| `--with-<part>` / `--without-<part>` | switch a part on or off without the menu (`sysmon`, `replay`, `wifi`, `hotspot`), or a switch (`boot`, `security`) |
-| `--dev` | a development machine: manual start, no password or client list (`--without-boot --without-security`) |
+| `--with-<part>` / `--without-<part>` | switch a part on or off without the menu (`sysmon`, `replay`, `wifi`, `hotspot`), or a switch (`autostart`, `security`) |
+| `--dev` | a development machine: AIO NAV started by hand, no password or client list (`--without-autostart --without-security`) |
 | `--yes`, `-y` | never ask (for scripts) |
 | `--user U` | the service user (default: the user running sudo) |
 | `--prefix P` | install folder (default `/opt/aio-dashboard`) |

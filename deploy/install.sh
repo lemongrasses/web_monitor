@@ -17,16 +17,19 @@
 # removed, and later plain runs leave it out until --with-<part>, --all or the menu turns it on.
 # --yes never asks (for scripts).
 #
-# Switches (how this machine runs the dashboard; chosen and remembered like the parts, both on
-# unless switched off):
-#   boot      start the dashboard at power-on. Off (--without-boot): it is started by hand with
-#             `aio-dashboard start` (a running dashboard is still restarted on the new files).
+# Switches (how this machine runs; chosen and remembered like the parts, both on unless switched
+# off). The dashboard itself always starts at power-on: the pages are how the machine is operated.
+#   autostart AIO NAV (and DSO) start by themselves at power-on and restart after a failure. Off
+#             (--without-autostart): the navigation runs only when it is started on the Overview
+#             page. (autostart.enabled in the config, when it is true or false, decides instead.)
 #   security  the maintenance password and the client list (access.allowed_clients). Off
 #             (--without-security): no password is asked, any client may open the pages, and the
 #             service user may start / stop the dashboard without the sudo password. The password
 #             file and the list are kept and apply again after --with-security.
-#   --dev     a development machine: both off (same as --without-boot --without-security).
-#             Back to a device for the field: --with-boot --with-security (or --all).
+#   --dev     a development machine: both off (same as --without-autostart --without-security).
+#             Back to a device for the field: --with-autostart --with-security (or --all).
+#   (--with-boot / --without-boot of an earlier installer are accepted and do nothing; a saved
+#   "no-boot" is read as no-autostart, which is what it was meant to say.)
 # Other options: [--user nvidia] [--prefix /opt/aio-dashboard] [--with-aio-nav PATH_TO_aio-nav]
 #                [--reset-config]
 #
@@ -63,14 +66,14 @@ ASSUME_YES=0
 declare -A ASKED=()                              # part -> 1 / 0 from --with-<part> / --without-<part>
 
 PARTS=(sysmon replay wifi hotspot)
-SWITCHES=(boot security)                         # not parts of the program: how this machine runs it
+SWITCHES=(autostart security)                    # not parts of the program: how this machine runs
 ITEMS=("${PARTS[@]}" "${SWITCHES[@]}")
 declare -A TITLE=(
   [sysmon]="Black-box recorder (aio-sysmon)"
   [replay]="Replay: Live / Bag switch and bag player"
   [wifi]="Wi-Fi from the pages"
   [hotspot]="Wi-Fi hotspot (Maintenance > Network)"
-  [boot]="Start at power-on (off: aio-dashboard start)"
+  [autostart]="AIO NAV starts by itself (off: Overview page)"
   [security]="Maintenance password and client list"
 )
 PKLA=/etc/polkit-1/localauthority/50-local.d/50-aio-dashboard-wifi.pkla
@@ -83,9 +86,12 @@ while [[ $# -gt 0 ]]; do
     --prefix) PREFIX="$2"; shift 2 ;;
     --with-aio-nav) AIO_NAV_BIN="$2"; shift 2 ;;
     --reset-config) RESET_CONFIG=1; shift ;;
-    --with-sysmon|--with-replay|--with-wifi|--with-hotspot|--with-boot|--with-security) ASKED[${1#--with-}]=1; shift ;;
-    --without-sysmon|--without-replay|--without-wifi|--without-hotspot|--without-boot|--without-security) ASKED[${1#--without-}]=0; shift ;;
-    --dev) ASKED[boot]=0; ASKED[security]=0; shift ;;   # development machine: manual start, no password / client list
+    --with-sysmon|--with-replay|--with-wifi|--with-hotspot|--with-autostart|--with-security) ASKED[${1#--with-}]=1; shift ;;
+    --without-sysmon|--without-replay|--without-wifi|--without-hotspot|--without-autostart|--without-security) ASKED[${1#--without-}]=0; shift ;;
+    --dev) ASKED[autostart]=0; ASKED[security]=0; shift ;;   # development machine: AIO NAV by hand, no password / client list
+    --with-boot|--without-boot)                      # an earlier installer's switch
+      echo "note: $1 does nothing now: the dashboard always starts at power-on. For AIO NAV: --with-autostart / --without-autostart" >&2
+      shift ;;
     --no-sysmon) shift ;;                        # old flag: the recorder is off unless chosen
     --choose) CHOOSE=1; shift ;;
     --all) ALL=1; shift ;;
@@ -113,7 +119,7 @@ installed_now() {                                # is the part on this machine n
     replay) [[ -d "$PREFIX/aio_dashboard_replay" ]] || compgen -G "$PREFIX/aio_dashboard_replay*.so" >/dev/null ;;
     wifi) [[ -f "$PKLA" ]] ;;
     hotspot) [[ "$(chosen_words)" == *" hotspot "* ]] ;;
-    boot) systemctl is-enabled --quiet aio-dashboard.service 2>/dev/null ;;
+    autostart) [[ -f "$OPTIONS_FILE" && "$(chosen_words)" != *" no-autostart "* && "$(chosen_words)" != *" no-boot "* ]] ;;
     security) [[ -f "$OPTIONS_FILE" && "$(chosen_words)" != *" no-security "* ]] ;;
   esac
 }
@@ -132,7 +138,7 @@ available() {                                    # can this package install the 
     sysmon) [[ -d "$SRC/aio_sysmon" ]] ;;
     replay) [[ -d "$SRC/aio_dashboard_replay" ]] || compgen -G "$SRC/aio_dashboard_replay*.so" >/dev/null ;;
     wifi|hotspot) [[ -z "$(needs "$1")" ]] ;;
-    boot|security) true ;;
+    autostart|security) true ;;
   esac
 }
 declare -A WANT=() OFF=()                       # OFF: switched off on purpose (remembered as no-<part>)
@@ -142,6 +148,9 @@ for p in "${ITEMS[@]}"; do                       # every part, unless switched o
   OFF[$p]=0
   [[ $ALL -eq 0 && "$BEFORE" == *" no-$p "* ]] && OFF[$p]=1
 done
+# An earlier installer saved "no-boot" (the dashboard not started at power-on) for a development
+# machine. What was wanted there is AIO NAV not starting by itself: read it as that.
+[[ $ALL -eq 0 && "$BEFORE" == *" no-boot "* ]] && OFF[autostart]=1
 for p in "${!ASKED[@]}"; do OFF[$p]=$((1 - ASKED[$p])); done
 for p in "${ITEMS[@]}"; do WANT[$p]=$((1 - OFF[$p])); done
 settle() {                                       # the hotspot needs the Wi-Fi permission
@@ -209,7 +218,7 @@ saved_text() {                                   # chosen parts + no-<part> for 
   echo "${out[*]}"
 }
 switch_text() {
-  echo "start at power-on: $([[ ${WANT[boot]} -eq 1 ]] && echo yes || echo "no (manual start)"); password and client list: $([[ ${WANT[security]} -eq 1 ]] && echo on || echo "off (development machine)")"
+  echo "AIO NAV at power-on: $([[ ${WANT[autostart]} -eq 1 ]] && echo "starts by itself" || echo "by hand (Overview page)"); password and client list: $([[ ${WANT[security]} -eq 1 ]] && echo on || echo "off (development machine)")"
 }
 
 if [[ $MODE == list ]]; then
@@ -225,7 +234,7 @@ WITH_SYSMON=${WANT[sysmon]}
 WITH_REPLAY=${WANT[replay]}
 WITH_WIFI=${WANT[wifi]}
 WITH_HOTSPOT=${WANT[hotspot]}
-WITH_BOOT=${WANT[boot]}
+WITH_AUTOSTART=${WANT[autostart]}
 WITH_SECURITY=${WANT[security]}
 CHANGES=()
 for p in "${PARTS[@]}"; do
@@ -392,11 +401,12 @@ fi
 
 # Who starts AIO NAV at boot? "autostart": the dashboard does (then systemd must not); "control":
 # the Overview page can start/stop it, nothing automatic; "no": the dashboard only watches.
-NAV_OWNER=$(PYTHONPATH="$PREFIX/lib" python3 - "$PREFIX/config/dashboard.yaml" <<'EOF2'
+NAV_OWNER=$(PYTHONPATH="$PREFIX/lib" python3 - "$PREFIX/config/dashboard.yaml" "$WITH_AUTOSTART" <<'EOF2'
 import sys, yaml
 cfg = yaml.safe_load(open(sys.argv[1])) or {}
 control = bool((cfg.get("nav") or {}).get("allow_control"))
-auto = bool((cfg.get("autostart") or {}).get("enabled", True))   # on by default
+auto = (cfg.get("autostart") or {}).get("enabled", "auto")       # "auto": the installer's switch
+auto = sys.argv[2] == "1" if auto == "auto" else bool(auto)
 print("autostart" if control and auto else "control" if control else "no")
 EOF2
 )
@@ -530,16 +540,9 @@ elif installed_now sysmon; then
 fi
 
 systemctl daemon-reload
-if [[ $WITH_BOOT -eq 1 ]]; then
-  systemctl enable aio-dashboard.service
-  systemctl restart aio-dashboard.service
-else
-  # Manual start: nothing at power-on. A dashboard that is running now is restarted on the new
-  # files (it stays up until the next power-off); one that is stopped stays stopped.
-  echo "==> manual start: aio-dashboard.service is not started at power-on"
-  systemctl disable aio-dashboard.service 2>/dev/null || true
-  systemctl try-restart aio-dashboard.service
-fi
+# The dashboard always starts at power-on: the pages are how the machine is operated. (Whether
+# AIO NAV starts by itself is the "autostart" switch, read by the dashboard from installed-options.)
+systemctl enable aio-dashboard.service
 if [[ $WITH_SYSMON -eq 1 && -d "$SRC/aio_sysmon" ]]; then
   systemctl enable aio-sysmon.service
   systemctl restart aio-sysmon.service
@@ -553,12 +556,15 @@ fi
 } > "$OPTIONS_FILE"
 chmod 0644 "$OPTIONS_FILE"
 
+# restarted only now: it reads the switches from the file just written
+systemctl restart aio-dashboard.service
+
 echo
 echo "Done ($(cat "$PREFIX/VERSION")). Settings are detected automatically."
 echo "  optional parts: $(chosen_text)   (a plain run installs every part not switched off; change: sudo $0 --choose)"
 echo "  $(switch_text)"
-if [[ $WITH_BOOT -eq 0 ]]; then
-  echo "  aio-dashboard start     start it by hand (not started at power-on; back: sudo $0 --with-boot)"
+if [[ $WITH_AUTOSTART -eq 0 ]]; then
+  echo "  AIO NAV is started by hand on the Overview page (by itself again: sudo $0 --with-autostart)"
 fi
 echo "  aio-dashboard status    service state and web addresses"
 echo "  aio-dashboard config    edit settings ($PREFIX/config/dashboard.yaml) and restart"

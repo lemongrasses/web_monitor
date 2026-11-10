@@ -38,10 +38,13 @@ urls() {
 switches() {                                     # the installer's switches (deploy/install.sh --dev)
   local opts
   opts=" $(sed 's/#.*//' "$APP_DIR/config/installed-options" 2>/dev/null | tr '\n' ' ') "
-  if systemctl is-enabled --quiet "$UNIT" 2>/dev/null; then
-    echo "  Start at power-on  yes"
+  if ! systemctl is-enabled --quiet "$UNIT" 2>/dev/null; then
+    echo "  Start at power-on  NO: the dashboard is not enabled (sudo deploy/install.sh enables it)"
+  fi
+  if [[ "$opts" == *" no-autostart "* || "$opts" == *" no-boot "* ]]; then
+    echo "  AIO NAV            started by hand on the Overview page (development machine)"
   else
-    echo "  Start at power-on  no (start it with: aio-dashboard start)"
+    echo "  AIO NAV            starts by itself at power-on"
   fi
   if [[ "$opts" == *" no-security "* ]]; then
     echo "  Security           off: no maintenance password, any client (development machine)"

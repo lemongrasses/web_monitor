@@ -58,7 +58,7 @@ class ValueKindTest(unittest.TestCase):
             cfg = C.load_config(str(f))
         a = cfg["autostart"]
         self.assertEqual((a["stale_grace_s"], a["enabled"], a["prerequisites"], a["max_attempts"]),
-                         (10.0, True, ["imu"], 0))
+                         (10.0, "auto", ["imu"], 0))     # "auto": the installer's switch decides
         self.assertEqual(len(cfg.problems), 3)
         self.assertTrue(any("autostart.stale_grace_s: 'soon'" in p for p in cfg.problems))
         # free values ("auto" defaults) and good values are kept

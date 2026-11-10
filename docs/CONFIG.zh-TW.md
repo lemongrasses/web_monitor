@@ -199,7 +199,7 @@ AIO NAV 預設為全自動：開機後自動啟動、失敗後重新啟動，而
 
 | 項目 | 預設值 | 說明 |
 |------|--------|------|
-| `enabled` | `true` | 自動啟動 AIO NAV 與 DSO（`nav.control_group`）。需要 `nav.allow_control: true`（隨附設定已開啟）。`false` = 只能手動 Start／Stop。 |
+| `enabled` | `auto` | 自動啟動 AIO NAV 與 DSO（`nav.control_group`）。需要 `nav.allow_control: true`（隨附設定已開啟）。`false` = 只能手動 Start／Stop。 `auto`：自動啟動，除非安裝程式已關閉（`deploy/install.sh --dev` 或 `--without-autostart`，保存為 `no-autostart`）；`true`／`false` 則以這裡為準。 |
 | `prerequisites` | `[imu]` | 啟動前必須成立的 readiness 條件（見 4.2a，例如 `imu`、`gnss`），避免在感測器尚未就緒時啟動 AIO NAV。 |
 | `prerequisite_stable_s` | `2.0` | 前置條件需要持續成立的時間。 |
 | `prerequisite_timeout_s` | `120` | 超過這個時間仍缺少前置條件即為 **Fault**（例如「IMU data not available after 120 s」）。它會繼續等待，條件一出現就啟動。等待車輛靜止或等待時鐘都不算故障。 |
