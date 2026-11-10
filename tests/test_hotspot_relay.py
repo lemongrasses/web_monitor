@@ -264,18 +264,54 @@ class ClosedNetworkTest(unittest.TestCase):
 class InstallerTest(unittest.TestCase):
     """install.sh says what a system lacks for the hotspot (a fresh system may have no dnsmasq)."""
 
-    def dry_run(self, tools):
+    def dry_run(self, tools, args=("--with-hotspot", "--without-sysmon", "--without-replay"), saved=None):
         with tempfile.TemporaryDirectory() as tmp:
             bin_ = Path(tmp) / "bin"
             bin_.mkdir()
             for t in tools:
                 (bin_ / t).write_text("#!/bin/sh\nexit 0\n")
                 (bin_ / t).chmod(0o755)
+            if saved is not None:                     # installed-options from an earlier run
+                (Path(tmp) / "opt" / "config").mkdir(parents=True)
+                (Path(tmp) / "opt" / "config" / "installed-options").write_text(saved)
             env = dict(os.environ, PATH=f"{bin_}:/usr/bin:/bin")
             r = subprocess.run(["bash", str(ROOT / "deploy" / "install.sh"), "--dry-run", "--prefix", f"{tmp}/opt",
-                                "--with-hotspot", "--without-sysmon", "--without-replay"],
+                                *args],
                                env=env, capture_output=True, text=True, timeout=30, stdin=subprocess.DEVNULL)
         return r.returncode, r.stdout + r.stderr
+
+    ALL_TOOLS = ["nmcli", "nft", "dnsmasq"]
+
+    def test_plain_run_takes_every_part(self):
+        rc, out = self.dry_run(self.ALL_TOOLS, args=())
+        self.assertEqual(rc, 0, out)
+        self.assertIn("optional parts: sysmon replay wifi hotspot", out)
+
+    def test_plain_run_after_an_old_choice_adds_the_rest(self):
+        # files written before no-<part> existed list only what was chosen: the rest is added now
+        rc, out = self.dry_run(self.ALL_TOOLS, args=(), saved="# old\n\n")
+        self.assertIn("optional parts: sysmon replay wifi hotspot", out)
+
+    def test_switched_off_part_stays_off(self):
+        rc, out = self.dry_run(self.ALL_TOOLS, args=(), saved="sysmon replay no-wifi\n")
+        self.assertEqual(rc, 0, out)
+        self.assertIn("optional parts: sysmon replay (", out)    # no wifi, and no hotspot without it
+
+    def test_all_overrides_switched_off(self):
+        rc, out = self.dry_run(self.ALL_TOOLS, args=("--all",), saved="no-sysmon no-replay no-wifi no-hotspot\n")
+        self.assertIn("optional parts: sysmon replay wifi hotspot", out)
+
+    def test_with_hotspot_brings_wifi_back(self):
+        rc, out = self.dry_run(self.ALL_TOOLS, args=("--with-hotspot",), saved="no-wifi no-hotspot\n")
+        self.assertIn("optional parts: sysmon replay wifi hotspot", out)
+
+    def test_plain_run_leaves_out_what_the_system_lacks(self):
+        if Path("/usr/bin/dnsmasq").exists() or Path("/bin/dnsmasq").exists():
+            self.skipTest("dnsmasq is in /usr/bin here")
+        rc, out = self.dry_run(["nmcli", "nft"], args=())
+        self.assertEqual(rc, 0, out)
+        self.assertIn("optional parts: sysmon replay wifi (", out)
+        self.assertIn("hotspot (Wi-Fi hotspot (Maintenance > Network)) left out: this system has no dnsmasq", out)
 
     def test_hotspot_left_out_without_dnsmasq(self):
         if Path("/usr/bin/dnsmasq").exists() or Path("/bin/dnsmasq").exists():

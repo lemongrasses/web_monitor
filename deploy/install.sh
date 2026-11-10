@@ -3,15 +3,19 @@
 # Works from a source checkout (deploy/install.sh) or from a compiled release package
 # made by tools/build_release.sh (./install.sh), which contains no Python source.
 #
-#   sudo deploy/install.sh              install or update, with the optional parts chosen last time
+#   sudo deploy/install.sh              install or update with EVERY optional part, except the ones
+#                                       you switched off before (no flags to remember)
+#   sudo deploy/install.sh --all        every optional part, also the ones switched off before
 #   sudo deploy/install.sh --choose     pick the optional parts from a menu (also the first time)
 #   deploy/install.sh --list            what is installed and chosen (no sudo needed)
 #   deploy/install.sh --dry-run         what an install would add or remove, then stop (no sudo)
 #
 # Optional parts: sysmon (black-box recorder), replay (Live / Bag switch), wifi (Wi-Fi from the
-# pages), hotspot (Wi-Fi hotspot on Maintenance > Network; needs wifi). For scripts, instead of the
-# menu: --with-<part> / --without-<part>, and --yes (never ask). The choice is kept in
-# PREFIX/config/installed-options; a part switched off is removed.
+# pages), hotspot (Wi-Fi hotspot on Maintenance > Network; needs wifi). A part this system cannot
+# run (no nmcli, no dnsmasq, ...) is left out with a note. To switch one off: --without-<part>
+# or the --choose menu; it is remembered as "no-<part>" in PREFIX/config/installed-options and
+# removed, and later plain runs leave it out until --with-<part>, --all or the menu turns it on.
+# --yes never asks (for scripts).
 # Other options: [--user nvidia] [--prefix /opt/aio-dashboard] [--with-aio-nav PATH_TO_aio-nav]
 #                [--reset-config]
 #
@@ -43,6 +47,7 @@ AIO_NAV_BIN=""
 RESET_CONFIG=0
 MODE=install                                     # install | list | dry-run
 CHOOSE=0
+ALL=0
 ASSUME_YES=0
 declare -A ASKED=()                              # part -> 1 / 0 from --with-<part> / --without-<part>
 
@@ -67,6 +72,7 @@ while [[ $# -gt 0 ]]; do
     --without-sysmon|--without-replay|--without-wifi|--without-hotspot) ASKED[${1#--without-}]=0; shift ;;
     --no-sysmon) shift ;;                        # old flag: the recorder is off unless chosen
     --choose) CHOOSE=1; shift ;;
+    --all) ALL=1; shift ;;
     --yes|-y) ASSUME_YES=1; shift ;;
     --list) MODE=list; shift ;;
     --dry-run) MODE=dry-run; shift ;;
@@ -110,20 +116,20 @@ available() {                                    # can this package install the 
     wifi|hotspot) [[ -z "$(needs "$1")" ]] ;;
   esac
 }
-declare -A WANT=()
-if [[ -f "$OPTIONS_FILE" ]]; then                # the choice made last time
-  CHOSEN_BEFORE=1
-  BEFORE="$(chosen_words)"
-  for p in "${PARTS[@]}"; do WANT[$p]=0; [[ "$BEFORE" == *" $p "* ]] && WANT[$p]=1; done
-else                                             # first time with this installer: what is there
-  CHOSEN_BEFORE=0
-  for p in "${PARTS[@]}"; do WANT[$p]=0; installed_now "$p" && WANT[$p]=1; done
-fi
-for p in "${!ASKED[@]}"; do WANT[$p]=${ASKED[$p]}; done
+declare -A WANT=() OFF=()                       # OFF: switched off on purpose (remembered as no-<part>)
+CHOSEN_BEFORE=0; [[ -f "$OPTIONS_FILE" ]] && CHOSEN_BEFORE=1
+BEFORE="$(chosen_words)"
+for p in "${PARTS[@]}"; do                       # every part, unless switched off on an earlier run
+  OFF[$p]=0
+  [[ $ALL -eq 0 && "$BEFORE" == *" no-$p "* ]] && OFF[$p]=1
+done
+for p in "${!ASKED[@]}"; do OFF[$p]=$((1 - ASKED[$p])); done
+for p in "${PARTS[@]}"; do WANT[$p]=$((1 - OFF[$p])); done
 settle() {                                       # the hotspot needs the Wi-Fi permission
   local why
   if [[ ${WANT[hotspot]} -eq 1 && ${WANT[wifi]} -eq 0 ]]; then
-    if [[ ${ASKED[wifi]:-} == 0 ]]; then WANT[hotspot]=0; else WANT[wifi]=1; fi
+    # --with-hotspot brings Wi-Fi along, unless Wi-Fi was switched off in the same run
+    if [[ ${ASKED[hotspot]:-} == 1 && ${ASKED[wifi]:-} != 0 ]]; then WANT[wifi]=1; OFF[wifi]=0; else WANT[hotspot]=0; fi
   fi
   for p in "${PARTS[@]}"; do
     if [[ ${WANT[$p]} -eq 1 ]] && ! available "$p"; then
@@ -160,9 +166,9 @@ menu() {
     for n in $line; do
       if [[ "$n" =~ ^[0-9]+$ && $n -ge 1 && $n -le ${#PARTS[@]} ]]; then
         p=${PARTS[$((n - 1))]}
-        WANT[$p]=$((1 - WANT[$p]))
-        [[ $p == hotspot && ${WANT[hotspot]} -eq 1 ]] && WANT[wifi]=1     # needs the Wi-Fi permission
-        [[ $p == wifi && ${WANT[wifi]} -eq 0 ]] && WANT[hotspot]=0
+        WANT[$p]=$((1 - WANT[$p])); OFF[$p]=$((1 - WANT[$p]))
+        [[ $p == hotspot && ${WANT[hotspot]} -eq 1 ]] && { WANT[wifi]=1; OFF[wifi]=0; }   # needs the Wi-Fi permission
+        [[ $p == wifi && ${WANT[wifi]} -eq 0 ]] && { WANT[hotspot]=0; OFF[hotspot]=1; }
       else
         echo "  (no part $n)"
       fi
@@ -175,9 +181,16 @@ chosen_text() {
   for p in "${PARTS[@]}"; do [[ ${WANT[$p]} -eq 1 ]] && out+=("$p"); done
   if (( ${#out[@]} )); then echo "${out[*]}"; else echo "none"; fi
 }
+saved_text() {                                   # chosen parts + no-<part> for the ones switched off
+  local p out=()                                 # (a part left out for a missing tool is neither:
+  for p in "${PARTS[@]}"; do                     #  the next plain run adds it once the tool is there)
+    if [[ ${WANT[$p]} -eq 1 ]]; then out+=("$p"); elif [[ ${OFF[$p]} -eq 1 ]]; then out+=("no-$p"); fi
+  done
+  echo "${out[*]}"
+}
 
 if [[ $MODE == list ]]; then
-  echo "Optional parts in $PREFIX ($([[ $CHOSEN_BEFORE -eq 1 ]] && echo "chosen: $OPTIONS_FILE" || echo "not chosen yet: shown as found"))"
+  echo "Optional parts in $PREFIX ($([[ $CHOSEN_BEFORE -eq 1 ]] && echo "chosen: $OPTIONS_FILE" || echo "not chosen yet: a plain install adds every part"))"
   show_parts
   echo "Change them: sudo $0 --choose"
   exit 0
@@ -491,15 +504,15 @@ fi
 
 # The choice, for the next run (and the dashboard reads it: the hotspot is shown when installed).
 {
-  echo "# Optional parts chosen in deploy/install.sh; the next run installs the same ones."
-  echo "# Change them with: sudo deploy/install.sh --choose"
-  chosen_text | sed 's/^none$//'
+  echo "# Optional parts chosen in deploy/install.sh. A plain run installs every part except no-<part>."
+  echo "# Change them with: sudo deploy/install.sh --choose (or --all, --with-<part>, --without-<part>)"
+  saved_text
 } > "$OPTIONS_FILE"
 chmod 0644 "$OPTIONS_FILE"
 
 echo
 echo "Done ($(cat "$PREFIX/VERSION")). Settings are detected automatically."
-echo "  optional parts: $(chosen_text)   (the next run installs the same; change: sudo $0 --choose)"
+echo "  optional parts: $(chosen_text)   (a plain run installs every part not switched off; change: sudo $0 --choose)"
 echo "  aio-dashboard status    service state and web addresses"
 echo "  aio-dashboard config    edit settings ($PREFIX/config/dashboard.yaml) and restart"
 echo "  aio-dashboard logs      follow the log"

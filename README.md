@@ -149,8 +149,10 @@ sudo deploy/install.sh --user nvidia \
   --with-aio-nav /home/nvidia/aio_core_nav/install/aio_core_nav/lib/aio_core_nav/aio-nav
 ```
 
-**Optional parts.** The first run (or any run with `--choose`) shows a menu of the optional parts;
-type their numbers to switch them on or off, Enter to continue, `q` to quit without changes:
+**Optional parts.** A plain `sudo deploy/install.sh` installs **every** optional part this system
+can run, so there are no flags to remember. The first run in a terminal (or any run with
+`--choose`) shows the menu with all of them ticked; type numbers to switch parts off or on, Enter
+to continue, `q` to quit without changes:
 
 | Part | Menu title | What it adds |
 |------|------------|--------------|
@@ -159,13 +161,18 @@ type their numbers to switch them on or off, Enter to continue, `q` to quit with
 | `wifi` | Wi-Fi from the pages | a polkit rule so the service user can manage NetworkManager (Settings page and Maintenance > Network) |
 | `hotspot` | Wi-Fi hotspot (Maintenance > Network) | the right to share the Wi-Fi as a hotspot, and a dispatcher script that keeps it a closed network (nothing forwarded); needs `wifi` (choosing it switches `wifi` on), `dnsmasq` and nft or iptables |
 
-The choice is saved in `/opt/aio-dashboard/config/installed-options`, and later runs install the
-same parts without asking. A part switched off is removed (the sysmon records in
-`/var/log/aio-sysmon` are kept; switching off `hotspot` deletes the hotspot profile). Without a
-terminal, the first run uses the parts found in the package.
+The choice is saved in `/opt/aio-dashboard/config/installed-options`. A part you switch off
+(`--without-<part>` or the menu) is saved as `no-<part>` and removed, and later plain runs leave
+it out until `--with-<part>`, `--all` or the menu turns it on again (the sysmon records in
+`/var/log/aio-sysmon` are kept; switching off `hotspot` deletes the hotspot profile). A part the
+system cannot run yet (no `nmcli`, no `dnsmasq`, ...) is left out with a note, and the next plain
+run adds it once the tool is installed. An `installed-options` file from an older installer lists
+only the chosen parts: the next plain run adds the others (check first with `--dry-run`).
 
 | Option | Does |
 |--------|------|
+| *(none)* | every optional part, except the ones switched off before |
+| `--all` | every optional part, also the ones switched off before |
 | `--choose` | show the menu again |
 | `--list` | what is installed and chosen (no sudo needed) |
 | `--dry-run` | what an install would add or remove, then stop (no sudo needed) |
