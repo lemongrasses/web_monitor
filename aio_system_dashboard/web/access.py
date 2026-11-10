@@ -32,15 +32,16 @@ def client_allowed(addr, nets) -> bool:
 def hotspot_clients(cfg) -> list:
     """The hotspot's own network, when the hotspot is installed and its phones may open the pages
     (wifi.hotspot.allow_clients): a configured access list would otherwise shut them out."""
-    from ..actions.wifi import hotspot_enabled
+    from ..actions.wifi import hotspot_address, hotspot_enabled
     try:
         h = (cfg["wifi"] or {}).get("hotspot") or {}
     except KeyError:
         return []
     if h.get("allow_clients", True) is False or not hotspot_enabled(cfg):
         return []
+    address = hotspot_address(cfg)                    # the hotspot service's, where it is used
     try:
-        return [ipaddress.ip_interface(str(h.get("address") or "10.42.0.1/24")).network]
+        return [ipaddress.ip_interface(address).network]
     except ValueError:
-        logger.error("wifi.hotspot.address: not an address with a prefix (like 10.42.0.1/24): %r", h.get("address"))
+        logger.error("wifi.hotspot.address: not an address with a prefix (like 10.42.0.1/24): %r", address)
         return []

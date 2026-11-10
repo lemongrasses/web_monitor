@@ -273,7 +273,10 @@
         const w = this.wifi;
         if (!w || !w.ipv4) return "";
         if (w.mode === "hotspot" && w.hotspot) return trf("Phones and tablets join it and open http://{0}:{1}", w.hotspot.address, w.hotspot.port);
-        return w.ipv4.join(", ");
+        // the hotspot service runs next to the Wi-Fi connection
+        const hs = w.hotspot && w.hotspot.service && w.hotspot.active
+          ? trf("Hotspot {0}: phones and tablets open http://{1}:{2}", w.hotspot.ssid, w.hotspot.address, w.hotspot.port) : "";
+        return [w.ipv4.join(", "), hs].filter(Boolean).join(" · ");
       },
       async scan(rescan) {
         this.scanning = true;

@@ -24,7 +24,7 @@ from .collectors.dso_watchdog import DsoWatchdog
 from .collectors.gnss_diag import GnssDiagnostics
 from .collectors.gnss_monitor import GnssMonitor
 from .collectors.speed import SpeedMonitor
-from .actions.wifi import hotspot_enabled
+from .actions.wifi import hotspot_address, hotspot_enabled
 from .collectors import hotspot_relay
 from .collectors.hotspot_relay import HotspotRelay
 from .collectors.nav_udp import NavUdpCollector
@@ -60,7 +60,8 @@ class DashboardContext:
         self.fake = FakeState(resolve_path(cfg["fake"]["state_file"])) if cfg.fake else None
         # Copies of the NAV and 0x05 packets for the devices on the Wi-Fi hotspot (when installed).
         self.hotspot_relay = HotspotRelay(cfg, cfg.state_file(hotspot_relay.STATE_FILE), self.events,
-                                          offered=lambda: hotspot_enabled(cfg))
+                                          offered=lambda: hotspot_enabled(cfg),
+                                          address=lambda: hotspot_address(cfg))
         self.nav = NavUdpCollector(
             cfg["nav"]["udp_bind"], cfg["nav"]["trajectory"],
             on_session_reset=lambda s, reason: self.events.add(

@@ -14,6 +14,10 @@ Safety rules:
   shown in an error: anything nmcli prints is scrubbed of it first. (nmcli takes it on its command
   line, so it is visible in /proc for the second the command runs; the device has no other users.)
 * One change at a time.
+* Where the system hotspot service is installed (hotspot_service.py: hostapd next to the Wi-Fi
+  connection) the hotspot is not NetworkManager's: the pages show the service, switch it through
+  ``sudo -n aio-hotspot``, and ask it to step aside before joining a network (with the hotspot up
+  the radio can only join a network on the hotspot's channel).
 """
 
 import logging
@@ -26,6 +30,7 @@ from pathlib import Path
 from typing import Callable, Dict, List, Optional, Tuple
 
 from .. import nl80211
+from . import hotspot_service
 
 logger = logging.getLogger(__name__)
 
@@ -53,8 +58,11 @@ HOTSPOT = "aio-hotspot"                 # the NetworkManager profile (con-name) 
 
 
 def hotspot_enabled(cfg) -> bool:
-    """Is the hotspot offered? wifi.hotspot.enabled: true / false, or "auto": when the installer's
-    "hotspot" option is installed (config/installed-options)."""
+    """Is the hotspot offered? Always where the system hotspot service is used; otherwise
+    wifi.hotspot.enabled: true / false, or "auto": when the installer's "hotspot" option is
+    installed (config/installed-options)."""
+    if hotspot_service.in_use(cfg):
+        return True
     try:
         h = (cfg["wifi"] or {}).get("hotspot") or {}
     except KeyError:
@@ -64,6 +72,17 @@ def hotspot_enabled(cfg) -> bool:
         from ..config import installed_options
         return "hotspot" in installed_options()
     return v is True
+
+
+def hotspot_address(cfg) -> str:
+    """The hotspot's own address with its prefix: the service's where it is used, else wifi.hotspot.address."""
+    if hotspot_service.in_use(cfg):
+        return hotspot_service.SERVICE.address()
+    try:
+        h = (cfg["wifi"] or {}).get("hotspot") or {}
+    except KeyError:
+        h = {}
+    return str(h.get("address") or "10.42.0.1/24")
 
 
 class WifiError(Exception):
@@ -119,8 +138,10 @@ def _nm_runner(argv: List[str], timeout: float) -> Tuple[int, str]:
 
 class WifiManager:
     def __init__(self, cfg, events, runner: Callable[[List[str], float], Tuple[int, str]] = _nm_runner,
-                 clock=time.monotonic, sleep=time.sleep, stations: Callable[[str], set] = nl80211.stations):
+                 clock=time.monotonic, sleep=time.sleep, stations: Callable[[str], set] = nl80211.stations,
+                 service: Optional[hotspot_service.HotspotService] = None):
         self.cfg, self.events = cfg, events
+        self._service = service                           # None: the one on this computer
         try:
             w = cfg["wifi"] or {}
         except KeyError:                                  # a config without the section: defaults
@@ -130,7 +151,7 @@ class WifiManager:
         self.connect_timeout_s = float(w.get("connect_timeout_s", 30))
         self.ip_timeout_s = float(w.get("ip_timeout_s", 30))
         h = w.get("hotspot") or {}
-        self.hotspot_address = str(h.get("address") or "10.42.0.1/24")
+        self._hotspot_address = str(h.get("address") or "10.42.0.1/24")
         self.hotspot_band = "a" if h.get("band") == "a" else "bg"
         self._run, self._clock, self._sleep = runner, clock, sleep
         self._stations = stations                         # who is on the hotspot (nl80211: no iw needed)
@@ -140,6 +161,37 @@ class WifiManager:
         self.fake = bool(getattr(cfg, "fake", False))
         self._fake_connected = "lab-wifi"
         self._fake_hotspot: Optional[Dict] = None
+
+    # ------------------------------------------------------------------ the hotspot service
+    @property
+    def service(self) -> hotspot_service.HotspotService:
+        return self._service or hotspot_service.SERVICE
+
+    @property
+    def service_used(self) -> bool:
+        """The hotspot is the system service's (hostapd next to the Wi-Fi), not NetworkManager's."""
+        return not self.fake and hotspot_service.in_use(self.cfg, self.service)
+
+    @property
+    def hotspot_address(self) -> str:
+        return self.service.address() if self.service_used else self._hotspot_address
+
+    def _step_aside(self) -> bool:
+        """Before the Wi-Fi joins a network: the service's hotspot stops (the radio cannot join a
+        network on another channel while it is up). True when it has to be resumed afterwards."""
+        if not self.service_used or self.service.status() is None:
+            return False
+        rc, out = self.service.control("pause", "150")
+        if rc != 0:
+            logger.warning("the hotspot service did not pause: %s", out.strip()[:200])
+            return False
+        deadline = self._clock() + 12
+        while self._clock() < deadline:
+            st = self.service.status() or {}
+            if not (st.get("hotspot") or {}).get("active"):
+                break
+            self._sleep(0.5)
+        return True
 
     # ------------------------------------------------------------------ reading
     def nm(self, *args: str, timeout: float = 10.0, secret: Optional[str] = None) -> Tuple[int, str]:
@@ -157,7 +209,9 @@ class WifiManager:
             return None
         for line in out.splitlines():
             f = split_terse(line)
-            if len(f) >= 4 and f[1] == "wifi" and (self.interface == "auto" or f[0] == self.interface):
+            if len(f) < 4 or f[1] != "wifi" or f[2] == "unmanaged":
+                continue                                  # unmanaged: the hotspot service's own interface
+            if self.interface == "auto" or f[0] == self.interface:
                 return {"device": f[0], "state": f[2], "connection": f[3]}
         return None
 
@@ -179,14 +233,16 @@ class WifiManager:
                "connection": d["connection"] if connected and not hotspot else "",
                "mode": "hotspot" if hotspot else "client",
                "ipv4": self.ipv4(d["device"]) if connected else [], "last_result": self.last_result}
-        if self.hotspot_offered:
+        if self.service_used:
+            out["hotspot"] = self.service.view(int(self.cfg["product"]["port"]))
+        elif self.hotspot_offered:
             out["hotspot"] = self.hotspot_status(d["device"], hotspot)
         return out
 
     # ------------------------------------------------------------------ hotspot
     @property
     def hotspot_offered(self) -> bool:
-        return hotspot_enabled(self.cfg)
+        return self.service_used or hotspot_enabled(self.cfg)
 
     def _hotspot_profile(self) -> Optional[Dict]:
         """The hotspot profile's name and power-on setting (never its password), or None."""
@@ -222,14 +278,21 @@ class WifiManager:
         ssid = (ssid or "").strip("\n")
         if not 1 <= len(ssid.encode("utf-8")) <= 32:
             raise WifiError("the hotspot name must be 1 to 32 bytes")
-        if not 8 <= len(password or "") <= 63:
+        if self.service_used and not password:
+            password = ""                                 # the service keeps the password it has
+        elif not 8 <= len(password or "") <= 63:
             raise WifiError("the hotspot password must have 8 to 63 characters")
         if "\x00" in ssid or "\x00" in password:
             raise WifiError("invalid characters")
         if not self._lock.acquire(blocking=False):
             raise WifiError("another Wi-Fi change is in progress", 409)
         try:
-            result = self._fake_start_hotspot(ssid) if self.fake else self._start_hotspot(ssid, password)
+            if self.fake:
+                result = self._fake_start_hotspot(ssid)
+            elif self.service_used:
+                result = self._service_start(ssid, password)
+            else:
+                result = self._start_hotspot(ssid, password)
         finally:
             self._lock.release()
         self.last_result = dict(result, ssid=ssid, at=time.time(), hotspot=True)
@@ -238,6 +301,51 @@ class WifiManager:
         else:
             self.events.add("warning", "network", f"Wi-Fi hotspot {ssid} did not start", result["summary"])
         return result
+
+    def _service_start(self, ssid: str, password: str) -> Dict:
+        """Name / password to the service when they change, then the service on (also at power-on)."""
+        svc, dev = self.service, (self.device() or {}).get("device", "")
+        cfg = svc.config()
+        if ssid != cfg.get("HOTSPOT_SSID") or (password and password != cfg.get("HOTSPOT_PASSWORD")):
+            keep = password or cfg.get("HOTSPOT_PASSWORD", "")
+            if not keep:
+                return {"success": False, "device": dev, "summary": "enter a password: the current one cannot be read"}
+            rc, out = svc.control("set-credentials", stdin=f"{ssid}\n{keep}\n")
+            if rc != 0:
+                return {"success": False, "device": dev, "code": "denied" if rc == 1 and "password is required" in out else "failed",
+                        "summary": scrub(self._service_why(out, "the name or password was not accepted"), keep)}
+        rc, out = svc.control("on")
+        if rc != 0:
+            return {"success": False, "device": dev, "summary": self._service_why(out, "the hotspot service did not start")}
+        deadline = self._clock() + 30
+        view = svc.view(int(self.cfg["product"]["port"]))
+        while self._clock() < deadline and not (view["running"] and (view["active"] or view["reason"])):
+            self._sleep(1.0)
+            view = svc.view(int(self.cfg["product"]["port"]))
+        if view["active"]:
+            return {"success": True, "device": dev, "address": view["address"],
+                    "summary": f"hotspot {ssid} on (channel {view['channel']}); phones join it and open http://{view['address']}:{view['port']}"}
+        if view["running"]:
+            return {"success": True, "device": dev, "address": view["address"],
+                    "summary": f"hotspot service on; the hotspot itself waits: {view['reason']}"}
+        return {"success": False, "device": dev, "summary": "the hotspot service did not report within 30 s"}
+
+    def _service_stop(self) -> Dict:
+        dev = (self.device() or {}).get("device", "")
+        rc, out = self.service.control("off")
+        if rc != 0:
+            return {"success": False, "device": dev, "summary": self._service_why(out, "the hotspot service did not stop")}
+        return {"success": True, "device": dev,
+                "summary": "hotspot off, also after a restart; the Wi-Fi connection is left to NetworkManager"}
+
+    @staticmethod
+    def _service_why(out: str, default: str) -> str:
+        low = out.lower()
+        if "password is required" in low or "not allowed" in low or "sudo:" in low:
+            return ("this account may not control the hotspot service; run 'sudo bash install.sh <model> hotspot' "
+                    "in aio_install once more (it installs the sudo rule)")
+        lines = [l.strip() for l in out.strip().splitlines() if l.strip()]
+        return lines[-1][:300] if lines else default
 
     def _start_hotspot(self, ssid: str, password: str) -> Dict:
         d = self.device()
@@ -288,7 +396,12 @@ class WifiManager:
         if not self._lock.acquire(blocking=False):
             raise WifiError("another Wi-Fi change is in progress", 409)
         try:
-            result = self._fake_stop_hotspot() if self.fake else self._stop_hotspot()
+            if self.fake:
+                result = self._fake_stop_hotspot()
+            elif self.service_used:
+                result = self._service_stop()
+            else:
+                result = self._stop_hotspot()
         finally:
             self._lock.release()
         self.last_result = dict(result, at=time.time(), hotspot=True)
@@ -408,9 +521,16 @@ class WifiManager:
             raise WifiError("the Wi-Fi is a hotspot now; it is switched off on Maintenance > Network", 409)
         if not self._lock.acquire(blocking=False):
             raise WifiError("another Wi-Fi change is in progress", 409)
+        aside = False
         try:
-            result = self._fake_connect(ssid, password) if self.fake else self._connect(ssid, password, hidden)
+            if self.fake:
+                result = self._fake_connect(ssid, password)
+            else:
+                aside = self._step_aside()
+                result = self._connect(ssid, password, hidden)
         finally:
+            if aside:                                     # the hotspot comes back, on the new channel
+                self.service.control("resume")
             self._lock.release()
         self.last_result = {k: v for k, v in result.items() if k != "password"} | {"ssid": ssid, "at": time.time()}
         if result["success"]:
@@ -464,6 +584,9 @@ class WifiManager:
             raise WifiError("another Wi-Fi change is in progress", 409)
         try:
             result = self._fake_disconnect() if self.fake else self._disconnect()
+            if not self.fake and result["success"] and result.get("disconnected") and self.service_used:
+                # otherwise the hotspot service would join the saved network again at its next scan
+                self.service.control("hold")
         finally:
             self._lock.release()
         self.last_result = dict(result, at=time.time(), disconnect=True)

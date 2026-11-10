@@ -358,7 +358,15 @@ ros2 param get /ouster/os_driver sensor_hostname   # Ouster IP（節點名稱可
 | `hotspot.band` | `bg` | `bg` = 2.4 GHz（所有手機都能連）；`a` = 5 GHz。 |
 | `hotspot.allow_clients` | `true` | 把熱點網段加入 `access.allowed_clients`，讓手機能開啟頁面（只有該清單不是空的時候才有作用）。 |
 | `hotspot.relay_udp` | `true` | 把 NAV（0x04）與狀態（0x05）封包的副本送給熱點上的裝置。維護頁面 → Network 的開關會覆蓋此值（保存在 `state/hotspot_relay.json`）。 |
+| `hotspot.service` | `auto` | `auto`：有安裝系統熱點服務時就用它（見下）。`true`／`false` 強制指定。 |
 | `hotspot.relay_port` | `9000` | 每台裝置上的 UDP 連接埠。 |
+
+**與 Wi-Fi 並存的熱點（系統服務）。** RTL8852BE 可以同時連 Wi-Fi 又開熱點，但 NetworkManager 做不到。`aio_install` 有一個模組（`sudo bash install.sh <機型> hotspot`）：`aio-hotspot.service` 用 hostapd 在第二個介面（`ap0`）開熱點，並決定 Wi-Fi 何時連已儲存的網路。有安裝時，頁面改用它，不再使用上面的 NetworkManager 熱點；`hotspot.enabled`、`address`、`band` 不再使用（服務有自己的設定 `/etc/aio-hotspot/config.env`，預設位址 `192.168.77.1/24`）。
+
+- 一個無線電、一個頻道：沒有 Wi-Fi 時熱點在 2.4 GHz；Wi-Fi 連上或離開網路時，熱點會停止，再到 Wi-Fi 的頻道重開（手機約離線 15 秒）。Wi-Fi 在雷達（DFS）頻道時沒有熱點：保留 Wi-Fi。
+- **維護頁面 → Network** 顯示它的狀態（開啟時的頻道與裝置數、暫停的原因、或關閉）、名稱、密碼（登入後才顯示），以及手機能連到什麼：開發機（`deploy/install.sh --dev`）全權開放，其他只開使用者頁面。**Turn off** 重開機後仍維持關閉；**Save** 修改名稱或密碼（熱點會重新啟動）。
+- 從頁面連 Wi-Fi 時，熱點會先讓路，連完再回來；**Disconnect** 也會告訴服務不要自動連回已儲存的網路，直到選了網路為止。
+- 儀表板透過 `sudo -n aio-hotspot …` 控制它；模組的安裝程式只開放這幾個指令給儀表板的帳號。密碼走標準輸入，不出現在指令列。
 
 - 熱點名稱在頁面上輸入（預設 `AIO-NAV`），密碼（8–63 個字元）也在每次啟動時輸入。密碼只存在 NetworkManager 設定中，不會出現在儀表板的檔案、日誌或頁面。
 - **Start** 時若 Wi-Fi 正連在某個網路上會先詢問（會離開該網路）；熱點啟動失敗時會恢復原本的網路。**Stop** 時若有裝置連線會先詢問，之後 Wi-Fi 會自動加入範圍內已儲存的網路；停止後上電也不會再啟動。

@@ -121,9 +121,25 @@
           <div class="border-top pt-3 mt-3">
             <div class="d-flex align-items-center gap-2 mb-1"><strong>Hotspot</strong>
               <span class="small" :class="st.hotspot.active ? 'text-success' : 'muted'" x-text="hotspotText()"></span></div>
-            <p class="small muted mb-2">The Wi-Fi becomes a network of its own for phones and tablets
+            <p class="small muted mb-2" x-show="!st.hotspot.service">The Wi-Fi becomes a network of its own for phones and tablets
               (<span x-text="st.hotspot.band"></span>, WPA2) instead of joining one: its one radio cannot do both.
               It starts again after a power-off, until it is stopped here.</p>
+            <!-- The system hotspot service (hostapd next to the Wi-Fi connection) -->
+            <div x-show="st.hotspot.service">
+              <p class="small muted mb-2">The hotspot runs next to the Wi-Fi connection, on the same channel (one radio).
+                Without Wi-Fi it is on 2.4 GHz. When the Wi-Fi joins or leaves a network the hotspot restarts on the new
+                channel: phones are off it for about 15 s. While the Wi-Fi is on a radar (DFS) channel the hotspot pauses.</p>
+              <div class="small mb-2">
+                Name <strong x-text="st.hotspot.ssid"></strong>
+                <span x-show="st.hotspot.password"> · password
+                  <span class="mono" x-text="showPw ? st.hotspot.password : '••••••••'"></span>
+                  <label class="ms-1"><input type="checkbox" x-model="showPw"> Show</label></span>
+                <span x-show="st.hotspot.access"> · phones may
+                  <span x-text="st.hotspot.access === 'dev' ? 'reach everything (development machine)' : 'open the user pages only'"></span></span>
+              </div>
+              <div class="small text-warning-emphasis mb-2" x-show="st.hotspot.running && !st.hotspot.auto_join">
+                Saved Wi-Fi networks are not joined automatically (after Disconnect) until a network is chosen.</div>
+            </div>
             <div class="d-flex flex-wrap align-items-center gap-2 mb-2" x-show="st.hotspot.relay">
               <label class="small"><input type="checkbox" :checked="st.hotspot.relay && st.hotspot.relay.enabled"
                      :disabled="!!busy" @change="setRelay($event.target.checked)">
@@ -131,12 +147,28 @@
                 (UDP <span x-text="st.hotspot.relay ? st.hotspot.relay.port : ''"></span>; the vehicle's output is unchanged)</label>
               <span class="small muted" x-text="relayText()"></span>
             </div>
-            <div class="d-flex gap-2 align-items-center" x-show="st.hotspot.active && st.may_change">
+            <div class="d-flex gap-2 align-items-center" x-show="!st.hotspot.service && st.hotspot.active && st.may_change">
               <button type="button" class="btn btn-sm btn-outline-danger" :disabled="!!busy" @click="stopHotspot(false)"
                       x-text="busy === 'hotspot' ? 'Stopping…' : 'Stop hotspot'"></button>
               <span class="small muted">The Wi-Fi then joins a saved network again, if one is in range.</span>
             </div>
-            <form class="row g-2 align-items-end" x-show="!st.hotspot.active && st.may_change" @submit.prevent="startHotspot(false)">
+            <div x-show="st.hotspot.service && st.may_change">
+              <form class="row g-2 align-items-end" @submit.prevent="startHotspot(false)">
+                <div class="col-md-4"><label class="form-label small mb-0">Hotspot name</label>
+                  <input class="form-control form-control-sm" x-model="hsName" maxlength="32" autocomplete="off" required></div>
+                <div class="col-md-4"><label class="form-label small mb-0">New password (empty: keep it)</label>
+                  <input class="form-control form-control-sm" :type="showPw ? 'text' : 'password'" x-model="hsPassword"
+                         maxlength="63" autocomplete="new-password"></div>
+                <div class="col-md-4 d-flex gap-2 align-items-center">
+                  <button class="btn btn-sm btn-primary" :disabled="!!busy || !hsName || (hsPassword.length > 0 && hsPassword.length < 8)"
+                          x-text="busy === 'hotspot' ? 'Working…' : (st.hotspot.running ? 'Save' : 'Turn on')"></button>
+                  <button type="button" class="btn btn-sm btn-outline-danger" :disabled="!!busy" x-show="st.hotspot.running"
+                          @click="stopHotspot(false)">Turn off</button>
+                </div>
+              </form>
+              <div class="small muted mt-1">Turned off, it stays off after a restart. A new name or password restarts the hotspot.</div>
+            </div>
+            <form class="row g-2 align-items-end" x-show="!st.hotspot.service && !st.hotspot.active && st.may_change" @submit.prevent="startHotspot(false)">
               <div class="col-md-4"><label class="form-label small mb-0">Hotspot name</label>
                 <input class="form-control form-control-sm" x-model="hsName" maxlength="32" autocomplete="off" required></div>
               <div class="col-md-4"><label class="form-label small mb-0">Password (8–63 characters)</label>

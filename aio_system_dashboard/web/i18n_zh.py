@@ -110,6 +110,7 @@ ZH = {
     "Disconnecting keeps the saved password. Wi-Fi stays off until you connect again or the device is restarted.":
         "斷線後會保留已儲存的密碼。Wi-Fi 會維持未連線，直到您再次連線或裝置重新開機。",
     "Phones and tablets join it and open http://{0}:{1}": "手機和平板連上後，開啟 http://{0}:{1}",
+    "Hotspot {0}: phones and tablets open http://{1}:{2}": "熱點 {0}：手機和平板開啟 http://{1}:{2}",
     "The Wi-Fi is running as a hotspot for phones and tablets.": "Wi-Fi 目前作為手機和平板的熱點。",
     "It is switched on and off on the Maintenance page.": "熱點在維護頁面開啟或關閉。",
     "The password was not accepted.": "密碼不正確。",

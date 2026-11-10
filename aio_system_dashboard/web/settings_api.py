@@ -61,6 +61,8 @@ def register_settings(ctx, app, prefix: str, rtk_path: str, guard=None, where: s
         relay = getattr(ctx, "hotspot_relay", None)
         if st.get("hotspot") is not None and relay is not None:
             st["hotspot"]["relay"] = relay.status()
+        if (st.get("hotspot") or {}).get("service") and guard is not None and guard.unlocked():
+            st["hotspot"]["password"] = wifi.service.password()   # Maintenance, signed in: to tell a colleague
         return jsonify(dict(st, may_change=ok, client=why, risks=risks))
 
     def api_wifi_scan():
@@ -137,9 +139,9 @@ def register_settings(ctx, app, prefix: str, rtk_path: str, guard=None, where: s
         if not ok:
             return jsonify({"success": False, "summary": why}), 403
         hs = st.get("hotspot") or {}
-        if action == "start" and st.get("connection"):
-            risks.append(f"the Wi-Fi leaves {st['connection']}")
-        if action == "stop" and hs.get("clients"):
+        if action == "start" and st.get("connection") and not hs.get("service"):
+            risks.append(f"the Wi-Fi leaves {st['connection']}")      # the service's hotspot runs next to it
+        if hs.get("clients") and (action == "stop" or hs.get("service")):
             risks.append(f"{hs['clients']} device(s) on the hotspot lose the connection")
         if risks and b.get("confirm") is not True:
             return jsonify({"success": False, "needs_confirm": True, "risks": risks,
@@ -150,6 +152,8 @@ def register_settings(ctx, app, prefix: str, rtk_path: str, guard=None, where: s
             if action == "stop":
                 return jsonify(wifi.stop_hotspot())
             ssid, password = b.get("ssid"), b.get("password")
+            if password is None and hs.get("service"):
+                password = ""                             # keep the service's password
             if not isinstance(ssid, str) or not isinstance(password, str):
                 return jsonify({"success": False, "summary": "ssid and password must be text"}), 400
             return jsonify(wifi.start_hotspot(ssid, password))

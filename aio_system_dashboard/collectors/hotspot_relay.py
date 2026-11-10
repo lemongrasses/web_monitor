@@ -52,12 +52,11 @@ class HotspotRelay:
     name = "hotspot-relay"
 
     def __init__(self, cfg, state_file, events=None, runner: Callable = _run, offered: Callable = None,
-                 access_point: Callable = nl80211.access_point):
+                 access_point: Callable = nl80211.access_point, address: Callable = None):
         h = (cfg.data.get("wifi") or {}).get("hotspot") or {}
-        try:
-            self.network = ipaddress.ip_interface(str(h.get("address") or "10.42.0.1/24")).network
-        except ValueError:
-            self.network = ipaddress.ip_network("10.42.0.0/24")
+        # the hotspot's address: the system hotspot service has its own, and may be installed later
+        self._address = address or (lambda: str(h.get("address") or "10.42.0.1/24"))
+        self.network = self._network()
         self.port = int(h.get("relay_port", 9000))
         self.default = h.get("relay_udp", True) is not False
         self._file = state_file
@@ -97,10 +96,17 @@ class HotspotRelay:
             self.events.add("info", "network", "UDP copies to hotspot devices " + ("on" if enabled else "off"), who)
 
     # ------------------------------------------------------------------ devices
+    def _network(self):
+        try:
+            return ipaddress.ip_interface(self._address()).network
+        except ValueError:
+            return ipaddress.ip_network("10.42.0.0/24")
+
     def refresh(self) -> None:
         targets: List[Tuple[str, int]] = []
         active = False
         if self._offered():
+            self.network = self._network()
             try:
                 ap = self._access_point()
             except OSError as e:                      # said once, not every REFRESH_S

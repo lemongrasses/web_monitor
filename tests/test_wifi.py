@@ -547,3 +547,177 @@ class UserPageSettingsTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+# ---------------------------------------------------------------------- the system hotspot service
+from aio_system_dashboard.actions import hotspot_service  # noqa: E402
+
+
+class FakeService(hotspot_service.HotspotService):
+    """The aio-hotspot service as the dashboard sees it: a status file, a config file, and
+    ``sudo -n aio-hotspot <command>`` (recorded, and answered like the real service)."""
+
+    def __init__(self, tmp, running=True, **status):
+        self.dir = Path(tmp)
+        (self.dir / "config.env").write_text('# comment\nHOTSPOT_SSID="AIO-NAV-TEST"\nHOTSPOT_PASSWORD="old-hotspot-pw1"\n'
+                                             'HOTSPOT_ADDRESS="192.168.77.1/24"\nAP_INTERFACE="ap0"\n')
+        (self.dir / "aio-hotspot").write_text("")
+        self.calls, self.sudo = [], "ok"
+        super().__init__(status_file=self.dir / "status.json", config_file=self.dir / "config.env",
+                         program=str(self.dir / "aio-hotspot"), runner=self.fake_sudo)
+        if running:
+            self.write(**status)
+
+    def write(self, active=True, channel=6, reason="", clients=0, auto_join=True):
+        import time
+        self.status_file.write_text(json.dumps({
+            "hotspot": {"active": active, "ssid": "AIO-NAV-TEST", "channel": channel if active else None,
+                        "band": ("5 GHz" if channel > 14 else "2.4 GHz") if active else None,
+                        "address": "192.168.77.1", "interface": "ap0", "access": "dev", "clients": clients,
+                        "reason": reason},
+            "wifi": {"interface": "wlan0", "state": "connected", "connection": "office", "channel": 44,
+                     "auto_join": auto_join},
+            "mode": "hotspot+wifi" if active else "wifi", "updated": time.time()}))
+
+    def fake_sudo(self, argv, stdin, timeout):
+        assert argv[:3] == ["sudo", "-n", self.program], argv
+        self.calls.append((argv[3:], stdin))
+        if self.sudo != "ok":
+            return 1, "sudo: a password is required"
+        cmd = argv[3]
+        if cmd == "pause":
+            self.write(active=False, reason="paused on request")
+        elif cmd == "resume":
+            self.write(active=True, channel=44)
+        elif cmd == "hold":
+            self.write(auto_join=False)
+        elif cmd == "on":
+            self.write()
+        elif cmd == "off":
+            self.status_file.unlink(missing_ok=True)
+        elif cmd == "set-credentials":
+            ssid, password = stdin.split("\n")[:2]
+            self.config_file.write_text(f'HOTSPOT_SSID="{ssid}"\nHOTSPOT_PASSWORD="{password}"\n'
+                                        'HOTSPOT_ADDRESS="192.168.77.1/24"\n')
+        return 0, ""
+
+
+class ServiceNM(FakeNM):
+    """The hotspot service's own interface is listed first, unmanaged."""
+
+    def __call__(self, argv, timeout):
+        if argv[1:5] == ["-t", "-f", "DEVICE,TYPE,STATE,CONNECTION", "device"]:
+            self.calls.append(argv)
+            state = "connected" if self.active else "disconnected"
+            return 0, f"ap0:wifi:unmanaged:\nwlan0:wifi:{state}:{'office' if self.active else ''}\n"
+        return super().__call__(argv, timeout)
+
+
+class HotspotServiceTest(unittest.TestCase):
+    def setUp(self):
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        self.tmp = tmp.name
+
+    def mgr(self, nm, svc):
+        self.events, self.clock = Events(), Clock()
+        return w.WifiManager(make_cfg(), self.events, runner=nm, clock=self.clock, sleep=self.clock.sleep, service=svc)
+
+    def test_status_shows_the_service_next_to_the_wifi_connection(self):
+        svc = FakeService(self.tmp, channel=44, clients=2)
+        st = self.mgr(ServiceNM(), svc).status()
+        self.assertEqual((st["device"], st["mode"], st["connection"]), ("wlan0", "client", "office"))   # not ap0
+        h = st["hotspot"]
+        self.assertEqual((h["service"], h["running"], h["active"], h["ssid"], h["channel"], h["band"], h["clients"]),
+                         (True, True, True, "AIO-NAV-TEST", 44, "5 GHz", 2))
+        self.assertEqual((h["address"], h["port"], h["access"]), ("192.168.77.1", 8080, "dev"))
+        self.assertNotIn("old-hotspot-pw1", json.dumps(st))                 # the password is not in the status
+
+    def test_paused_on_a_radar_channel_and_switched_off(self):
+        svc = FakeService(self.tmp, active=False, reason="Wi-Fi is on radar channel 108: no hotspot there (Wi-Fi is kept)")
+        m = self.mgr(ServiceNM(), svc)
+        h = m.status()["hotspot"]
+        self.assertEqual((h["running"], h["active"], h["clients"]), (True, False, 0))
+        self.assertIn("radar channel 108", h["reason"])
+        svc.status_file.unlink()                                       # the service is not running
+        h = m.status()["hotspot"]
+        self.assertEqual((h["running"], h["active"], h["reason"]), (False, False, "switched off"))
+
+    def test_a_stale_status_file_means_not_running(self):
+        svc = FakeService(self.tmp)
+        st = json.loads(svc.status_file.read_text())
+        st["updated"] -= 120
+        svc.status_file.write_text(json.dumps(st))
+        self.assertIsNone(svc.status())
+
+    def test_joining_a_network_makes_the_hotspot_step_aside_first(self):
+        nm, svc = ServiceNM(), FakeService(self.tmp)
+        r = self.mgr(nm, svc).connect("lab", SECRET)
+        self.assertTrue(r["success"], r)
+        self.assertEqual([c[0][0] for c in svc.calls], ["pause", "resume"])
+        connect_at = next(i for i, c in enumerate(nm.calls) if "connect" in c)
+        self.assertTrue(connect_at >= 0)
+        self.assertTrue(svc.status()["hotspot"]["active"])             # back afterwards
+
+    def test_the_hotspot_comes_back_when_joining_fails(self):
+        nm, svc = ServiceNM(connect="wrong_password"), FakeService(self.tmp)
+        r = self.mgr(nm, svc).connect("lab", SECRET)
+        self.assertFalse(r["success"])
+        self.assertEqual([c[0][0] for c in svc.calls], ["pause", "resume"])
+
+    def test_nothing_is_asked_of_a_service_that_is_switched_off(self):
+        nm, svc = ServiceNM(), FakeService(self.tmp, running=False)
+        self.assertTrue(self.mgr(nm, svc).connect("lab", SECRET)["success"])
+        self.assertEqual(svc.calls, [])
+
+    def test_disconnect_tells_the_service_not_to_join_again(self):
+        nm, svc = ServiceNM(), FakeService(self.tmp)
+        m = self.mgr(nm, svc)
+        self.assertTrue(m.disconnect()["success"])
+        self.assertEqual([c[0] for c in svc.calls], [["hold"]])
+        self.assertFalse(m.status()["hotspot"]["auto_join"])
+
+    def test_a_new_name_keeps_the_password_and_goes_on_standard_input(self):
+        nm, svc = ServiceNM(), FakeService(self.tmp)
+        r = self.mgr(nm, svc).start_hotspot("AIO-CAR-7", "")
+        self.assertTrue(r["success"], r)
+        self.assertEqual(svc.calls, [(["set-credentials"], "AIO-CAR-7\nold-hotspot-pw1\n"), (["on"], None)])
+        self.assertNotIn("old-hotspot-pw1", json.dumps(r) + " ".join(self.events.items))
+        self.assertFalse(any("connection" in c for c in nm.calls))     # NetworkManager's own hotspot is not used
+
+    def test_a_new_password_and_turning_on_unchanged(self):
+        nm, svc = ServiceNM(), FakeService(self.tmp, running=False)
+        m = self.mgr(nm, svc)
+        self.assertTrue(m.start_hotspot("AIO-NAV-TEST", "")["success"])
+        self.assertEqual(svc.calls, [(["on"], None)])                  # nothing changed: just on
+        svc.calls.clear()
+        r = m.start_hotspot("AIO-NAV-TEST", SECRET)
+        self.assertEqual(svc.calls[0], (["set-credentials"], f"AIO-NAV-TEST\n{SECRET}\n"))
+        self.assertNotIn(SECRET, json.dumps(r) + " ".join(self.events.items))
+        with self.assertRaises(w.WifiError):
+            m.start_hotspot("AIO-NAV-TEST", "short")
+
+    def test_turn_off_and_a_missing_sudo_rule(self):
+        nm, svc = ServiceNM(), FakeService(self.tmp)
+        m = self.mgr(nm, svc)
+        r = m.stop_hotspot()
+        self.assertTrue(r["success"], r)
+        self.assertEqual(svc.calls, [(["off"], None)])
+        self.assertFalse(m.status()["hotspot"]["running"])
+        svc.sudo = "denied"
+        r = m.start_hotspot("AIO-NAV-TEST", "")
+        self.assertFalse(r["success"])
+        self.assertIn("install.sh <model> hotspot", r["summary"])
+
+    def test_the_hotspot_network_is_the_services(self):
+        from aio_system_dashboard.web import access
+        svc = FakeService(self.tmp)
+        cfg = make_cfg()
+        self.assertFalse(w.hotspot_enabled(cfg))                       # nothing installed
+        with mock.patch.object(hotspot_service, "SERVICE", svc):
+            self.assertTrue(w.hotspot_enabled(cfg))
+            self.assertEqual(w.hotspot_address(cfg), "192.168.77.1/24")
+            self.assertEqual([str(n) for n in access.hotspot_clients(cfg)], ["192.168.77.0/24"])
+            cfg.data["wifi"]["hotspot"]["service"] = False             # told not to use it
+            self.assertFalse(w.hotspot_enabled(cfg))
+            self.assertEqual(w.hotspot_address(cfg), "10.42.0.1/24")

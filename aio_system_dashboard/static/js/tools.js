@@ -31,6 +31,11 @@
       hotspotText() {
         const h = this.st && this.st.hotspot;
         if (!h) return "";
+        if (h.service) {                                   // the system hotspot service, next to the Wi-Fi
+          if (!h.running) return "Off (switched off)";
+          if (!h.active) return "Paused: " + (h.reason || "starting");
+          return "On · channel " + h.channel + " (" + h.band + ") · " + h.clients + " device(s) connected · they open http://" + h.address + ":" + h.port;
+        }
         if (!h.active) return h.saved && h.ssid ? "Off (last used: " + h.ssid + ")" : "Off";
         return "On: " + h.ssid + " · " + h.clients + " device(s) connected · they open http://" + h.address + ":" + h.port;
       },
@@ -64,13 +69,17 @@
       },
       async startHotspot(confirm) {
         this.pending = "start";
+        const svc = this.st && this.st.hotspot && this.st.hotspot.service;
         const j = await this.hotspot({ action: "start", ssid: this.hsName, password: this.hsPassword }, confirm,
-                                     "Starting the hotspot… (up to a minute; the previous Wi-Fi comes back if it fails)");
+                                     svc ? "Asking the hotspot service… (up to half a minute)"
+                                         : "Starting the hotspot… (up to a minute; the previous Wi-Fi comes back if it fails)");
         if (j && j.success) this.hsPassword = "";
       },
       async stopHotspot(confirm) {
         this.pending = "stop";
-        await this.hotspot({ action: "stop" }, confirm, "Stopping the hotspot… (then the Wi-Fi looks for a saved network)");
+        const svc = this.st && this.st.hotspot && this.st.hotspot.service;
+        await this.hotspot({ action: "stop" }, confirm, svc ? "Turning the hotspot off…"
+                                                            : "Stopping the hotspot… (then the Wi-Fi looks for a saved network)");
       },
       async scan() {
         this.busy = "scan"; this.msg = "";
@@ -82,7 +91,8 @@
       async connect(confirm) {
         this.pending = "connect";
         this.busy = "connect"; this.confirmText = "";
-        this.msg = "Connecting to " + this.ssid + "… (up to a minute; the previous Wi-Fi comes back if it fails)";
+        this.msg = "Connecting to " + this.ssid + "… (up to a minute; the previous Wi-Fi comes back if it fails"
+          + (this.st && this.st.hotspot && this.st.hotspot.service && this.st.hotspot.active ? "; the hotspot is off meanwhile)" : ")");
         this.msgClass = "";
         const j = await this.toolFetch("/api/maint/wifi/connect", { method: "POST",
           body: JSON.stringify({ ssid: this.ssid, password: this.password, hidden: this.hidden, confirm: !!confirm }) });

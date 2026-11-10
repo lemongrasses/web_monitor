@@ -151,8 +151,11 @@ DEFAULTS: Dict[str, Any] = {
              # `address` and may open the pages (allow_clients); band "bg" = 2.4 GHz. relay_udp: each
              # device on it gets a copy of the NAV and 0x05 packets on relay_port (the vehicle's
              # output is unchanged); switchable on Maintenance > Network.
+             # service "auto": where the system hotspot service is installed (aio_install module
+             # "hotspot": hostapd next to the Wi-Fi connection) the pages show and switch that one,
+             # and its own address is used; enabled / address / band are then not used.
              "hotspot": {"enabled": "auto", "address": "10.42.0.1/24", "band": "bg", "allow_clients": True,
-                         "relay_udp": True, "relay_port": 9000}},
+                         "relay_udp": True, "relay_port": 9000, "service": "auto"}},
     "events": {"log_file": "logs/events.jsonl", "max_memory": 500},
     "actions": {"restart_timeout_s": 30.0, "diagnostic_timeout_s": 15.0,
                 "stop_grace_s": 5.0},  # stop_grace_s: SIGTERM -> SIGKILL delay for AIO NAV / DSO

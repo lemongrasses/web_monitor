@@ -440,6 +440,27 @@ until it is stopped there. Phones open `http://10.42.0.1:8080`.
 | `hotspot.allow_clients` | `true` | Add the hotspot network to `access.allowed_clients`, so phones may open the pages (only matters when that list is not empty). |
 | `hotspot.relay_udp` | `true` | Send copies of the NAV (0x04) and status (0x05) packets to the devices on the hotspot. The switch on Maintenance → Network overrides this (kept in `state/hotspot_relay.json`). |
 | `hotspot.relay_port` | `9000` | The UDP port on each device. |
+| `hotspot.service` | `auto` | `auto`: use the system hotspot service when it is installed (below). `true` / `false` force it. |
+
+**Hotspot next to the Wi-Fi (system service).** On the RTL8852BE the Wi-Fi can join a network and
+be a hotspot at once, but not through NetworkManager. `aio_install` has a module for it
+(`sudo bash install.sh <model> hotspot`): `aio-hotspot.service` runs hostapd on a second interface
+(`ap0`) and decides when the Wi-Fi joins a saved network. Where it is installed, the pages use it
+instead of the NetworkManager hotspot above, and `hotspot.enabled`, `address` and `band` are not
+used (the service has its own: `/etc/aio-hotspot/config.env`, default address `192.168.77.1/24`).
+
+- One radio, one channel: with no Wi-Fi the hotspot is on 2.4 GHz; when the Wi-Fi joins or leaves a
+  network the hotspot stops, and starts again on the Wi-Fi's channel (phones are off it for about
+  15 s). While the Wi-Fi is on a radar (DFS) channel there is no hotspot: the Wi-Fi is kept.
+- **Maintenance → Network** shows its state (on with channel and devices, paused with the reason,
+  or off), the name, the password (signed in only) and what phones may reach: everything on a
+  development machine (`deploy/install.sh --dev`), the user pages only otherwise. **Turn off** also
+  holds after a restart; **Save** changes the name or password (the hotspot restarts).
+- Joining a network from a page makes the hotspot step aside first and brings it back afterwards;
+  **Disconnect** also tells the service not to join saved networks again until one is chosen.
+- The dashboard changes it through `sudo -n aio-hotspot …`; the module's installer allows exactly
+  those commands for the dashboard's user. The password travels on standard input, not on a
+  command line.
 
 - The hotspot name is typed on the page (default `AIO-NAV`), and so is the password (8–63
   characters) at each start. The password is kept only in the NetworkManager profile: never in the
