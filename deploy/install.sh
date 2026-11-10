@@ -16,6 +16,17 @@
 # or the --choose menu; it is remembered as "no-<part>" in PREFIX/config/installed-options and
 # removed, and later plain runs leave it out until --with-<part>, --all or the menu turns it on.
 # --yes never asks (for scripts).
+#
+# Switches (how this machine runs the dashboard; chosen and remembered like the parts, both on
+# unless switched off):
+#   boot      start the dashboard at power-on. Off (--without-boot): it is started by hand with
+#             `aio-dashboard start` (a running dashboard is still restarted on the new files).
+#   security  the maintenance password and the client list (access.allowed_clients). Off
+#             (--without-security): no password is asked, any client may open the pages, and the
+#             service user may start / stop the dashboard without the sudo password. The password
+#             file and the list are kept and apply again after --with-security.
+#   --dev     a development machine: both off (same as --without-boot --without-security).
+#             Back to a device for the field: --with-boot --with-security (or --all).
 # Other options: [--user nvidia] [--prefix /opt/aio-dashboard] [--with-aio-nav PATH_TO_aio-nav]
 #                [--reset-config]
 #
@@ -52,11 +63,15 @@ ASSUME_YES=0
 declare -A ASKED=()                              # part -> 1 / 0 from --with-<part> / --without-<part>
 
 PARTS=(sysmon replay wifi hotspot)
+SWITCHES=(boot security)                         # not parts of the program: how this machine runs it
+ITEMS=("${PARTS[@]}" "${SWITCHES[@]}")
 declare -A TITLE=(
   [sysmon]="Black-box recorder (aio-sysmon)"
   [replay]="Replay: Live / Bag switch and bag player"
   [wifi]="Wi-Fi from the pages"
   [hotspot]="Wi-Fi hotspot (Maintenance > Network)"
+  [boot]="Start at power-on (off: aio-dashboard start)"
+  [security]="Maintenance password and client list"
 )
 PKLA=/etc/polkit-1/localauthority/50-local.d/50-aio-dashboard-wifi.pkla
 RULES=/etc/polkit-1/rules.d/50-aio-dashboard-wifi.rules
@@ -68,8 +83,9 @@ while [[ $# -gt 0 ]]; do
     --prefix) PREFIX="$2"; shift 2 ;;
     --with-aio-nav) AIO_NAV_BIN="$2"; shift 2 ;;
     --reset-config) RESET_CONFIG=1; shift ;;
-    --with-sysmon|--with-replay|--with-wifi|--with-hotspot) ASKED[${1#--with-}]=1; shift ;;
-    --without-sysmon|--without-replay|--without-wifi|--without-hotspot) ASKED[${1#--without-}]=0; shift ;;
+    --with-sysmon|--with-replay|--with-wifi|--with-hotspot|--with-boot|--with-security) ASKED[${1#--with-}]=1; shift ;;
+    --without-sysmon|--without-replay|--without-wifi|--without-hotspot|--without-boot|--without-security) ASKED[${1#--without-}]=0; shift ;;
+    --dev) ASKED[boot]=0; ASKED[security]=0; shift ;;   # development machine: manual start, no password / client list
     --no-sysmon) shift ;;                        # old flag: the recorder is off unless chosen
     --choose) CHOOSE=1; shift ;;
     --all) ALL=1; shift ;;
@@ -97,6 +113,8 @@ installed_now() {                                # is the part on this machine n
     replay) [[ -d "$PREFIX/aio_dashboard_replay" ]] || compgen -G "$PREFIX/aio_dashboard_replay*.so" >/dev/null ;;
     wifi) [[ -f "$PKLA" ]] ;;
     hotspot) [[ "$(chosen_words)" == *" hotspot "* ]] ;;
+    boot) systemctl is-enabled --quiet aio-dashboard.service 2>/dev/null ;;
+    security) [[ -f "$OPTIONS_FILE" && "$(chosen_words)" != *" no-security "* ]] ;;
   esac
 }
 needs() {                                        # what this system lacks for the part ("" = nothing)
@@ -114,17 +132,18 @@ available() {                                    # can this package install the 
     sysmon) [[ -d "$SRC/aio_sysmon" ]] ;;
     replay) [[ -d "$SRC/aio_dashboard_replay" ]] || compgen -G "$SRC/aio_dashboard_replay*.so" >/dev/null ;;
     wifi|hotspot) [[ -z "$(needs "$1")" ]] ;;
+    boot|security) true ;;
   esac
 }
 declare -A WANT=() OFF=()                       # OFF: switched off on purpose (remembered as no-<part>)
 CHOSEN_BEFORE=0; [[ -f "$OPTIONS_FILE" ]] && CHOSEN_BEFORE=1
 BEFORE="$(chosen_words)"
-for p in "${PARTS[@]}"; do                       # every part, unless switched off on an earlier run
+for p in "${ITEMS[@]}"; do                       # every part, unless switched off on an earlier run
   OFF[$p]=0
   [[ $ALL -eq 0 && "$BEFORE" == *" no-$p "* ]] && OFF[$p]=1
 done
 for p in "${!ASKED[@]}"; do OFF[$p]=$((1 - ASKED[$p])); done
-for p in "${PARTS[@]}"; do WANT[$p]=$((1 - OFF[$p])); done
+for p in "${ITEMS[@]}"; do WANT[$p]=$((1 - OFF[$p])); done
 settle() {                                       # the hotspot needs the Wi-Fi permission
   local why
   if [[ ${WANT[hotspot]} -eq 1 && ${WANT[wifi]} -eq 0 ]]; then
@@ -143,9 +162,10 @@ settle
 
 show_parts() {
   local i=1 p mark now
-  for p in "${PARTS[@]}"; do
+  for p in "${ITEMS[@]}"; do
+    [[ $p == "${SWITCHES[0]}" ]] && echo "  -- how this machine runs it (both off = development machine) --"
     mark=" "; [[ ${WANT[$p]} -eq 1 ]] && mark="x"
-    now=""; installed_now "$p" && now="  * installed now"
+    now=""; installed_now "$p" && now="  * $([[ " ${SWITCHES[*]} " == *" $p "* ]] && echo "on now" || echo "installed now")"
     checkable "$p" || { now="  ? (run with sudo to check)"; [[ $MODE == list && $CHOSEN_BEFORE -eq 0 ]] && mark="?"; }
     printf '  %d [%s] %-42s%s\n' "$i" "$mark" "${TITLE[$p]}" "$now"
     i=$((i + 1))
@@ -164,8 +184,8 @@ menu() {
       q|Q) echo "nothing changed"; exit 0 ;;
     esac
     for n in $line; do
-      if [[ "$n" =~ ^[0-9]+$ && $n -ge 1 && $n -le ${#PARTS[@]} ]]; then
-        p=${PARTS[$((n - 1))]}
+      if [[ "$n" =~ ^[0-9]+$ && $n -ge 1 && $n -le ${#ITEMS[@]} ]]; then
+        p=${ITEMS[$((n - 1))]}
         WANT[$p]=$((1 - WANT[$p])); OFF[$p]=$((1 - WANT[$p]))
         [[ $p == hotspot && ${WANT[hotspot]} -eq 1 ]] && { WANT[wifi]=1; OFF[wifi]=0; }   # needs the Wi-Fi permission
         [[ $p == wifi && ${WANT[wifi]} -eq 0 ]] && { WANT[hotspot]=0; OFF[hotspot]=1; }
@@ -183,10 +203,13 @@ chosen_text() {
 }
 saved_text() {                                   # chosen parts + no-<part> for the ones switched off
   local p out=()                                 # (a part left out for a missing tool is neither:
-  for p in "${PARTS[@]}"; do                     #  the next plain run adds it once the tool is there)
+  for p in "${ITEMS[@]}"; do                     #  the next plain run adds it once the tool is there)
     if [[ ${WANT[$p]} -eq 1 ]]; then out+=("$p"); elif [[ ${OFF[$p]} -eq 1 ]]; then out+=("no-$p"); fi
   done
   echo "${out[*]}"
+}
+switch_text() {
+  echo "start at power-on: $([[ ${WANT[boot]} -eq 1 ]] && echo yes || echo "no (manual start)"); password and client list: $([[ ${WANT[security]} -eq 1 ]] && echo on || echo "off (development machine)")"
 }
 
 if [[ $MODE == list ]]; then
@@ -202,6 +225,8 @@ WITH_SYSMON=${WANT[sysmon]}
 WITH_REPLAY=${WANT[replay]}
 WITH_WIFI=${WANT[wifi]}
 WITH_HOTSPOT=${WANT[hotspot]}
+WITH_BOOT=${WANT[boot]}
+WITH_SECURITY=${WANT[security]}
 CHANGES=()
 for p in "${PARTS[@]}"; do
   if ! checkable "$p"; then CHANGES+=("$p: run with sudo to check"); continue; fi
@@ -209,6 +234,12 @@ for p in "${PARTS[@]}"; do
   if [[ ${WANT[$p]} -eq 0 ]] && installed_now "$p"; then CHANGES+=("remove $p"); fi
 done
 echo "==> optional parts: $(chosen_text)$( (( ${#CHANGES[@]} )) && printf ' (%s)' "$(IFS='|'; echo "${CHANGES[*]}" | sed 's/|/, /g')" )"
+SWITCHED=()
+for p in "${SWITCHES[@]}"; do
+  if [[ ${WANT[$p]} -eq 1 ]] && ! installed_now "$p"; then SWITCHED+=("$p switched on"); fi
+  if [[ ${WANT[$p]} -eq 0 ]] && installed_now "$p"; then SWITCHED+=("$p switched off"); fi
+done
+echo "==> $(switch_text)$( (( ${#SWITCHED[@]} )) && printf ' (%s)' "$(IFS='|'; echo "${SWITCHED[*]}" | sed 's/|/, /g')" )"
 if [[ $MODE == dry-run ]]; then
   echo "    dry run: nothing installed"
   exit 0
@@ -342,14 +373,18 @@ for svc in (cfg.get("services") or {}).values():
 EOF
 )
 SUDOERS=/etc/sudoers.d/aio-dashboard
-if [[ -n "$UNITS" ]]; then
+if [[ -n "$UNITS" || $WITH_SECURITY -eq 0 ]]; then
   {
     echo "# Generated by aio-dashboard install.sh from $PREFIX/config/dashboard.yaml"
     for u in $UNITS; do echo "$RUN_USER ALL=(root) NOPASSWD: /usr/bin/systemctl restart $u"; done
+    if [[ $WITH_SECURITY -eq 0 ]]; then
+      echo "# security switched off (development machine): aio-dashboard start / stop / restart without the sudo password"
+      for verb in start stop restart; do echo "$RUN_USER ALL=(root) NOPASSWD: /usr/bin/systemctl $verb aio-dashboard.service"; done
+    fi
   } > "$SUDOERS.tmp"
   visudo -cf "$SUDOERS.tmp" >/dev/null && install -m 0440 "$SUDOERS.tmp" "$SUDOERS"
   rm -f "$SUDOERS.tmp"
-  echo "    allowed: $(echo $UNITS)"
+  echo "    allowed: ${UNITS:+$(echo $UNITS)}$([[ $WITH_SECURITY -eq 0 ]] && echo "${UNITS:+, }start / stop / restart of aio-dashboard.service (security is off)")"
 else
   rm -f "$SUDOERS"
   echo "    no restartable units configured"
@@ -495,8 +530,16 @@ elif installed_now sysmon; then
 fi
 
 systemctl daemon-reload
-systemctl enable aio-dashboard.service
-systemctl restart aio-dashboard.service
+if [[ $WITH_BOOT -eq 1 ]]; then
+  systemctl enable aio-dashboard.service
+  systemctl restart aio-dashboard.service
+else
+  # Manual start: nothing at power-on. A dashboard that is running now is restarted on the new
+  # files (it stays up until the next power-off); one that is stopped stays stopped.
+  echo "==> manual start: aio-dashboard.service is not started at power-on"
+  systemctl disable aio-dashboard.service 2>/dev/null || true
+  systemctl try-restart aio-dashboard.service
+fi
 if [[ $WITH_SYSMON -eq 1 && -d "$SRC/aio_sysmon" ]]; then
   systemctl enable aio-sysmon.service
   systemctl restart aio-sysmon.service
@@ -513,6 +556,10 @@ chmod 0644 "$OPTIONS_FILE"
 echo
 echo "Done ($(cat "$PREFIX/VERSION")). Settings are detected automatically."
 echo "  optional parts: $(chosen_text)   (a plain run installs every part not switched off; change: sudo $0 --choose)"
+echo "  $(switch_text)"
+if [[ $WITH_BOOT -eq 0 ]]; then
+  echo "  aio-dashboard start     start it by hand (not started at power-on; back: sudo $0 --with-boot)"
+fi
 echo "  aio-dashboard status    service state and web addresses"
 echo "  aio-dashboard config    edit settings ($PREFIX/config/dashboard.yaml) and restart"
 echo "  aio-dashboard logs      follow the log"
@@ -526,7 +573,10 @@ if [[ $WITH_HOTSPOT -eq 1 ]]; then
   echo "  Maintenance > Network   Wi-Fi hotspot for phones and tablets"
 fi
 "$PREFIX/bin/aio-dashboard" urls
-if [[ ! -s "$PREFIX/config/maint_password" ]]; then
+if [[ $WITH_SECURITY -eq 0 ]]; then
+  echo "Security is off: no maintenance password, any client may open the pages (the password file and"
+  echo "access.allowed_clients are kept). For a device in the field: sudo $0 --with-security"
+elif [[ ! -s "$PREFIX/config/maint_password" ]]; then
   echo "The maintenance view stays locked until a password is set:  aio-dashboard password"
 fi
 echo "Re-run install.sh after changing restartable units so the sudoers rule is regenerated."

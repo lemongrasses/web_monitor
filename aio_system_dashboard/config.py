@@ -29,7 +29,10 @@ DEFAULTS: Dict[str, Any] = {
                     "config_test_start": True},
     # Browsers allowed to open the pages (IPs or CIDRs). Loopback is always allowed.
     # Empty = no restriction.
-    "access": {"allowed_clients": []},
+    # security: the master switch of the maintenance password and of allowed_clients. "auto" = the
+    # installer's choice (off after deploy/install.sh --dev / --without-security); true / false
+    # decide here. Off keeps both settings as they are, it only stops applying them.
+    "access": {"allowed_clients": [], "security": "auto"},
     "nav": {
         "udp_bind": "127.0.0.1:9000",
         "aio_nav_config": "auto",  # "auto": search the usual AIO NAV install locations
@@ -191,6 +194,21 @@ def installed_options() -> set:
     except OSError:
         return set()
     return {w for line in text.splitlines() if not line.lstrip().startswith("#") for w in line.split()}
+
+
+def security_enabled(cfg) -> bool:
+    """Are the maintenance password and the client list (access.allowed_clients) applied?
+    access.security: true / false, or "auto" (the default): yes, unless the installer's "security"
+    switch is off (deploy/install.sh --dev or --without-security writes "no-security" to
+    config/installed-options). Off is for a development machine: the password file and the list
+    are kept and apply again as soon as the switch is back on."""
+    try:
+        v = (cfg["access"] or {}).get("security", "auto")
+    except KeyError:
+        v = "auto"
+    if v == "auto":
+        return "no-security" not in installed_options()
+    return v is not False
 
 
 def drivers_service(cfg) -> Optional[str]:

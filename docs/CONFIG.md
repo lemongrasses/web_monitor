@@ -154,6 +154,8 @@ access:
 |-----|---------|---------|
 | `allowed_clients` | `[]` | IP addresses or CIDRs (e.g. `192.0.2.0/24`) of the computers allowed to open the product and maintenance views. Anyone else gets `403 Forbidden`. `127.0.0.1` (this Jetson) is always allowed. Empty = no restriction. |
 
+| `security` | `auto` | Master switch of the maintenance password and of `allowed_clients`. `auto`: on, unless the installer switched it off (`deploy/install.sh --dev` or `--without-security`, saved as `no-security` in `config/installed-options`). `true` / `false` decide here, whatever the installer says. Off is for a development machine: no password is asked and any client may open the pages; the password file and `allowed_clients` are kept and apply again when it is on. |
+
 Put the external computer on the sensor LAN here. Phones on the Wi-Fi hotspot are added
 automatically (`wifi.hotspot.allow_clients`, section 4.5a). It is an access filter, not
 authentication: it does not protect against a computer that spoofs that address on the same LAN.

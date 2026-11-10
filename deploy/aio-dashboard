@@ -35,6 +35,21 @@ urls() {
   done
 }
 
+switches() {                                     # the installer's switches (deploy/install.sh --dev)
+  local opts
+  opts=" $(sed 's/#.*//' "$APP_DIR/config/installed-options" 2>/dev/null | tr '\n' ' ') "
+  if systemctl is-enabled --quiet "$UNIT" 2>/dev/null; then
+    echo "  Start at power-on  yes"
+  else
+    echo "  Start at power-on  no (start it with: aio-dashboard start)"
+  fi
+  if [[ "$opts" == *" no-security "* ]]; then
+    echo "  Security           off: no maintenance password, any client (development machine)"
+  else
+    echo "  Security           on (maintenance password, access.allowed_clients)"
+  fi
+}
+
 check_config() {
   python3 - "$CONFIG" <<'EOF'
 import sys
@@ -75,7 +90,7 @@ case "${1:-}" in
     ;;
   status)
     systemctl status "$UNIT" --no-pager -n 5 || true
-    echo; urls
+    echo; urls; switches
     ;;
   logs)
     journalctl -u "$UNIT" -f -n 50
@@ -111,6 +126,9 @@ case "${1:-}" in
     sudo chown "root:$owner" "$APP_DIR/config/maint_password"
     sudo chmod 0640 "$APP_DIR/config/maint_password"
     echo "Password set. Sign in to the maintenance view with it."
+    if grep -qsw -- 'no-security' <(sed 's/#.*//' "$APP_DIR/config/installed-options" 2>/dev/null); then
+      echo "Note: security is switched off on this machine (install.sh --dev), so it is not asked for now."
+    fi
     ;;
   -h|--help|help|"")
     usage

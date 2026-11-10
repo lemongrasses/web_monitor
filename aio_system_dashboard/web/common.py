@@ -9,6 +9,7 @@ from pathlib import Path
 from flask import Flask, abort, jsonify, request
 from flask.json.provider import DefaultJSONProvider
 
+from ..config import security_enabled
 from .access import client_allowed, hotspot_clients, parse_allowed_clients
 from .i18n import gettext
 
@@ -91,7 +92,9 @@ def create_base_app(name: str, ctx) -> Flask:
             stamps[key] = format(mtime // 1_000_000, "x")
         values["v"] = stamps[key]
 
-    allowed = ctx.cfg["access"]["allowed_clients"]
+    # Security switched off (a development machine, config.security_enabled): the list is kept in
+    # the config but not applied, so any client may open the pages.
+    allowed = ctx.cfg["access"]["allowed_clients"] if security_enabled(ctx.cfg) else []
     nets = parse_allowed_clients(allowed)
     if allowed and not nets:
         logger.error("access.allowed_clients has no valid entry; only loopback can connect")

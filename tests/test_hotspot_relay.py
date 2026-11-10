@@ -327,6 +327,27 @@ class InstallerTest(unittest.TestCase):
         self.assertNotIn("left out", out)
         self.assertIn("optional parts: wifi hotspot", out)
 
+    # ---- switches: start at power-on, password and client list (both off = development machine)
+    def test_switches_are_on_by_default(self):
+        rc, out = self.dry_run(self.ALL_TOOLS, args=())
+        self.assertEqual(rc, 0, out)
+        self.assertIn("start at power-on: yes; password and client list: on", out)
+
+    def test_dev_switches_both_off(self):
+        rc, out = self.dry_run(self.ALL_TOOLS, args=("--dev",))
+        self.assertEqual(rc, 0, out)
+        self.assertIn("optional parts: sysmon replay wifi hotspot", out)      # the parts are not touched
+        self.assertIn("start at power-on: no (manual start); password and client list: off", out)
+
+    def test_switched_off_switch_stays_off_until_asked(self):
+        saved = "sysmon replay wifi hotspot no-boot no-security\n"
+        rc, out = self.dry_run(self.ALL_TOOLS, args=(), saved=saved)
+        self.assertIn("start at power-on: no (manual start); password and client list: off", out)
+        rc, out = self.dry_run(self.ALL_TOOLS, args=("--with-security",), saved=saved)
+        self.assertIn("start at power-on: no (manual start); password and client list: on", out)
+        rc, out = self.dry_run(self.ALL_TOOLS, args=("--all",), saved=saved)
+        self.assertIn("start at power-on: yes; password and client list: on", out)
+
 
 if __name__ == "__main__":
     unittest.main()

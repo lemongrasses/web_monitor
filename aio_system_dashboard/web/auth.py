@@ -6,6 +6,9 @@
 * Unlocking gives a session (HttpOnly, SameSite=Strict cookie, bound to the client IP) that ends
   after `maintenance.unlock_minutes` without use, or with Lock.
 * Repeated wrong passwords from one address are slowed down (a short lock-out).
+* On a development machine the lock can be switched off as a whole (config.security_enabled:
+  deploy/install.sh --dev): then everything counts as unlocked and no password is asked. The
+  password file is neither read nor changed, so the lock is back as it was when switched on again.
 """
 
 import functools
@@ -42,7 +45,9 @@ def check_password(password: str, stored: str) -> bool:
 
 
 class Guard:
-    def __init__(self, password_file: str, idle_s: float = 900.0, events=None, clock=time.monotonic):
+    def __init__(self, password_file: str, idle_s: float = 900.0, events=None, clock=time.monotonic,
+                 enabled: bool = True):
+        self.enabled = enabled                  # False: no lock at all (development machine)
         self.password_file = password_file
         self.idle_s = idle_s
         self.events = events
@@ -79,15 +84,19 @@ class Guard:
             return token
 
     def unlocked(self) -> bool:
-        return self._session() is not None
+        return not self.enabled or self._session() is not None
 
     def touch(self) -> None:
+        if not self.enabled:
+            return
         token = self._session()
         if token:
             with self._lock:
                 self._sessions[token] = (request.remote_addr, self.clock() + self.idle_s)
 
     def expires_in(self) -> Optional[float]:
+        if not self.enabled:
+            return None
         token = self._session()
         with self._lock:
             return max(0.0, self._sessions[token][1] - self.clock()) if token in self._sessions else None
@@ -97,6 +106,8 @@ class Guard:
             self.events.add(level, "security", title, f"from {request.remote_addr}")
 
     def unlock(self, password: str):
+        if not self.enabled:
+            return jsonify({"success": True, "summary": "no password on this machine (security is off)"})
         with self._checking:
             return self._unlock(password)
 
@@ -128,6 +139,8 @@ class Guard:
         return resp
 
     def lock(self):
+        if not self.enabled:
+            return jsonify({"success": True, "summary": "no lock on this machine (security is off)"})
         token = request.cookies.get(COOKIE)
         with self._lock:
             self._sessions.pop(token or "", None)
@@ -136,8 +149,11 @@ class Guard:
         return resp
 
     def status(self) -> Dict:
+        if not self.enabled:
+            return {"configured": True, "unlocked": True, "expires_in_s": None, "idle_s": self.idle_s,
+                    "disabled": True}
         return {"configured": self.configured(), "unlocked": self.unlocked(),
-                "expires_in_s": self.expires_in(), "idle_s": self.idle_s}
+                "expires_in_s": self.expires_in(), "idle_s": self.idle_s, "disabled": False}
 
     def required(self, fn):
         """Decorator: the route needs an unlocked session (and extends it)."""

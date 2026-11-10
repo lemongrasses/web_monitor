@@ -126,6 +126,8 @@ access:
 |-----|------|------|
 | `allowed_clients` | `[]` | 允許開啟 Product / Maintenance 頁面的電腦 IP 或 CIDR（例如 `192.0.2.0/24`）。其他來源會得到 `403 Forbidden`。本機 `127.0.0.1` 一律允許。留空代表不限制。 |
 
+| `security` | `auto` | 維護頁面密碼與 `allowed_clients` 的總開關。`auto`：開啟，除非安裝程式已關閉（`deploy/install.sh --dev` 或 `--without-security`，會在 `config/installed-options` 記為 `no-security`）。填 `true` / `false` 則以這裡為準。關閉只用於開發測試機：不詢問密碼，任何電腦都能開啟頁面；密碼檔與 `allowed_clients` 都會保留，重新開啟後照原設定生效。 |
+
 請在這裡填入感測器網段上的外部電腦。連上 Wi-Fi 熱點的手機會自動加入（`wifi.hotspot.allow_clients`，第 4.5a 節）。這只是來源 IP 過濾，不是身分驗證，無法防止同一網段內有人偽造該 IP。
 
 ### 4.2 `nav`：AIO NAV 資料與 Stopped／Starting／Initializing／Ready／Fault 狀態

@@ -22,7 +22,11 @@
       </a>
       {% endfor %}
       </nav>
-      <div class="side-lock" :class="auth.unlocked ? 'open' : ''">
+      <div class="side-lock open" x-show="auth.disabled" x-cloak title="Security is switched off on this machine (deploy/install.sh --dev). Switch it on: sudo deploy/install.sh --with-security">
+        <span class="side-lock-ico" aria-hidden="true">🔓</span>
+        <span class="lbl">No password (development machine)</span>
+      </div>
+      <div class="side-lock" :class="auth.unlocked ? 'open' : ''" x-show="!auth.disabled">
         <span class="side-lock-ico" aria-hidden="true" x-text="auth.unlocked ? '🔓' : '🔒'"></span>
         <span class="lbl" x-text="auth.scope === 'all' ? 'Signed in' : (auth.unlocked ? 'Tools unlocked' : 'Tools locked')"></span>
         <button type="button" class="btn btn-sm side-lock-btn" x-show="auth.unlocked" @click="lockTools()" x-text="auth.scope === 'all' ? 'Sign out' : 'Lock'">Lock</button>

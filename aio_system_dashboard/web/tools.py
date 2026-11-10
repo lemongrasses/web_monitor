@@ -12,6 +12,7 @@ from flask import Response, jsonify, render_template, request, stream_with_conte
 from ..actions import aionav_config as ac
 from ..actions import process_control
 from ..actions.terminal import TerminalManager
+from ..config import security_enabled
 from .auth import Guard, default_password_file
 from .settings_api import register_settings
 
@@ -20,8 +21,15 @@ logger = logging.getLogger(__name__)
 
 def register_tools(ctx, app, page_context) -> None:
     mcfg = ctx.cfg["maintenance"]
+    secure = security_enabled(ctx.cfg)
     guard = Guard(default_password_file(ctx.cfg), idle_s=float(mcfg.get("unlock_minutes", 15)) * 60,
-                  events=ctx.events)
+                  events=ctx.events, enabled=secure)
+    if not secure:
+        logger.warning("security is off (access.security / installer switch): no maintenance password, "
+                       "access.allowed_clients is not applied")
+        ctx.events.add("warning", "security", "Security is switched off",
+                       "development machine: no maintenance password, any client may connect "
+                       "(switch on: sudo deploy/install.sh --with-security)")
     terms = TerminalManager(ctx.cfg.state_file("terminals.json"), ctx.events)
     closed = terms.cleanup_orphans()
     if closed:

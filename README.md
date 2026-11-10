@@ -169,6 +169,18 @@ system cannot run yet (no `nmcli`, no `dnsmasq`, ...) is left out with a note, a
 run adds it once the tool is installed. An `installed-options` file from an older installer lists
 only the chosen parts: the next plain run adds the others (check first with `--dry-run`).
 
+Two **switches** say how the machine runs the dashboard. They are chosen and remembered the same
+way (the menu, `--with-<switch>` / `--without-<switch>`, `no-<switch>` in `installed-options`),
+and both are on unless switched off:
+
+| Switch | On (a device in the field, the default) | Off (`--without-<switch>`) |
+|--------|------|------|
+| `boot` | `aio-dashboard.service` starts at power-on | manual start: `aio-dashboard start` (an update still restarts a dashboard that is running) |
+| `security` | the maintenance password and `access.allowed_clients` apply | no password is asked, any client may open the pages, and the service user may run `aio-dashboard start / stop / restart` without the sudo password. The password file and the client list are kept and apply again after `--with-security` |
+
+`--dev` switches both off (a development machine); `--with-boot --with-security` or `--all`
+switches both on again. `aio-dashboard status` shows the two switches.
+
 | Option | Does |
 |--------|------|
 | *(none)* | every optional part, except the ones switched off before |
@@ -176,7 +188,8 @@ only the chosen parts: the next plain run adds the others (check first with `--d
 | `--choose` | show the menu again |
 | `--list` | what is installed and chosen (no sudo needed) |
 | `--dry-run` | what an install would add or remove, then stop (no sudo needed) |
-| `--with-<part>` / `--without-<part>` | switch a part on or off without the menu (`sysmon`, `replay`, `wifi`, `hotspot`) |
+| `--with-<part>` / `--without-<part>` | switch a part on or off without the menu (`sysmon`, `replay`, `wifi`, `hotspot`), or a switch (`boot`, `security`) |
+| `--dev` | a development machine: manual start, no password or client list (`--without-boot --without-security`) |
 | `--yes`, `-y` | never ask (for scripts) |
 | `--user U` | the service user (default: the user running sudo) |
 | `--prefix P` | install folder (default `/opt/aio-dashboard`) |
@@ -230,6 +243,10 @@ Re-run `install.sh` after changing which units are restartable.
   password to the config editor and the terminal.
 - The **Terminal** page is a real shell of the service user. Choose a strong password, and keep
   `access.allowed_clients` to the computers that need it.
+- A development machine can switch the password and the client list off (`install.sh --dev` or
+  `--without-security`; `access.security` in the config). The Terminal page is then an open shell
+  for anyone who can reach port 8081: never ship a device like that. The Maintenance sidebar shows
+  "No password (development machine)" and the event log gets a warning at every start.
 - Elsewhere no command strings are accepted: actions are fixed IDs, each target in a whitelist built from config.
 - Restarts need confirmation in the UI, have a timeout, and are logged (Diagnostics page and `logs/events.jsonl`), as are sign-ins, config saves and terminals.
 - POSTs require JSON and the header `X-Requested-With: aio-dashboard`, which blocks plain cross-site form posts.
