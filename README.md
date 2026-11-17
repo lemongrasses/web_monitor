@@ -4,13 +4,23 @@ Web dashboard for the Jetson AIO navigation system.
 
 | UI | Port | Audience | Pages |
 |----|------|----------|-------|
-| Product | `:8080` | Operators (no login) | Overview · Navigation · Data · Settings (Wi-Fi, RTK requirement), with Start / Restart / Stop of AIO NAV; English / 繁體中文 |
-| Maintenance | `:8081` | Engineers (password) | Overview · System · ROS 2 · Camera · LiDAR · Network · Diagnostics · AIO NAV config · Terminal (· Replay with the replay module) |
+| Product | `:8080` | Operators (no login) | Overview · Navigation · Data · Setup (lever arms) · Settings (Wi-Fi, RTK requirement, automatic start, vehicle link), with Start / Restart / Stop / Resume of AIO NAV; English / 繁體中文 |
+| Maintenance | `:8081` | Engineers (password) | Overview · System · ROS 2 · GNSS / RTK · Camera · LiDAR · Network (Wi-Fi, hotspot) · Diagnostics · Still detection · AIO NAV config · Terminal (· Replay with the replay part) |
 
 The main data source is the **AIO NAV 0x04 binary packet** that `aio_nav_node`
-(`../aio-nav-ros`) always sends to `127.0.0.1:9000`. The dashboard can start and stop AIO NAV and
-DSO (`nav.allow_control`), restarts DSO when it fails, and watches the rest. AIO NAV and DSO run in
-their own sessions, so a dashboard crash or restart never stops them.
+(`../aio-nav-ros`) always sends to `127.0.0.1:9000`. With the shipped settings the system runs
+without an operator:
+
+- **Automatic start:** AIO NAV + DSO start after power-on (sensor drivers first) and are started
+  again after a failure (after READY only with the vehicle still). Needs `nav.allow_control`.
+- **0x05 status packet:** the vehicle is told, twice a second, whether it may use the navigation
+  output (READY with no inhibit bit), next to the 0x04 data.
+- **Watchers:** DSO watchdog (NaN, crash, memory), sensor-driver watchdog (IMU silent), ROS
+  isolation guard (the dashboard's own ROS connection stuck), systemd watchdog. See
+  [FLOWS 7](docs/FLOWS.md#7-who-restarts-what).
+- **System clock from GNSS time** (chrony), so time stamps are right in the field without NTP.
+
+AIO NAV and DSO run in their own sessions, so a dashboard crash or restart never stops them.
 
 
 **Manuals:** operation, alignment SOP and UDP output format:
@@ -20,6 +30,7 @@ Optional system recorder (a black box for the computer, to trace freezes and pow
 Engineering flowcharts (system data flow, health tick, readiness states, automatic start, Wi-Fi, vehicle side): [docs/FLOWS.md](docs/FLOWS.md).
 繁體中文 terminology, shared word for word with the vehicle-side aio-nav-receiver: [docs/TERMINOLOGY.zh-TW.md](docs/TERMINOLOGY.zh-TW.md).
 Ideas discussed and kept for later (in Traditional Chinese): [docs/IDEAS.md](docs/IDEAS.md).
+The original v1 specification is kept for history only, no longer up to date: [docs/history/v1-spec.md](docs/history/v1-spec.md).
 
 ## Architecture
 
@@ -27,20 +38,23 @@ Ideas discussed and kept for later (in Traditional Chinese): [docs/IDEAS.md](doc
 aio_system_dashboard/
   __main__.py          one process, shared state, two HTTP servers (:8080, :8081)
   config.py            config/dashboard.yaml + the active aio-nav-ros config file (re-read when it changes)
-  modules.py           optional modules (installed only with --with-<name>)
-  nav/decoder.py       0x04 packet decoder (from setup_env, with the VUPT + velocity_up fixes)
-  nav/trajectory.py    session trajectory: last 60 s @10 Hz + older @1 Hz, incremental fetch
-  collectors/          nav_udp (raw rate), system, services, network, ros2 (sampled), gnss_monitor,
-                       dso_watchdog (NaN / crash / memory), ros_guard (stuck ROS connection), fake
+  modules.py           optional modules (packages installed only with --with-<name>; today: replay)
+  nav/                 decoder.py (0x04, with the VUPT + velocity_up fixes), trajectory.py (last 60 s
+                       @10 Hz + older @1 Hz), status_packet.py (0x05), vehicle_gate.py (reference receiver)
+  collectors/          nav_udp (raw rate), system, services, network, ros2 (sampled), gnss_monitor
+                       (GNSS lamp), gnss_diag (GNSS / RTK page), gnss_time (clock -> chrony), speed,
+                       dso_watchdog, ros_guard, status_udp (0x05 sender), hotspot_relay, fake
   media/               on-demand camera image / point-cloud preview (tap.py), decoders, fake frames
-  state/indicator.py   debounced status (raise/clear hold, no flicker on a single miss)
-  state/health.py      5 Hz evaluator: product state, alignment step, advisories, issues, events
+  state/               health.py (5 Hz evaluator: product state, alignment step, advisories, events),
+                       readiness.py (states, actions and inhibit bits for the vehicle), still.py
+                       (vehicle still detection), indicator.py (debounced lamps), store.py
   actions/             fixed actions only: process_control (AIO NAV / DSO), service_control (drivers),
-                       diagnostics, aionav_config (config editor), terminal (shell sessions),
-                       autostart (power-on start), wifi (NetworkManager, with rollback)
+                       autostart, driver_watchdog, diagnostics, aionav_config (config editor),
+                       terminal (shell sessions), wifi (NetworkManager, with rollback; hotspot)
   data_access/         read-only browse/download inside configured roots
-  web/                 Flask apps: product.py, maintenance.py, tools.py (editor, terminal), auth.py,
-                       settings_api.py (Wi-Fi / RTK on both apps), i18n.py + i18n_zh.py (user-page languages)
+  web/                 Flask apps: product.py, setup.py (lever arms), maintenance.py, still.py,
+                       tools.py (editor, terminal), auth.py, access.py, settings_api.py (Wi-Fi / RTK on
+                       both apps), server.py, i18n.py + i18n_zh.py (user-page languages)
   templates/, static/  Bootstrap + Alpine.js + Leaflet + xterm.js (vendored, offline)
 aio_dashboard_replay/  optional module: Live / Bag replay switch and bag player
 aio_sysmon/            optional system recorder (separate service)
@@ -51,17 +65,25 @@ polls `/api/state` at 5 Hz and the trajectory every 2 s.
 
 ### Health model
 
-| State | Condition |
-|-------|-----------|
-| **STOPPED** | AIO NAV not running and nobody asked it to run (normal, not a fault) |
-| **STARTING** | asked to start, or running without output yet (up to `startup_timeout_s`, 60 s) |
-| **INITIALIZING** | packets fresh but `ready_requires` flags (default `alignment`, `heading_valid`, `fine_alignment`) not all set; reports the current step and what to do |
-| **READY** | process up, packets fresh, alignment complete |
-| **FAULT** | AIO NAV stopped although it should run (start requests are recorded), no output after the start-up time, output stopped for `stale_fault_s` (2 s), or the UDP listener failed |
+Two layers, computed together every 0.2 s (`state/health.py`, `state/readiness.py`):
 
-GNSS loss, camera/LiDAR not connected, sensor-LAN link down and low disk are
-**advisories**: they never change READY. A state only changes after the new condition has held
-for a while (fault about 0.5–1 s, recovery about 2 s).
+| Page state | Condition |
+|------------|-----------|
+| **STOPPED** | AIO NAV not running and nobody asked it to run (normal, not a fault) |
+| **STARTING** | asked to start, or running without output yet (up to `startup_timeout_s`, 60 s); also while the automatic start waits |
+| **INITIALIZING** | packets fresh but `ready_requires` flags (default `alignment`, `heading_valid`, `fine_alignment`) not all set; reports the current step and what to do |
+| **READY** | process up, packets fresh, alignment complete, and the required conditions held: by default RTK (`readiness.require_rtk`), plus anything in `readiness.require` |
+| **DEGRADED** | was READY in this AIO NAV run, and a required condition (RTK by default) or the alignment was lost |
+| **FAULT** | AIO NAV stopped although it should run, no output after the start-up time, output stopped for `stale_fault_s` (2 s) or frozen, the UDP listener failed, AIO NAV running twice, or the automatic start gave up |
+
+For the vehicle the same snapshot gives a finer state (BOOTING, CHECKING, NAV_STARTING, KEEP_STILL,
+MOVE_STRAIGHT, REFINING, READY, DEGRADED, FAULT, MAINTENANCE), a requested action (HOLD_STILL,
+SAFE_STOP, …) and inhibit bits; they go out in the 0x05 packet
+([operation 6.8](docs/OPERATION.md), [FLOWS 3](docs/FLOWS.md#3-readiness-states)).
+
+Camera/LiDAR not connected, sensor-LAN link down and low disk are **advisories**: they never
+change READY. GNSS is an advisory too only when "RTK required" is switched off. A state gets worse
+after about 0.5 s and recovers after about 2 s, so a single missed sample does not flicker.
 
 "UDP Output: Streaming" means `aio_nav_node` is sending packets. UDP has no ACK,
 so the dashboard never claims that the remote receiver got the data.
@@ -162,7 +184,8 @@ type their numbers to switch them on or off, Enter to continue, `q` to quit with
 The choice is saved in `/opt/aio-dashboard/config/installed-options`, and later runs install the
 same parts without asking. A part switched off is removed (the sysmon records in
 `/var/log/aio-sysmon` are kept; switching off `hotspot` deletes the hotspot profile). Without a
-terminal, the first run uses the parts found in the package.
+terminal, the first run keeps the parts already on the machine (none on a fresh install); use
+`--with-<part>` there.
 
 | Option | Does |
 |--------|------|
@@ -191,7 +214,7 @@ terminal, the first run uses the parts found in the package.
 - installs the optional parts chosen above
 - reminds you to run `aio-dashboard password` if no maintenance password is set
 
-`sudo deploy/uninstall.sh` first saves `config/` and `state/` to `~/aio-dashboard-backup-<time>`, then
+`sudo deploy/uninstall.sh` (`--prefix P`, `--backup-dir D`) first saves `config/` and `state/` to `~/aio-dashboard-backup-<time>`, then
 removes the units, the sudoers, sysctl, chrony and polkit files, the hotspot profile and
 `/opt/aio-dashboard`. It leaves the sysmon records, the persistent journal setting and lingering.
 
@@ -219,8 +242,9 @@ Re-run `install.sh` after changing which units are restartable.
 
 - The maintenance view needs a password (`aio-dashboard password`; salted PBKDF2 hash, no default).
   Sessions are HttpOnly / SameSite=Strict cookies bound to the client IP and end after 15 minutes
-  without use; repeated wrong passwords lock out briefly. `maintenance.lock: tools` limits the
-  password to the config editor and the terminal.
+  without use; repeated wrong passwords lock out briefly. `maintenance.lock: tools` leaves the
+  pages open to view and asks for the password only for changes (config editor, terminal, still
+  detection, Wi-Fi / hotspot, RTK requirement).
 - The **Terminal** page is a real shell of the service user. Choose a strong password, and keep
   `access.allowed_clients` to the computers that need it.
 - Elsewhere no command strings are accepted: actions are fixed IDs, each target in a whitelist built from config.
@@ -228,27 +252,38 @@ Re-run `install.sh` after changing which units are restartable.
 - POSTs require JSON and the header `X-Requested-With: aio-dashboard`, which blocks plain cross-site form posts.
 - Downloads are limited to the configured roots: realpath containment rejects `..`, absolute paths and escaping symlinks. There is no upload, delete or rename.
 - Each port serves only its own routes. Maintenance APIs are not reachable on :8080. The product view has no login;
-  its only changes are Start / Stop, Wi-Fi (accepted only from a browser connected by cable, so a change cannot cut off
-  the page that made it) and the RTK requirement (turning it off needs a confirmation). All are logged.
+  its only changes are Start / Stop / Resume, the lever arms on Setup (written to the Live `aio_nav.yaml` after a test
+  start, with a backup), Wi-Fi (accepted only from a browser connected by cable, so a change cannot cut off the page
+  that made it) and the RTK requirement (turning it off needs a confirmation). All are logged.
 
 ## Not included
 
-Offline map tiles, trend charts, deep IMU/camera/LiDAR diagnostics, and ROS message browsing.
+Offline map tiles, trend charts (except the GNSS page's last 10 minutes), deep IMU/camera/LiDAR
+diagnostics, ROS message browsing, and recording. The shipped config has no LiDAR; add a `lidar`
+device to use the LiDAR page.
 Ideas kept for later are in [docs/IDEAS.md](docs/IDEAS.md).
 
-## Optional modules
+## Optional parts
 
-Features that not every machine needs are separate modules that are **not installed by default**; the dashboard never depends on them. Each one is added with an install flag, can be switched off in its own config, and is left out of the release package unless asked for.
+Features that not every machine needs are **optional parts** of the installer. They are not
+installed by default and the dashboard works without them. They are switched on in different ways:
 
-| Module | Install flag | What it is |
-|--------|--------------|------------|
-| System recorder (`aio_sysmon`) | `--with-sysmon` | a power-loss-safe black box, see above |
-| Replay (`aio_dashboard_replay`) | `--with-replay` | Live / Bag replay switch and a bag player on Maintenance > Replay ([operation 4.6](docs/OPERATION.md)); without it the machine runs Live only |
-| Wi-Fi | `--with-wifi` | joining a Wi-Fi network from the Settings page and Maintenance > Network |
-| Hotspot | `--with-hotspot` | the Wi-Fi as a hotspot for phones and tablets, with copies of the NAV and status packets (needs `wifi`) |
+| Part | Installer | What it installs | Config switch | Release package |
+|------|-----------|------------------|---------------|-----------------|
+| `replay` | `--with-replay` | the `aio_dashboard_replay` module: Maintenance > Replay ([operation 4.6](docs/OPERATION.md)); without it the machine runs Live only | `modules.replay.enabled` | only when built with `tools/build_release.sh --with-replay` |
+| `sysmon` | `--with-sysmon` | the system recorder: its own service, `/var/log/aio-sysmon`, persistent journal ([SYSMON](docs/SYSMON.md)) | none (it is its own service) | never: install from a source checkout |
+| `wifi` | `--with-wifi` | only the polkit rule that lets the service user change Wi-Fi; the Wi-Fi code is always in the dashboard | `wifi.enabled` (shows the panel; without the part, changes are refused) | code always included |
+| `hotspot` | `--with-hotspot` | the right to share the Wi-Fi as a hotspot and a dispatcher that keeps it closed; copies of the NAV and status packets for the devices on it (needs `wifi`, `dnsmasq`, nft or iptables) | `wifi.hotspot.enabled: auto` (= installed) | code always included |
 
-The installer's menu (see Deployment) chooses the same parts.
+The installer's menu (see Deployment) chooses the same parts. Details: [CONFIG](docs/CONFIG.md).
 
-New optional features follow the same pattern (own folder, own flag, own `enabled` setting) and are developed on a short-lived `feature/<name>` branch that is merged into `main`.
+A **module** is the kind of part that is a separate Python package next to
+`aio_system_dashboard` (today only `aio_dashboard_replay/`), with `NAME`, `TITLE`, `DEFAULTS` and
+`register(ctx, app)`, listed in `aio_system_dashboard/modules.py`. The core never imports it
+directly: it only asks `modules.py` whether the module is installed and on (`modules.<name>.enabled`),
+and the module adds its own Maintenance page, routes, templates and static files.
+`deploy/install.sh --with-<name>` copies it, and `tools/build_release.sh --with-<name>` compiles it
+into a release.
 
-A dashboard module is a package next to `aio_system_dashboard` (for example `aio_dashboard_replay/`) with `NAME`, `TITLE`, `DEFAULTS` and `register(ctx, app)`, listed in `aio_system_dashboard/modules.py`. The core never imports it directly: it only asks `modules.py` whether the module is installed and on, and the module adds its own Maintenance page, routes, templates and static files. `deploy/install.sh --with-<name>` copies it, and `tools/build_release.sh --with-<name>` compiles it into a release.
+New optional features follow the module pattern where they can (own folder, own flag, own
+`enabled` setting) and are developed on a short-lived `feature/<name>` branch that is merged into `main`.

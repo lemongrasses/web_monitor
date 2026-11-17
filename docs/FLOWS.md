@@ -11,6 +11,8 @@ same sequence (what the page and the vehicle show at each step) is in the
 4. [Automatic start (every 1 s)](#4-automatic-start-every-1-s)
 5. [Wi-Fi change](#5-wi-fi-change)
 6. [Vehicle side](#6-vehicle-side)
+7. [Who restarts what](#7-who-restarts-what)
+8. [Where a setting comes from](#8-where-a-setting-comes-from)
 
 ## 1. System and data flow
 
@@ -24,7 +26,10 @@ flowchart TB
   DRV -- "camera" --> DSO["DSO"]
   DSO -- "odometry (VUPT)" --> NAV
   NAV -- "0x04, 100 Hz<br/>127.0.0.1:9000" --> COL["Dashboard: NAV UDP collector"]
-  COL --> HE["Dashboard: health engine, 5 Hz<br/>+ system, services, network, ROS 2, GNSS, DSO watchdog"]
+  DRV -- "ROS 2 topics" --> ROSC["Dashboard: ROS 2 monitor<br/>topics, GNSS lamp (NavSatFix), GNSS / RTK page<br/>(diagnostics), receiver speed, DSO watchdog"]
+  DRV -- "IMU time stamps" --> CLK["GNSS time → chrony (SHM 2)"]
+  COL --> HE["Dashboard: health engine, 5 Hz<br/>+ system, services, network"]
+  ROSC --> HE
   HE --> SNAP[("Readiness snapshot")]
   SNAP --> UI["User UI :8080<br/>Maintenance UI :8081"]
   SNAP --> TX["0x05 sender<br/>2 Hz + on change"]
@@ -32,6 +37,7 @@ flowchart TB
   NAV -- "0x04, output_udp" --> VEH[("Vehicle")]
   TX -- "0x05, same address and port" --> VEH
   AUTO -. "starts / stops" .-> NAV
+  COL -. "copies of 0x04 / 0x05<br/>(hotspot part only)" .-> HOT[("Phones / tablets<br/>on the hotspot")]
 ```
 
 - One snapshot (`state/readiness.py`) feeds the pages, `/api/readiness` and the 0x05 packet, so
@@ -41,6 +47,9 @@ flowchart TB
 - Process control starts and stops AIO NAV and DSO together (`nav.control_group`); the automatic
   start also starts the sensor drivers first (`autostart.start_services`).
 - AIO NAV keeps running if the dashboard stops; the dashboard adopts it when it comes back.
+- The GNSS lamp and READY use the NavSatFix topic (`gnss.topic`). The Maintenance GNSS / RTK page
+  uses the receiver's diagnostics (`gnss_diag.topic`) and may say something else; it is for
+  troubleshooting only and never changes READY.
 
 ## 2. One health tick (5 Hz)
 
@@ -50,7 +59,7 @@ flowchart TB
 flowchart TD
   A["Read the store:<br/>services, NAV packets, GNSS, ROS 2, network, system"] --> B["Raw product state<br/>raw_product_state()"]
   B --> C["Debounce<br/>raise 0.5 s, clear 2 s"]
-  C --> D["Readiness conditions with hysteresis<br/>stable 2 s, loss 1 s (GNSS: 3 s / 3 s)"]
+  C --> D["Readiness conditions with hysteresis<br/>stable 2 s, loss 1 s<br/>(gnss: 2 s / 3 s, gnss_quality: 3 s / 3 s)"]
   D --> E["readiness.evaluate()<br/>pure function, no I/O"]
   E --> F["Snapshot: state, action, health and<br/>inhibit masks, reasons, session, sequence"]
   F --> G["Page view: status text,<br/>start-up steps, lamps"]
@@ -78,7 +87,8 @@ stateDiagram-v2
   KEEP_STILL --> MOVE_STRAIGHT: alignment
   MOVE_STRAIGHT --> REFINING: heading_valid
   REFINING --> READY: fine_alignment and required conditions
-  READY --> DEGRADED: condition or alignment lost
+  READY --> DEGRADED: condition lost (RTK by default)
+  READY --> DEGRADED: alignment lost (filter restarted)
   DEGRADED --> READY: condition back
   READY --> FAULT: AIO NAV stopped by itself
   CHECKING --> FAULT: prerequisites missing 120 s
@@ -93,7 +103,7 @@ stateDiagram-v2
 | KEEP_STILL / MOVE_STRAIGHT / REFINING | HOLD_STILL / DRIVE_STRAIGHT / KEEP_DRIVING | from the first missing alignment flag |
 | READY | NONE | inhibit_flags = 0 |
 | DEGRADED | SAFE_STOP | only after READY in this AIO NAV run |
-| FAULT | SERVICE_REQUIRED, or SAFE_STOP after READY | also: AIO NAV running twice, or `aio-nav.service` enabled with automatic start (OWNERSHIP_CONFLICT) |
+| FAULT | SERVICE_REQUIRED; HOLD_STILL while the automatic start restarts it; SAFE_STOP after READY | also: AIO NAV running twice, or `aio-nav.service` enabled with automatic start (OWNERSHIP_CONFLICT) |
 | MAINTENANCE | MAINTENANCE_HOLD | operator Stop (until Resume or the next power-on) or nobody asked it to run |
 
 ## 4. Automatic start (every 1 s)
@@ -178,3 +188,37 @@ flowchart TD
   Q -- all yes --> USE["use the navigation data"]
   Q -- any no --> BLOCK["do not use"]
 ```
+
+## 7. Who restarts what
+
+Several watchers can restart a part. Each touches only its own part; this table is the place
+to check before adding another one.
+
+| Watcher | Code | Acts when | Does | Limits |
+|---------|------|-----------|------|--------|
+| Automatic start | `actions/autostart.py` | AIO NAV should run but is not running, or sends nothing | starts AIO NAV + DSO (`nav.control_group`); first starts the drivers if they are not running (`autostart.start_services`) | waits 5, 15, 30, 60 … s; after READY only with the vehicle still; an operator Stop holds it |
+| DSO watchdog | `collectors/dso_watchdog.py` | `/dso/odometry` NaN; DSO should run but is gone; DSO memory too high | restarts or starts **DSO only**, never AIO NAV | waits `retry_s` (30 s), doubling up to `retry_max_s` (300 s) while it keeps exiting |
+| Driver watchdog | `actions/driver_watchdog.py` | Live mode, driver unit active, IMU topic missing or stale for 45 s | `systemctl --user restart` of the driver unit | 60, 120, 300 s between restarts; an operator Stop of the drivers is respected |
+| ROS isolation guard | `collectors/ros_guard.py` | the driver process runs in the dashboard's ROS domain, but no other node has been visible for 30 s | restarts the **dashboard** (systemd starts it again) | at most once per 600 s (kept on disk), only after 60 s of uptime |
+| systemd | `deploy/aio-dashboard.service` | the dashboard stops answering for 60 s (`WatchdogSec`) | restarts the dashboard | AIO NAV and DSO keep running (`KillMode=process`) |
+
+Known overlap: when the dashboard's own ROS discovery is stuck, the IMU also looks *missing*, so
+the driver watchdog may restart the drivers (after 45 s) while the guard restarts the dashboard
+(after 30 s). The guard usually acts first and the dashboard comes back with a working ROS
+connection. During the guard's 600 s cooldown the driver watchdog can still restart drivers that
+are healthy. Not coordinated yet.
+
+## 8. Where a setting comes from
+
+Some settings can be changed on the pages. The page's choice is kept in `state/` and wins over
+`config/dashboard.yaml`:
+
+| Setting | In the config | Changed on | Kept in | How long the page's choice holds |
+|---------|---------------|------------|---------|-----------------------------------|
+| RTK required for READY | `readiness.require_rtk` (`true`) | Settings page, Maintenance > Overview | `state/readiness.json` | until changed again |
+| Live / Bag replay | `ros.mode` (`live`) | Maintenance > Replay (replay part only) | `state/ros_mode.json` | until the next power-on |
+| Operator Stop (hold) | — | Stop / Start / Resume | `state/autostart.json` | until Start / Resume or the next power-on |
+| Still limits | `readiness.still_*` | Maintenance > Still detection | `state/still_limits.json` | until reset |
+
+`readiness.require: [gnss_quality]` is a second way to require GNSS quality; it is independent of
+the RTK switch (switching RTK off does not remove it).

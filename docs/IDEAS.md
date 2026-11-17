@@ -2,7 +2,7 @@
 
 討論過、覺得可行,但先不做的想法。每項記下**為什麼想做、建議做法、要注意的取捨**,之後要做時可以直接從這裡接手。完成後請從這裡移除,或標成已完成並附上 commit。
 
-最後整理:2026-10-08(當機調查後更新)
+最後整理:2026-11-17(和程式對過一次;已完成的項目標出)
 
 | # | 想法 | 類別 | 規模 |
 |---|------|------|------|
@@ -42,12 +42,13 @@
 
 **為什麼:** 有些目標機器(例如 i.MX8)可能沒有 ROS。把 ROS 切出去後,核心在沒有 ROS 的機器上也能完整運作,而且這一步不管之後換不換語言都需要。
 
-**現況(2026-10-08 查過程式碼):** 真正 `import rclpy` 或 ROS 訊息型別的只有約 700 行,不到全部約 4100 行的六分之一:
-- `collectors/ros2.py`:417 行,負責主題/節點監看與取樣。
-- `media/tap.py`:197 行,相機/光達預覽解碼。
-- `collectors/gnss_monitor.py`:81 行,GNSS 狀態。
+**現況(2026-11-17 查過程式碼):** 真正 `import rclpy` 或 ROS 訊息型別的約 1300 行,約占全部約 10900 行的八分之一:
+- `collectors/ros2.py`:591 行,負責主題/節點監看與取樣。
+- `media/tap.py`(197 行)與 `media/image.py`、`media/pointcloud.py`:相機/光達預覽解碼。
+- `collectors/gnss_monitor.py`(129 行,GNSS 燈)、`collectors/gnss_diag.py`(231 行,GNSS / RTK 頁)、`collectors/speed.py`(112 行,接收機速度,給靜止偵測)。
+- `collectors/dso_watchdog.py`:行程管理之外,也訂閱 `/dso/odometry`(nav_msgs)判斷 NaN。
 
-`ros_guard.py`、`ros_mode.py`、`dso_watchdog.py`、`process_control.py` 名字有 ROS,但只做行程管理與環境變數,不依賴 ROS 函式庫。導航資料走 UDP(`nav/decoder.py`),完全不經過 ROS。
+`ros_guard.py`、`aio_dashboard_replay/mode.py`、`process_control.py` 名字有 ROS,但只做行程管理與環境變數,不依賴 ROS 函式庫。`collectors/gnss_time.py` 讀 IMU 時間戳,也要經過 ROS。導航資料走 UDP(`nav/decoder.py`),完全不經過 ROS。
 
 **要先處理的耦合點:**
 - `state/health.py`:沒有 ROS 模組時要顯示「未啟用」,不能當成故障。
@@ -55,7 +56,7 @@
 - 網頁:Maintenance 的 ROS 頁、Overview 的 GNSS 燈與感測器燈要能隱藏。
 - GNSS 燈:目前依賴 `NavSatFix`。沒有 ROS 時可考慮改用導航 UDP 封包的旗標,但語意不完全相同,要另外定義。
 
-**做法:** 照 README「Optional modules」的模式,做成獨立資料夾、`--with-ros` 安裝旗標、`enabled` 設定,在 `feature/optional-ros` 短期分支上開發。模組的骨架已經有了(`aio_system_dashboard/modules.py`,第一個模組是 2026-10-08 的 replay),ROS 模組可以照同樣方式接上。
+**做法:** 照 README「Optional parts」裡模組的模式,做成獨立資料夾、`--with-ros` 安裝旗標、`enabled` 設定,在 `feature/optional-ros` 短期分支上開發。模組的骨架已經有了(`aio_system_dashboard/modules.py`,第一個模組是 2026-10-08 的 replay),ROS 模組可以照同樣方式接上。
 
 ---
 
@@ -87,7 +88,7 @@
 
 - ~~**真正斷電的第一次判斷還沒驗證。**~~ **已驗證(2026-10-08):** 一次真正的卡死與強制重置,紀錄器正確判斷為「記憶體用完」,並找出 DSO 是原因;同時修好了 `last-crash` 因時鐘超前而找不到紀錄的問題。純斷電(電壓下降)的判斷仍未遇到。
 - **維護頁加紀錄器面板。** 顯示 `aio-sysmon status`、最近的異常、`last-crash` 的判斷。
-- **發行包納入紀錄器。** `tools/build_release.sh` 目前不含,要從原始碼安裝。做成選項(對應 `--with-sysmon`)。
+- **發行包納入紀錄器。** `tools/build_release.sh` 目前不含(只接受 `--with-replay`),要從原始碼安裝。做成選項(對應 `--with-sysmon`)。
 - **已知限制(不是待辦):**
   - 這顆核心沒開 PSI,所以「忙」和「卡」用 `stall`、`iowait`、卡在磁碟的工作數判斷。
   - 服務的 15% CPU 上限對即時排程無效,升級期間靠 `LimitRTTIME`、監看執行緒和低優先序保護(已實測)。
@@ -102,7 +103,7 @@
 - **DSO 記憶體上限:已完成(2026-10-08)。** DSO 曾以每秒 25 MB(等於相機原始影像串流)持續增加,把 RAM 與 swap 用完,整台機器卡死。監控現在會在 DSO 超過 `dso_watchdog.max_memory_mb` 時重啟它。**根本原因要 DSO 修:** ROS wrapper 似乎無上限地排隊相機影像,應該在處理不及時丟掉舊影像。
 - **記憶體用完時讓系統更快恢復。** 16 GB 的 swap 放在 NVMe 上,記憶體用完時機器會卡好幾分鐘,而不是直接殺掉失控的程式。可考慮縮小 swap,或裝 `earlyoom` 之類的工具,在記憶體快用完時直接結束最大的程式。DSO 的上限已涵蓋這次的情況,這是對其他程式的額外保護。
 - **硬體時鐘改存 UTC。** 這台的 RTC 存的是當地時間,開機後到校時前時間快 8 小時,早期的紀錄時間都會錯。`sudo timedatectl set-local-rtc 0` 即可修正。
-- **DSO 崩潰重試加退避。** 目前每 30 秒重試一次(`dso_watchdog.retry_s`)。相機畫面沒有紋理時 DSO 會一直崩潰,每次載入約 180 MB 的程式,產生大量吵雜紀錄。可改成連續失敗後逐步拉長,例如到 5 分鐘。
+- ~~**DSO 崩潰重試加退避。**~~ **已完成:** 連續一啟動就結束時,等待從 `dso_watchdog.retry_s`(30 秒)倍增到 `retry_max_s`(300 秒)。
 - **相機網路改用巨型封包(jumbo frame)。** GigE 相機約 26 MB/s、每秒約 1.3 萬次中斷,目前 MTU 1500。改 MTU 要相機與網卡兩邊都設定。
 - **磁碟空間。** AIO NAV 每小時寫約 270 MB 的輸出,長時間運行要有清理或輪替策略。
 
@@ -112,6 +113,9 @@
 
 - ~~**`aio-dashboard bag-play <路徑>`**~~ **已完成(2026-10-08),做成更完整的版本:** 選配的 replay 模組,在維護頁面 **Replay** 選 bag、勾 topic、調整 `ros2 bag play` 的所有參數、存常用設定、播放中暫停/調速,並自動使用 Bag 模式的網域。見操作手冊第 4.6 節。
 - **DSO 與 AIO NAV 分開控制的後續。** 目前首頁只有 AIO NAV(跟原本的 App 邏輯一樣),DSO 由後台監控自動處理。當時說「之後再討論後續」,例如維護頁要不要能單獨啟停 DSO。
+
+- **感測器 driver 監控與 ROS 隔離檢查的協調。** 儀表板自己的 ROS 連線卡住時,IMU 看起來也是「沒有」,driver 監控(45 秒)可能重啟 drivers,同時隔離檢查(30 秒)重啟儀表板;隔離檢查 600 秒冷卻期間,driver 監控可能一直重啟其實正常的 drivers。可讓 driver 監控在「看不到任何其他節點」時不動作,或交給隔離檢查。另外 driver 監控的狀態目前只寫在事件裡,頁面上看不到。見 [FLOWS 7](FLOWS.md#7-who-restarts-what)。
+- **GNSS 燈與 GNSS / RTK 頁可能說法不同。** 燈號來自 NavSatFix(`gnss.topic`),GNSS / RTK 頁來自接收機的 diagnostics(`gnss_diag.topic`),兩邊沒有對照。可在 GNSS 頁標出燈號的判斷,或在兩者不一致時提示。
 
 ---
 

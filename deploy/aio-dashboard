@@ -16,7 +16,7 @@ Usage: aio-dashboard <command>
   status                   service state and web addresses
   logs                     follow the service log (Ctrl+C to quit)
   config                   edit the settings, check them, and offer a restart
-  check                    check the settings file for mistakes
+  check                    check the settings file (YAML and the kind of each value)
   urls                     print the web addresses
   version                  print the installed version
   password                 set the password of the maintenance view (sign-in)
@@ -26,30 +26,55 @@ Settings: $CONFIG
 EOF
 }
 
+# Python with the dashboard's own packages, run in the app folder: python3 -c imports from the
+# current folder first, and some commands run as root.
+app_py() {
+  (cd "$APP_DIR" && PYTHONPATH="$APP_DIR/lib:$APP_DIR" python3 -c "$@")
+}
+
+# A value from the settings as the dashboard reads them (defaults filled in); $2 if that fails.
+setting() {
+  app_py '
+import logging, sys
+logging.disable(logging.CRITICAL)
+from aio_system_dashboard.config import load_config
+from aio_system_dashboard.web.auth import default_password_file
+cfg = load_config(sys.argv[1])
+key = sys.argv[2]
+print(default_password_file(cfg) if key == "password_file" else cfg[key.split(".")[0]][key.split(".")[1]])
+' "$CONFIG" "$1" 2>/dev/null || echo "$2"
+}
+
 urls() {
-  local ip
+  local ip product maint
+  product="$(setting product.port 8080)"
+  maint="$(setting maintenance.port 8081)"
   for ip in $(hostname -I 2>/dev/null); do
     [[ "$ip" == *:* ]] && continue
-    echo "  Product view      http://$ip:8080"
-    echo "  Maintenance view  http://$ip:8081"
+    echo "  Product view      http://$ip:$product"
+    echo "  Maintenance view  http://$ip:$maint"
   done
 }
 
+# The same reading as the dashboard: a YAML error fails (exit 1); values of the wrong kind,
+# which the dashboard replaces by their defaults, are listed.
 check_config() {
-  python3 - "$CONFIG" <<'EOF'
-import sys
+  app_py '
+import logging, sys
+logging.disable(logging.CRITICAL)
+from aio_system_dashboard.config import load_config
 try:
-    import yaml
-except ImportError:
-    sys.path.insert(0, sys.argv[1].rsplit("/config/", 1)[0] + "/lib")
-    import yaml
-try:
-    yaml.safe_load(open(sys.argv[1]))
+    cfg = load_config(sys.argv[1])
 except Exception as e:
     print(f"Settings file has an error:\n{e}")
     sys.exit(1)
-print("Settings file OK")
-EOF
+if cfg.problems:
+    print("Settings file readable, but the dashboard replaces these by their defaults:")
+    for p in cfg.problems:
+        print("  " + p)
+else:
+    print("Settings file OK")
+' "$CONFIG"
 }
 
 case "${1:-}" in
@@ -104,12 +129,13 @@ case "${1:-}" in
     [[ "$p1" == "$p2" ]] || { echo "The two passwords differ; nothing changed." >&2; exit 1; }
     (( ${#p1} >= 8 )) || { echo "Use at least 8 characters; nothing changed." >&2; exit 1; }
     owner="$(stat -c %U "$APP_DIR/logs" 2>/dev/null || echo root)"
+    pwfile="$(setting password_file "$APP_DIR/config/maint_password")"
     cd "$APP_DIR"     # python3 -c imports from the current folder first, and this runs as root
     printf '%s' "$p1" | sudo env PYTHONPATH="$APP_DIR/lib:$APP_DIR" python3 -c \
       'import sys; from aio_system_dashboard.web.auth import write_password_file; write_password_file(sys.argv[1], sys.stdin.read())' \
-      "$APP_DIR/config/maint_password"
-    sudo chown "root:$owner" "$APP_DIR/config/maint_password"
-    sudo chmod 0640 "$APP_DIR/config/maint_password"
+      "$pwfile"
+    sudo chown "root:$owner" "$pwfile"
+    sudo chmod 0640 "$pwfile"
     echo "Password set. Sign in to the maintenance view with it."
     ;;
   -h|--help|help|"")

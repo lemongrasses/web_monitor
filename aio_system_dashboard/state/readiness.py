@@ -8,8 +8,8 @@ pages show. This module derives from it, with no I/O and no clock of its own:
 * the action the operator should take (hold still, drive straight, ...),
 * bit masks: which health conditions hold, and every reason that forbids using the output,
 * optional extra conditions for READY (GNSS quality, DSO odometry, IMU topic, a route to the
-  vehicle). None of them is required unless ``readiness.require`` lists it, so by default
-  READY means exactly what it meant before.
+  vehicle). They are required when ``readiness.require`` lists them; ``readiness.require_rtk``
+  (on by default) adds gnss and gnss_quality.
 
 The same snapshot feeds /api/readiness, the pages, and the 0x05 status packet. Bit numbers and
 codes are part of the 0x05 protocol (docs/OPERATION.md, "Status packet"): append, never renumber.

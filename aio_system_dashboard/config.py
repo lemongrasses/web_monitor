@@ -42,7 +42,6 @@ DEFAULTS: Dict[str, Any] = {
         "stale_warn_s": 0.5,
         "stale_fault_s": 2.0,
         "low_rate_ratio": 0.8,
-        "gnss_timeout_s": 3.0,
         "flag_active_s": 1.0,
         "ready_requires": ["alignment", "heading_valid", "fine_alignment"],
         "trajectory": {"recent_window_s": 60.0, "recent_hz": 10.0, "older_hz": 1.0},
@@ -54,8 +53,8 @@ DEFAULTS: Dict[str, Any] = {
                 "internet_check": ["1.1.1.1:443", "8.8.8.8:443"]},
     "system": {"interval_s": 2.0, "disk_paths": ["/"], "disk_warn_percent": 90, "temp_warn_c": 85},
     "ros": {"enabled": True, "graph_interval_s": 2.0, "rate_window_s": 2.0, "nodes": [], "topics": [],
-            # Modes: the active one is chosen on Maintenance > ROS 2 (stored in state/ros_mode.json) or
-            # by ros.mode here. Each mode names an aio-nav-ros config file (in the folder of the
+            # Modes: the active one is chosen on Maintenance > Replay (replay module; stored in
+            # state/ros_mode.json until the next power-on) or by ros.mode here. Each mode names an aio-nav-ros config file (in the folder of the
             # normal aio_nav.yaml); AIO NAV and DSO are started with it, and its ros_domain_id /
             # ros_localhost_only become the dashboard's own ROS environment. A mode may also set
             # domain_id / localhost_only itself to override the file. mode: null keeps the environment.
@@ -89,10 +88,12 @@ DEFAULTS: Dict[str, Any] = {
                      "fast_restarts": 3,      # this many restarts within window_s ...
                      "window_s": 60.0,        # ... and further restarts wait retry_s too
                      "max_memory_mb": "auto"},  # RAM + swap above this: restart DSO. auto: 20% of RAM; 0: off
-    # READY for the vehicle (state/readiness.py). By default READY needs only AIO NAV aligned with
-    # fresh output, as before. require: extra conditions, each held stable_s before READY counts
-    # and lost after failing loss_s: imu, gnss, gnss_quality, dso, vehicle_route, storage.
+    # READY for the vehicle (state/readiness.py): AIO NAV aligned with fresh output and, while
+    # require_rtk is on (the default), GNSS of at least gnss_min_quality. require: extra conditions,
+    # each held stable_s before READY counts and lost after failing loss_s: imu, gnss, gnss_quality,
+    # dso, vehicle_route, storage.
     "readiness": {"require": [], "stable_s": 2.0, "loss_s": 1.0,
+                  "dso_only_with_vupt": True,    # dso in require: only while Odometry.vupt is on
                   # RTK: READY needs a GNSS position of at least gnss_min_quality (gnss + gnss_quality).
                   # Switchable on Maintenance > Overview (kept in state/readiness.json).
                   "require_rtk": True,
@@ -124,7 +125,7 @@ DEFAULTS: Dict[str, Any] = {
                   "still_stable_s": 5.0},
     # System clock from GNSS time (collectors/gnss_time.py): the IMU stamps go to chrony as a time
     # source (refclock SHM, set up by install.sh). latency_ms: delay of the fastest IMU message
-    # after its stamp (6.2 h against NTP: 4.6 ms median). AIO NAV starts only once the clock matches GNSS time
+    # after its stamp (8 h against NTP: 4.6 ms median). AIO NAV starts only once the clock matches GNSS time
     # within clock_tolerance_s, waiting at most clock_wait_s (then it starts anyway).
     "gnss_time": {"enabled": True, "latency_ms": 4.6, "shm_unit": 2,
                   "clock_tolerance_s": 1.0, "clock_wait_s": 120.0},

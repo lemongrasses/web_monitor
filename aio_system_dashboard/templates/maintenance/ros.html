@@ -94,7 +94,7 @@
 </div>
 
 <div class="panel mt-3" x-show="dso.enabled" x-cloak>
-  <div class="panel-h"><strong>DSO watchdog</strong><span class="muted small">NaN: restart at once. Crashed: try again every 30 s. AIO NAV is never touched</span></div>
+  <div class="panel-h"><strong>DSO watchdog</strong><span class="muted small">NaN: restart at once. Crashed: start again, waits growing to 5 min. AIO NAV is never touched</span></div>
   <div class="panel-b">
     <div class="vrow"><span class="k">State</span>{{ chip("dsoChip()") }}</div>
     <div class="vrow"><span class="k">Watching</span><span class="mono small" x-text="dso.topic"></span></div>

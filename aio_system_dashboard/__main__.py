@@ -1,8 +1,9 @@
 """AIO System Dashboard entry point.
 
 One process, shared state, two HTTP servers:
-  Product UI      :8080  (Overview / Navigation / Data)
-  Maintenance UI  :8081  (System / ROS 2 / Camera / LiDAR / Network / Diagnostics)
+  Product UI      :8080  (Overview / Navigation / Data / Setup / Settings)
+  Maintenance UI  :8081  (Overview / System / ROS 2 / GNSS / Camera / LiDAR / Network /
+                          Diagnostics / Still detection / AIO NAV config / Terminal; Replay module)
 """
 
 import argparse

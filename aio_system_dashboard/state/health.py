@@ -1,7 +1,9 @@
 """Health evaluation (runs at ~5 Hz, independent of NAV packet rate).
 
-Product state depends only on the AIO NAV pipeline (process + fresh packets + required alignment
-flags). GNSS, camera, LiDAR and network only produce advisories (spec §11–14).
+Product state depends on the AIO NAV pipeline (process + fresh packets + required alignment
+flags). Camera, LiDAR and network only produce advisories. GNSS is an advisory too unless
+readiness.require_rtk is on (the default): then READY also needs RTK, and losing it after READY
+shows DEGRADED (readiness.py). The 10-state readiness for the vehicle is derived in _readiness.
 
   STOPPED       not running, and nobody asked it to run: normal, not a problem
   STARTING      asked to start / just started, no output yet (up to nav.startup_timeout_s)

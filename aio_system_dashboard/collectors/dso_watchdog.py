@@ -5,7 +5,8 @@ Two situations, both handled by restarting or starting only DSO:
 * Odometry turns NaN. When DSO loses tracking, ``/dso/odometry`` carries NaN. DSO is restarted
   at once (``bad_messages`` NaN messages in a row, 1 by default).
 * DSO is not running although it should be (it crashed, or failed right after a start). It is
-  started again every ``retry_s`` seconds (30 by default) until it stays up.
+  started again after ``retry_s`` seconds (30 by default); while it keeps exiting right after
+  starting the wait doubles, up to ``retry_max_s`` (300 s). It is never given up.
 
 "Should be running" is recorded by the start / stop actions (``process_control.wanted``), so a DSO
 that was stopped on purpose stays stopped, and one that is running counts as wanted.
