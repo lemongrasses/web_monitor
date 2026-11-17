@@ -27,6 +27,7 @@ AIO NAV and DSO run in their own sessions, so a dashboard crash or restart never
 [English](docs/OPERATION.md) · [繁體中文](docs/OPERATION.zh-TW.md).
 Settings: [English](docs/CONFIG.md) · [繁體中文](docs/CONFIG.zh-TW.md).
 Optional system recorder (a black box for the computer, to trace freezes and power cuts; install with `sudo deploy/install.sh --with-sysmon`): [English](docs/SYSMON.md) · [繁體中文](docs/SYSMON.zh-TW.md).
+What the features are and how they relate (which ones exclude each other, which overlap), in Traditional Chinese: [docs/FEATURES.md](docs/FEATURES.md).
 Engineering flowcharts (system data flow, health tick, readiness states, automatic start, Wi-Fi, vehicle side): [docs/FLOWS.md](docs/FLOWS.md).
 繁體中文 terminology, shared word for word with the vehicle-side aio-nav-receiver: [docs/TERMINOLOGY.zh-TW.md](docs/TERMINOLOGY.zh-TW.md).
 Ideas discussed and kept for later (in Traditional Chinese): [docs/IDEAS.md](docs/IDEAS.md).
