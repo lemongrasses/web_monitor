@@ -235,7 +235,7 @@ AIO NAV 預設為全自動：開機後自動啟動、失敗後重新啟動，而
 
 | 項目 | 預設值 | 說明 |
 |------|--------|------|
-| `enabled` | `true` | 把 readiness 快照以 42 位元組的 0x05 封包送出（格式見[操作手冊第 6.8 節](OPERATION.zh-TW.md#sec6)）。`false` = 不送 0x05。 |
+| `enabled` | `true` | 把 readiness 快照以 42 位元組的 0x05 封包送出（格式見[操作手冊第 6.8 節](OPERATION.zh-TW.md#sec6-8)）。`false` = 不送 0x05。 |
 | `destination` | `auto` | IPv4 `位址:port`。`auto` = `aio_nav.yaml` 中 `output_udp` 的位址**與連接埠**：0x05 與 0x04 進入同一個 socket，接收端以訊息 ID 區分。只有車端希望 0x05 走另一個連接埠時才需要填寫位址。不接受主機名稱（避免在 5 Hz 的流程中查詢 DNS），也不可設為儀表板自己的接收位址（`nav.udp_bind`）。 |
 | `message_id` | `5` | 0x05 專用於此封包（AIO NAV 只送 0x04）。 |
 | `rate_hz` | `2.0` | 每秒封包數；狀態、動作或不可用原因一改變就立即送出。READY 之後仍持續發送。 |
