@@ -6,8 +6,8 @@ This manual explains where the dashboard's settings live, how to change them saf
 what every setting means.
 
 **Short version:** the shipped configuration works without edits. Most values are `auto`
-(detected at start-up) or optional. You usually only add the camera and LiDAR IP
-addresses, or pin a value that auto-detection got wrong.
+(detected at start-up) or optional. The camera's IP address is pre-set. You usually only add
+a LiDAR (the shipped config has none), or pin a value that auto-detection got wrong.
 
 ---
 
@@ -52,12 +52,13 @@ afterwards changes nothing unless you re-install with `--reset-config` (see belo
    page shows the detected `aio_nav.yaml` path and network interface. The **ROS 2** page
    shows which topics were picked.
 
-**Extra step for restart permissions:** if you change which driver units can be
+**Extra step for restart permissions:** if you change which system units can be
 restarted (`restartable` or `unit` under `services`), re-run the installer as well. The
 sudo permission that allows those restarts is generated from the installed config:
 ```bash
 cd ~/web_monitor && sudo deploy/install.sh --user jetson
 ```
+A `user_unit` needs no re-run: it is restarted with `systemctl --user`, without sudo.
 
 ### Two ways to set up a new device
 
@@ -74,7 +75,8 @@ never overwrites your installed config.
 ### What the installer changes on the system
 
 Besides `/opt/aio-dashboard` and its service, `install.sh` makes the device run unattended
-(the optional parts and the installer's options are in the README, *Deployment*):
+(the optional parts are in the next table; the installer's other options are in the README,
+*Deployment*):
 
 | Change | File | Why |
 |--------|------|-----|
@@ -86,9 +88,24 @@ Besides `/opt/aio-dashboard` and its service, `install.sh` makes the device run 
 | Restart permission | `/etc/sudoers.d/aio-dashboard` | Only `systemctl restart` of the `restartable` units. |
 | Wi-Fi / hotspot permission (parts `wifi`, `hotspot`) | polkit rule `50-aio-dashboard-wifi` | The service user may manage NetworkManager (section 4.5a). |
 | Closed hotspot (part `hotspot`) | `/etc/NetworkManager/dispatcher.d/50-aio-hotspot` | Nothing is forwarded to or from the hotspot (section 4.5a). |
+| System journal kept on disk (part `sysmon`) | `/etc/systemd/journald.conf.d/aio-persistent.conf` (`Storage=persistent`, 300 MB) | The kernel's messages survive a freeze, a reboot or a power cut ([SYSMON.md](SYSMON.md)). |
 
-`sudo deploy/uninstall.sh` removes all of these except lingering (the kernel-panic setting returns
-to the default at the next boot).
+`sudo deploy/uninstall.sh` removes all of these except lingering and the persistent journal (the
+kernel-panic setting returns to the default at the next boot).
+
+### Optional parts
+
+The installer has four optional parts. Choose them in its menu (shown the first time, or with
+`--choose`), or with `--with-<part>` / `--without-<part>`. The choice is kept in
+`config/installed-options`, and later runs install the same parts. Only `replay` is a module
+(section 4.12); the other three are system changes.
+
+| Part | Installer | What it installs | Config switch | Release package |
+|------|-----------|------------------|---------------|-----------------|
+| `replay` | `--with-replay` / `--without-replay` | The `aio_dashboard_replay/` package in `/opt/aio-dashboard` | `modules.replay.enabled` (default `true`) | Only if built with `tools/build_release.sh --with-replay` |
+| `sysmon` | `--with-sysmon` / `--without-sysmon` | `aio-sysmon.service`, `/var/log/aio-sysmon`, the persistent journal (kept by uninstall), the `aio-sysmon` command | None: it is its own service ([SYSMON.md](SYSMON.md)) | Never (install from a source checkout) |
+| `wifi` | `--with-wifi` / `--without-wifi` | Only the polkit rule; the Wi-Fi code is always in the dashboard | `wifi.enabled` (default `true`, independent of the part: without the part the panel shows, but changes are refused) | Code always included |
+| `hotspot` | `--with-hotspot` / `--without-hotspot` (switches `wifi` on; needs `dnsmasq`, and `nft` or `iptables`) | The polkit right to share a connection, the NetworkManager dispatcher, the word `hotspot` in `config/installed-options` | `wifi.hotspot.enabled: auto` (= installed) | Code always included |
 
 ## 3. YAML rules that matter
 
@@ -111,7 +128,9 @@ A mistake never stops the dashboard:
   value is replaced by its default, the log says `settings: <key>: … is not a valid value; using
   the default …`, and the fault *Settings with an invalid value: defaults used* is raised.
 
-Check the file before restarting with `aio-dashboard check`, or:
+Check the file before restarting with `aio-dashboard check`. It loads the file the way the
+dashboard does and reports a YAML syntax error and every value of the wrong kind. Without the
+command, this checks the YAML syntax only:
 ```bash
 python3 -c "import yaml; yaml.safe_load(open('/opt/aio-dashboard/config/dashboard.yaml')); print('OK')"
 ```
@@ -121,6 +140,10 @@ Relative paths (such as `logs/events.jsonl`) resolve against `/opt/aio-dashboard
 ---
 
 ## 4. Setting reference
+
+*Default* is the value used when the key is left out (the built-in default). Where the shipped
+`dashboard.yaml` sets a switch differently, the table gives the shipped value and the built-in one
+after it, as in `true` (built-in: `false`).
 
 ### 4.1 `product` and `maintenance`: the two web pages
 
@@ -132,8 +155,8 @@ maintenance:  { host: 0.0.0.0, port: 8081 }
 | Key | Default | Meaning |
 |-----|---------|---------|
 | `host` | `0.0.0.0` | Network address to listen on. `0.0.0.0` = all interfaces, so other computers can open the page. `127.0.0.1` = only this Jetson. |
-| `port` | `8080` / `8081` | Port of the product view / maintenance view. |
-| `maintenance.password_file` | `config/maint_password` | Where the hash of the maintenance password is kept (set it with `aio-dashboard password`). No file: what it protects stays locked. |
+| `port` | `8080` / `8081` | Port of the product view / maintenance view. `aio-dashboard urls` and `aio-dashboard status` read the ports from here. |
+| `maintenance.password_file` | `config/maint_password` | Where the hash of the maintenance password is kept. `aio-dashboard password` writes to this file. No file: what it protects stays locked. |
 | `maintenance.lock` | `all` | `all`: the whole maintenance view needs the password. `tools`: only the AIO NAV config editor and the terminal do (the other maintenance pages are open, e.g. on a development machine). |
 | `maintenance.unlock_minutes` | `15` | A signed-in browser is signed out after this many minutes without use (the pages' own refresh does not count). |
 | `maintenance.config_test_start` | `true` | Before an AIO NAV settings file is saved on **Maintenance → AIO NAV config**, AIO NAV is started on it for a moment, cut off from the network; a file AIO NAV would not start with is refused, with what AIO NAV said. `false` saves after the checks alone. |
@@ -166,14 +189,13 @@ authentication: it does not protect against a computer that spoofs that address 
 | `aio_nav_config` | `auto` | Path to AIO NAV's `aio_nav.yaml`. The dashboard reads the UDP destination (`output_udp`) and rate (`output_rate`) from it to display them. `auto` searches `/home/*/aio-nav-ros/install/...` and `~/.local/opt/aio-nav-ros/...` and uses the newest file. The `AIO_NAV_CONFIG` environment variable also works. Edits to the file are picked up within about 2 s, and **Start** / **Restart** always re-read it first, so AIO NAV starts with what is on disk. If the edit changes the ROS domain or localhost setting of the mode in use, the dashboard restarts itself after the start (a few seconds; AIO NAV keeps running) so its own ROS connection follows. |
 | `expected_rate_hz` | `null` | Expected packet rate. `null` = use `output_rate` from `aio_nav.yaml`. |
 | `service` | `aio_nav` | Which entry in `services` is AIO NAV. |
-| `allow_control` | `false` (shipped config: `true`) | `true` shows **Start / Restart / Stop** for AIO NAV on the Overview page. **Start** launches the filter and then DSO, **Stop** stops both, exactly like the AIO Nav desktop app (it does nothing for a process that is already running, so it never doubles one started from the app). The programs are the `aio-nav` and `aio-nav-dso` wrappers in the aio-nav-ros `install/` folder; no source code is needed. Stop and Restart ask for a second click. Only computers in `access.allowed_clients` can reach the page. |
+| `allow_control` | `true` (built-in: `false`) | `true` shows **Start / Restart / Stop** for AIO NAV on the Overview page. **Start** launches the filter and then DSO, **Stop** stops both, exactly like the AIO Nav desktop app (it does nothing for a process that is already running, so it never doubles one started from the app). The programs are the `aio-nav` and `aio-nav-dso` wrappers in the aio-nav-ros `install/` folder; no source code is needed. Stop and Restart ask for a second click. Only computers in `access.allowed_clients` can reach the page. |
 | `control_group` | `[aio_nav, dso]` | Which `services` entries Start/Stop acts on, in start order. Each needs a `launch` setting. |
 | `startup_grace_s` | `3.0` | For this long after the dashboard starts, it shows "Unknown" while it is still checking whether AIO NAV runs. |
 | `startup_timeout_s` | `60` | After AIO NAV starts, it shows **Starting** until the first output arrives. With no output for this long the state becomes **Fault** ("running but sends no navigation output"). AIO NAV not running and not asked to run is **Stopped**, never a fault. |
 | `stale_warn_s` | `0.5` | Packet age (seconds) at which UDP output shows **Stale**. |
 | `stale_fault_s` | `2.0` | Packet age at which UDP output shows **Lost** and the state becomes **Fault**. |
 | `low_rate_ratio` | `0.8` | UDP output shows **Low rate** when the measured rate is below this fraction of the expected rate. |
-| `gnss_timeout_s` | `3.0` | GNSS shows **Unavailable** if no GNSS update arrived for this long. This is only an advisory. It never changes Ready. |
 | `flag_active_s` | `1.0` | ZUPT, ZIHR, NHC and VUPT lamps stay **Active** for this long after the filter last used them. |
 | `ready_requires` | `[alignment, heading_valid, fine_alignment]` | Filter flags that must all be set for **Ready**. Until then the state is **Initializing**. Options: `alignment`, `heading_valid`, `fine_alignment`. |
 | `trajectory.recent_window_s` | `60` | How many seconds of recent track are drawn at full detail. |
@@ -212,7 +234,7 @@ conditions.
 | `require` | `[]` | Extra conditions for READY. Any of: `imu` (the IMU topic is healthy), `gnss` (the receiver reports a position), `gnss_quality` (at least `gnss_min_quality`), `dso` (DSO odometry is fresh and valid), `vehicle_route` (the kernel has a route to the `output_udp` destination), `storage` (disk below `system.disk_warn_percent`). |
 | `stable_s` | `2.0` | A condition must hold this long before READY counts it. |
 | `loss_s` | `1.0` | Once counted, a condition is dropped only after failing this long, so a single missed sample does not toggle READY. |
-| `gnss_min_quality` | `float` | For `gnss_quality`: `spp`, `float` or `fixed`. A position the driver reports without a type but with good accuracy counts as float (it happens inside float periods). |
+| `gnss_min_quality` | `float` | For `gnss_quality`: `spp`, `float` or `fixed`. A position the driver reports without a type but with a horizontal uncertainty (1σ) within 1 m counts as float (it happens inside float periods). |
 | `gnss_stable_s` | `3.0` | `stable_s` for `gnss_quality`. |
 | `gnss_loss_s` | `3.0` | `loss_s` for GNSS: how long RTK may drop (trees, bridges) before READY becomes DEGRADED. Adjust per site. |
 | `imu_topic` | `auto` | Which `ros.topics` entry is the IMU for `imu`. `auto` = the first one in group `nav`. Its *state* is used, not its raw age, so it also works with `ros.sampling`. |
@@ -243,13 +265,13 @@ and the automatic start never gives up.
 
 | Key | Default | Meaning |
 |-----|---------|---------|
-| `enabled` | `true` | Start AIO NAV and DSO (`nav.control_group`) by itself. Needs `nav.allow_control: true` (the shipped config sets it). `false` = Start / Stop by hand only. |
+| `enabled` | `true` | Start AIO NAV and DSO (`nav.control_group`) by itself. Needs `nav.allow_control: true`: the shipped config sets it, the built-in default does not, so without that line nothing starts by itself. `false` = Start / Stop by hand only. |
 | `prerequisites` | `[imu]` | Readiness conditions (see 4.2a, e.g. `imu`, `gnss`) that must hold before a start, so AIO NAV does not start while the sensors are still coming up. |
 | `prerequisite_stable_s` | `2.0` | How long the prerequisites must hold. |
 | `prerequisite_timeout_s` | `120` | A prerequisite still missing after this is a **Fault** (for example *IMU data not available after 120 s*). It keeps waiting and starts as soon as the prerequisite appears. Waiting for the vehicle to be still or for the clock is never a fault. |
 | `require_still` | `true` | Start only with the vehicle still (4.2a): AIO NAV's first alignment step needs it, and a start may follow a crash or a watchdog reboot while driving. |
 | `still_stable_s` | `5.0` | How long the vehicle must be still before a start. |
-| `start_services` | `[]` (shipped config: `[drivers]`) | Services with a `user_unit` to start if they do not run, while waiting to start. A unit an operator stopped is left alone, and nothing is started before the user's service manager answers (early in a power-on). `install.sh` then enables *lingering* for the service user, so the unit can start at power-on with nobody logged in. |
+| `start_services` | `[drivers]` (built-in: `[]`) | Services with a `user_unit` to start if they do not run, while waiting to start. A unit an operator stopped is left alone, and nothing is started before the user's service manager answers (early in a power-on). `install.sh` then enables *lingering* for the service user, so the unit can start at power-on with nobody logged in. |
 | `retry_backoff_s` | `[5, 15, 30, 60]` | Waits between attempts; the last one repeats. The count is kept for the power-on (a dashboard restart does not shorten the waits) and starts again after READY. |
 | `max_attempts` | `0` | `0` = never give up. A number stops after that many attempts (*automatic start gave up*; **Start** tries again). |
 | `stale_grace_s` | `10.0` | AIO NAV runs but its output stopped while its inputs are fine: it gets this long to recover, then it is stopped and started again. If an input is missing (no IMU data, no valid time) it is left running, because a restart would not help: *Waiting for …; AIO NAV may resume by itself*. |
@@ -306,7 +328,7 @@ sets up), so the system clock, the logs and AIO NAV's time agree.
 | Key | Default | Meaning |
 |-----|---------|---------|
 | `enabled` | `true` | Watch the sensor driver unit (Live mode only; in bag replay the IMU comes from the bag). |
-| `service` | `auto` | A `services` entry with a `user_unit`; `auto` = the first one. |
+| `service` | `auto` | A `services` entry with a `user_unit`. `auto` = the `drivers` entry if it has a `user_unit`, else the first entry with one. |
 | `stale_s` | `45.0` | The unit is active but its IMU sends nothing (or systemd gave up on it) for this long: it is restarted. |
 | `retry_backoff_s` | `[60, 120, 300]` | Waits between restarts when it does not help; the last one repeats. |
 
@@ -315,21 +337,27 @@ them. Every restart is in the event log (*Sensor drivers restarted*).
 
 ### 4.3 `services`: systemd units to watch (and restart)
 
+The shipped config:
+
 ```yaml
 services:
-  aio_nav:   { label: AIO NAV, unit: aio-nav.service, process_pattern: lib/aio_nav_ros/aio_nav_node }
-  camera:    { label: Camera driver, unit: camera.service, restartable: true }
-  ouster:    { label: Ouster driver, unit: ouster.service, restartable: true }
+  aio_nav:   { label: AIO NAV, unit: aio-nav.service, process_pattern: '^[^ ]*lib/aio_nav_ros/aio_nav_node', launch: aio-nav }
+  dso:       { label: DSO, process_pattern: '^[^ ]*lib/dso_ros/dso_live', launch: aio-nav-dso, optional: true }
+  drivers:   { label: Sensor drivers, user_unit: openrtk330-basler-drivers.service, process_pattern: '^[^ ]*aceinna_openrtk330_driver_node', optional: true }
+  camera:    { label: Camera driver, process_pattern: '^[^ ]*pylon_ros2_camera_wrapper' }
   dashboard: { label: Dashboard, unit: aio-dashboard.service }
 ```
+
+The camera driver has no unit of its own: it runs inside the `drivers` user unit, together with
+the IMU / GNSS driver. There is no LiDAR entry; add one with the LiDAR (section 5).
 
 | Key | Meaning |
 |-----|---------|
 | *(entry name)* | Internal name, such as `camera`. `devices.<name>.service` and `nav.service` refer to it. |
 | `label` | Name shown in the UI. |
 | `unit` | systemd unit name (`systemctl status <unit>`). |
-| `process_pattern` | Optional. Also counts the service as running when a process matches this text (`pgrep -f`). AIO NAV uses this, so starting it from the AIO Nav desktop app is detected too. |
-| `restartable` | `true` adds a **Restart driver** button on the Camera or LiDAR page. Re-run the installer after changing this (see section 2). |
+| `process_pattern` | Optional. Also counts the service as running when a process's full command line matches this regular expression (`pgrep -f`). AIO NAV uses this, so starting it from the AIO Nav desktop app is detected too. The shipped patterns start with `'^[^ ]*'`: the program path must be the first word of the command line, so an editor, `tail` or a shell that only mentions the path does not count. Keep the quotes. |
+| `restartable` | `true` adds a **Restart driver** button on the Camera or LiDAR page (needs a `unit` or a `user_unit`). For a system `unit`, re-run the installer after changing this (section 2): the restart goes through sudo. A `user_unit` is restarted with `systemctl --user` and needs no re-run. |
 | `launch` | Name of a wrapper in the aio-nav-ros `install/aio_nav_ros/lib/aio_nav_ros/` folder (`aio-nav`, `aio-nav-dso`), or an absolute path. Lets the dashboard start and stop this program, which is found again by its `process_pattern`. The program runs as the dashboard's user in its own session; its ROS domain comes from `aio_nav.yaml`, not from the dashboard. Output goes to `logs/<name>.log`. The dashboard service uses `KillMode=process`, so AIO NAV keeps running when the dashboard restarts. |
 | `optional` | `true` means the program being stopped is not a warning (used for DSO). |
 | `user_unit` | Name of a systemd **user** unit (`systemctl --user`), such as `openrtk330-basler-drivers.service` (the camera and IMU/GNSS drivers). It adds a **Sensor drivers** panel with Start / Stop / Restart on **Maintenance > ROS 2**, so the live drivers can be stopped before playing a bag (otherwise live and recorded data mix). It runs as the dashboard's user, with no sudo. Stop and Restart ask for confirmation; the driver unit waits about 15 s before the drivers publish. |
@@ -338,31 +366,30 @@ A unit that does not exist on the device shows **Not installed** and raises no
 warning, so unused entries are harmless. To find your real unit names:
 ```bash
 systemctl list-units --type=service | grep -iE "camera|ouster|lidar|ros"
+systemctl --user list-units --type=service   # user units, as the dashboard's user
 ```
 Only `unit` names from this file can be restarted. The web page cannot run any
 other command.
 
 ### 4.4 `devices`: camera and LiDAR
 
+The shipped config has only the camera, with its address pre-set:
+
 ```yaml
 devices:
   camera:
     label: Camera
-    host: ""
+    host: 192.168.116.82
     service: camera
     topic_group: camera
     preview: { kind: image, topic: auto, max_width: 960 }
-  lidar:
-    label: LiDAR
-    host: ""
-    service: ouster
-    topic_group: lidar
-    preview: { kind: pointcloud, topic: auto, max_points: 30000 }
 ```
+
+A LiDAR is added as a `lidar` entry (section 5).
 
 | Key | Meaning |
 |-----|---------|
-| *(entry name)* | Keep `camera` and `lidar`. The Maintenance view has pages for exactly these two names. |
+| *(entry name)* | `camera` or `lidar`. The Maintenance view has pages for exactly these two names. |
 | `label` | Name shown on lamps and pages. |
 | `host` | Optional. IP address of the sensor, checked with ping every `network.ping_interval_s`. Empty = shown as **Not set up**, never pinged, no warnings. |
 | `service` | Which `services` entry is this sensor's driver. |
@@ -463,26 +490,28 @@ until it is stopped there. Phones open `http://10.42.0.1:8080`.
 
 ### 4.7 `ros`: ROS 2 monitoring
 
+The shipped nodes and topics:
+
 ```yaml
 ros:
   enabled: true
-  graph_interval_s: 2
-  rate_window_s: 2
-  nodes: [/aio_nav_node]
+  nodes: [/basler/pylon_ros2_camera_node, /openrtk330_driver]
   topics:
-    - { name: /nav/odometry, group: nav, label: NAV odometry, expected_hz: 100 }
-    - { name: auto, type: sensor_msgs/msg/CameraInfo,  group: camera, label: Camera }
-    - { name: auto, type: sensor_msgs/msg/PointCloud2, group: lidar,  label: LiDAR points, hint: ouster }
-    - { name: auto, type: sensor_msgs/msg/Imu,         group: lidar,  label: Ouster IMU,   hint: ouster, strict: true }
+    - { name: /openrtk330/imu/data_raw, group: nav, label: INS IMU, expected_hz: 100 }
+    - { name: /openrtk330/gnss/fix, group: nav, label: GNSS, expected_hz: 1 }
+    - { name: auto, type: sensor_msgs/msg/CameraInfo,  group: camera, label: Camera, expected_hz: 20 }
 ```
+
+AIO NAV's own data reaches the dashboard over UDP, so `/nav/odometry` and `/aio_nav_node` are not
+watched through ROS. With a LiDAR, add its topics in group `lidar` (section 5).
 
 | Key | Default | Meaning |
 |-----|---------|---------|
 | `enabled` | `true` | `false` turns ROS 2 monitoring off. Topic lamps then show Unknown. |
-| `mode` | `null` (shipped config: `live`) | The mode in use until someone picks another on **Maintenance > Replay** (that choice is stored in `state/ros_mode.json` and wins over this setting). Choosing a mode needs the optional replay module (4.12); without it this setting is the only one used, so a product machine stays on `live`. `null` keeps the environment of the service. |
+| `mode` | `live` (built-in: `null`) | The mode used at power-on. With the replay module (4.12), another mode can be picked on **Maintenance > Replay** (stored in `state/ros_mode.json`). A choice other than `mode` lasts only until the next power-on, so a device left in Bag replay starts in `mode` again. Without the replay module there is no mode switch and this setting is always used, so a product machine stays on `live`. `null` keeps the environment of the service. |
 | `modes` | `live`: `aio_nav.yaml`; `bag`: `aio_nav_bag.yaml` | Each mode names an aio-nav-ros config file (in the folder of the normal `aio_nav.yaml`). AIO NAV and DSO are started with that file as their argument, and its `ros_domain_id` / `ros_localhost_only` become the dashboard's own ROS environment, so all three always agree. The file also decides `use_sim_time`. A mode may add `domain_id` / `localhost_only` to override the file. A mode whose file is missing cannot be selected. Switching stops AIO NAV and DSO and restarts the dashboard (a few seconds); start AIO NAV again afterwards. The camera and IMU drivers are not touched. |
-| `isolation_restart` | `false` (shipped config: `true`) | Restart the dashboard when its own ROS connection is stuck. This happened once after a boot: the dashboard started before the sensor drivers and never discovered them, so the IMU, camera and GNSS looked missing. It acts only when the sensor driver process is running **in the same ROS domain and localhost setting** as the dashboard, yet no other node is visible for `isolation_grace_s` (30 s). It never acts while the drivers are stopped or in another domain, and at most once per `isolation_cooldown_s` (600 s), so it cannot loop. The restart is recorded in the event log. |
-| `sampling` | `enabled: false` (shipped config: `true`), `period_s: 5`, `window_s: 1.5`, `above_hz: 30` | Saves CPU on high-rate topics. A watched topic whose `expected_hz` is at least `above_hz` (the 100 Hz IMU) is listened to only `window_s` out of every `period_s`; the rate and freshness on the ROS 2 page are those of the last window and are marked *sampled*. Without it, a 100 Hz topic costs a Python callback per message (about 12% of one core). **Trade-off:** a topic that keeps its publisher but goes silent shows *Stale* up to `period_s` later (about 1 s without sampling), and a drop shorter than `period_s` can be missed. A topic that disappears is still *Missing* at once. It only changes this dashboard's own subscriptions: GNSS, the visual-odometry watch, the camera/LiDAR previews, the drivers and ROS itself are not affected. |
+| `isolation_restart` | `true` (built-in: `false`) | Restart the dashboard when its own ROS connection is stuck. This happened once after a boot: the dashboard started before the sensor drivers and never discovered them, so the IMU, camera and GNSS looked missing. It acts only when the sensor driver process is running **in the same ROS domain and localhost setting** as the dashboard, yet no other node is visible for `isolation_grace_s` (30 s). It never acts while the drivers are stopped or in another domain, and at most once per `isolation_cooldown_s` (600 s), so it cannot loop. The restart is recorded in the event log. |
+| `sampling` | `enabled: true` (built-in: `false`), `period_s: 5`, `window_s: 1.5`, `above_hz: 30` | Saves CPU on high-rate topics. A watched topic whose `expected_hz` is at least `above_hz` (the 100 Hz IMU) is listened to only `window_s` out of every `period_s`; the rate and freshness on the ROS 2 page are those of the last window and are marked *sampled*. Without it, a 100 Hz topic costs a Python callback per message (about 12% of one core). **Trade-off:** a topic that keeps its publisher but goes silent shows *Stale* up to `period_s` later (about 1 s without sampling), and a drop shorter than `period_s` can be missed. A topic that disappears is still *Missing* at once. It only changes this dashboard's own subscriptions: GNSS, the visual-odometry watch, the camera/LiDAR previews, the drivers and ROS itself are not affected. |
 | `graph_interval_s` | `2` | How often the list of nodes and topics is refreshed. |
 | `rate_window_s` | `2` | Time window used to measure each topic's rate. |
 | `nodes` | `[]` | Node names that must exist (shown on the ROS 2 page; a missing one is a warning). |
@@ -541,7 +570,7 @@ operate on the Overview page, and every action is in the event log.
 
 | Key | Default | Meaning |
 |-----|---------|---------|
-| `enabled` | `false` (shipped config: `true`) | Turn the watchdog on. |
+| `enabled` | `true` (built-in: `false`) | Turn the watchdog on. |
 | `topic` | `/dso/odometry` | `nav_msgs/Odometry` topic to watch. Any NaN or infinite pose or velocity counts as bad. |
 | `service` | `dso` | The `services` entry (with a `launch` setting) to restart or start. |
 | `bad_messages` | `1` | NaN messages in a row before restarting (1 = at once). |
@@ -571,6 +600,30 @@ no usable position: no message for `timeout_s`, or a status without a position; 
 says which (for example *no GNSS message for 3 h*, i.e. the receiver driver sends nothing). It is
 advisory and never changes Ready. It is not the same as the "GNSS" aiding lamp on
 the Navigation page, which shows whether the navigation filter used GNSS in the last second.
+
+### 4.7c `gnss_diag`: the GNSS / RTK page
+
+```yaml
+gnss_diag:
+  topic: /openrtk330/gnss/diagnostics
+  timeout_s: 5
+  history_s: 600
+```
+
+The receiver driver publishes its own diagnostics once a second: the receiver's solution and
+satellites, the signal strength per constellation, and the state of the RTK corrections (NTRIP).
+**Maintenance > GNSS / RTK** shows them and names the likely cause of an RTK problem. Its warnings
+also appear on the Diagnostics page, and a loss or recovery of the corrections is in the event log.
+It is not used for READY.
+
+| Key | Default | Meaning |
+|-----|---------|---------|
+| `topic` | `/openrtk330/gnss/diagnostics` | `diagnostic_msgs/DiagnosticArray` topic of the receiver driver. |
+| `timeout_s` | `5` | No message for this long: the page shows *no message on …*. |
+| `history_s` | `600` | How many seconds of history the page keeps (one entry per second). |
+
+This page can disagree with the GNSS lamp (4.7b) for a moment: the lamp comes from the `NavSatFix`
+on `gnss.topic`, this page from the diagnostics. READY and the lamp use the `NavSatFix`.
 
 ### 4.8 `data`: the Data (download) page
 
@@ -622,8 +675,10 @@ data:
 
 ### 4.12 `modules`: optional modules
 
-Features that not every machine needs are separate modules. A module is **not installed by
-default**; it is added with an installer flag and is then on, unless switched off here.
+A module is a separate package that not every machine needs. Only `replay` is a module; the
+installer's other optional parts (section 2, *Optional parts*) are not, and have no entry here. A
+module is **not installed by default**: it is added with an installer flag and is then on, unless
+switched off here with `modules.<name>.enabled: false`.
 
 ```yaml
 modules:
@@ -632,8 +687,9 @@ modules:
 ```
 
 **`replay`**: the Live / Bag replay switch and the bag player on **Maintenance > Replay**
-(OPERATION section 4.6). Install with `sudo deploy/install.sh --user <you> --with-replay`.
-Without it the machine always runs Live.
+(OPERATION section 4.6). Install with `sudo deploy/install.sh --user <you> --with-replay`. A
+release package has it only if it was built with `tools/build_release.sh --with-replay`. Without it
+the machine always runs Live.
 
 | Key | Default | Meaning |
 |-----|---------|---------|
@@ -649,32 +705,49 @@ The player state, presets and the last settings per bag are kept in `state/bag_p
 
 ## 5. Common tasks
 
-**Add the camera and LiDAR IP addresses.** In the existing `devices` section, fill in
-the `host` lines and leave the other lines as they are:
+**Change the camera IP address.** In the existing `devices` section, change only the `host`
+line:
 ```yaml
 devices:
   camera:
     label: Camera
     host: 192.0.2.10
     ...
+```
+
+**Add a LiDAR.** The shipped config has none. Add a `lidar` entry under `devices`, its driver
+under `services`, and its topics to `ros.topics` (write the whole list, section 3):
+```yaml
+services:
+  ...
+  ouster:    { label: Ouster driver, unit: ouster.service, restartable: true }
+devices:
+  camera:
+    ...
   lidar:
     label: LiDAR
     host: 192.0.2.20
-    ...
+    service: ouster
+    topic_group: lidar
+    preview: { kind: pointcloud, topic: auto, max_points: 30000 }
+ros:
+  topics:
+    - ...                      # the shipped entries
+    - { name: auto, type: sensor_msgs/msg/PointCloud2, group: lidar, label: LiDAR points, hint: ouster }
 ```
+With `restartable: true` on a system unit, re-run `sudo deploy/install.sh --user jetson`.
 
 **Show a specific camera stream in Live view.** In `devices.camera`, change the `preview` line:
 ```yaml
     preview: { kind: image, topic: /camera/color/image_raw/compressed, max_width: 960 }
 ```
 
-**Use your own driver unit names, so Restart works.** Change the `camera` and `ouster` lines in `services`:
+**Use your own driver unit name, so Restart works.** Change the driver's line in `services`:
 ```yaml
 services:
-  camera: { label: Camera driver, unit: usb-cam.service, restartable: true }
   ouster: { label: Ouster driver, unit: ouster-driver.service, restartable: true }
 ```
-Then re-run `sudo deploy/install.sh --user jetson`.
+Then re-run `sudo deploy/install.sh --user jetson` (not needed for a `user_unit`).
 
 **Ready needs all three alignment lamps by default** (Coarse alignment, Initial heading, Fine alignment). To relax it, change the `ready_requires` line in `nav`:
 ```yaml
@@ -696,10 +769,10 @@ After any change: `sudo systemctl restart aio-dashboard`.
 |---------|----------------------|
 | My change has no effect | You edited `~/web_monitor/config/dashboard.yaml` instead of `/opt/aio-dashboard/config/dashboard.yaml`, or forgot `sudo systemctl restart aio-dashboard`. |
 | Fault *Settings file has an error* after editing | YAML syntax error: the dashboard runs with the last good settings. Run `aio-dashboard check` (section 3), fix the file, restart. |
-| Fault *Settings with an invalid value: defaults used* | A value of the wrong kind; `journalctl -u aio-dashboard -n 40` names the key. |
+| Fault *Settings with an invalid value: defaults used* | A value of the wrong kind. `aio-dashboard check` or `journalctl -u aio-dashboard -n 40` names the key. |
 | "Sending to" shows the wrong address | It comes from `output_udp` in `aio_nav.yaml`, not this file (see 4.2). |
 | Network page says `aio_nav.yaml` not found | Set `nav.aio_nav_config` to the full path (see section 5). |
 | ROS 2 page says rclpy is not available | ROS 2 Humble isn't at `/opt/ros/humble`, so the service could not load it. |
 | Live view: "no PointCloud2 topic found" | No matching topic is published. Check `ros2 topic list -t`, or set `preview.topic`. |
 | Camera/LiDAR shows "Not set up" | No `host` is set. This is normal if you don't need ping checks. |
-| Restart driver fails with a sudo error | The unit name changed after install. Re-run the installer (section 2). |
+| Restart driver fails with a sudo error | A system unit's name changed after install. Re-run the installer (section 2). |

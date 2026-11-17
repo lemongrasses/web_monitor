@@ -2,6 +2,8 @@
 # derived from this machine (cores, RAM, swap, disk size, thermal trip points).
 #   sudo systemctl restart aio-sysmon     after editing
 
+# Set by the installer: the service may write only there (ReadWritePaths in aio-sysmon.service),
+# so changing it here alone does not work.
 dir: /var/log/aio-sysmon
 
 # Normal operation costs about 1% of one CPU core and about 2 MB of disk per day (compressed).
@@ -25,7 +27,7 @@ retention_days: 30
 min_free_mb: null
 critical_free_mb: 512
 
-lock_memory: true        # keep the recorder in RAM (about 11 MB)
+lock_memory: true        # keep the recorder in RAM (about 15 MB)
 escalate: true           # when the machine stops responding: low real-time priority for escalate_s
 escalate_s: 60
 escalate_priority: 10

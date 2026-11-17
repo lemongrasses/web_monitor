@@ -25,7 +25,6 @@ nav:
   control_group: [aio_nav, dso]  # started in this order; both stopped together
   stale_warn_s: 0.5              # UDP "Stale" after this packet age
   stale_fault_s: 2.0             # UDP "Lost" / product Fault after this packet age
-  gnss_timeout_s: 3.0            # GNSS "Unavailable" if no GNSS update for this long
   ready_requires: [alignment, heading_valid, fine_alignment]   # all three lamps must be on
   trajectory: { recent_window_s: 60, recent_hz: 10, older_hz: 1 }
 
@@ -74,9 +73,10 @@ ros:
   enabled: true
   # Mode = which aio-nav-ros config file AIO NAV and DSO are started with. That file also sets
   # the ROS domain (live: aio_nav.yaml, 10 / localhost only; bag: aio_nav_bag.yaml, 13 / network),
-  # which the dashboard uses for its own ROS connection too. Switch on Maintenance > Replay (only
-  # with the optional replay module; without it `mode` below is always used); the choice is kept
-  # in state/ros_mode.json and `mode` below is used until then.
+  # which the dashboard uses for its own ROS connection too. `mode` below is used at power-on.
+  # Only with the optional replay module can another mode be picked on Maintenance > Replay (kept
+  # in state/ros_mode.json); a choice other than `mode` lasts until the next power-on. Without the
+  # module `mode` is always used.
   mode: live
   # If the dashboard's own ROS connection gets stuck (the sensor drivers run in this domain but no
   # node is visible for isolation_grace_s), restart the dashboard; at most once per cooldown.
@@ -97,8 +97,9 @@ ros:
 
 # DSO watchdog (Maintenance > ROS 2). Only DSO is touched, never AIO NAV.
 #  - /dso/odometry turns NaN: restart DSO at once.
-#  - DSO should be running but is not (crashed, or failed right after a start): start it again
-#    every retry_s. A DSO stopped on purpose stays stopped.
+#  - DSO should be running but is not (crashed, or failed right after a start): start it again,
+#    first after retry_s, then after waits that double up to retry_max_s (300 s). A DSO stopped
+#    on purpose stays stopped.
 #  - Many NaN restarts in a row (fast_restarts within window_s) are spaced retry_s apart too.
 dso_watchdog:
   enabled: true
@@ -121,7 +122,8 @@ gnss:
 data:
   roots: auto
 
-# Optional modules, installed with deploy/install.sh --with-<name> (docs/CONFIG.md 4.12).
+# Optional modules (docs/CONFIG.md 4.12). Only replay is a module: installed with
+# deploy/install.sh --with-replay; enabled: false switches it off.
 # replay: Live / Bag replay switch and bag player (Maintenance > Replay).
 modules:
   replay:

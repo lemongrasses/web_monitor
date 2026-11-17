@@ -130,7 +130,7 @@ The files are plain text and gzip in `/var/log/aio-sysmon/`: `ring.bin` (fixed r
 ## 3b. Staying alive when the machine struggles
 
 Normally the recorder is a quiet ordinary process (slightly favoured: nice -5, hard to OOM-kill,
-its memory pinned in RAM so memory pressure cannot swap it out; about 11 MB).
+its memory pinned in RAM so memory pressure cannot swap it out; about 15 MB).
 Only when a trigger shows the machine has **stopped responding** (`stall`, `iowait`,
 `disk_wait_tasks`, `memory_low`, `swapping`, `swap_high`, `hot`, `slow_disk_write`) does it raise
 itself to a low real-time priority for 60 s, so its detailed sampling is not starved, and then it drops back (event
@@ -143,10 +143,12 @@ Measured on this machine: the service's 15% CPU cap does **not** limit a real-ti
 ## 4. Settings
 
 `/opt/aio-dashboard/config/sysmon.yaml` (restart with `sudo systemctl restart aio-sysmon`).
-Everything is optional. The most useful keys:
+The installer copies it only when it is missing, or with `--reset-config`; an update keeps your
+edits. Everything is optional. The most useful keys:
 
 | Key | Default | Meaning |
 |-----|---------|---------|
+| `dir` | `/var/log/aio-sysmon` | where the records go. Set by the installer: the service may write only there (section 6), so changing it here alone does not work |
 | `interval_s` | `5` | a full sample every this many seconds |
 | `ring_mb` | `4` | size of the second-by-second ring (about 2 hours per 4 MB) |
 | `max_total_mb` | derived | hard cap for the whole directory |
@@ -157,6 +159,19 @@ Everything is optional. The most useful keys:
 | `lock_memory` | `true` | keep the recorder in RAM |
 | `escalate`, `escalate_s`, `escalate_priority` | `true`, `60`, `10` | the temporary real-time raise above |
 | `kmsg` | `true` | copy kernel warnings and errors (needs root) |
+
+Advanced keys, rarely changed:
+
+| Key | Default | Meaning |
+|-----|---------|---------|
+| `ring_interval_s` | `1` | one ring record every this many seconds |
+| `ring_sync_s` | `5` | the ring is flushed to disk this often (a power cut loses at most this much) |
+| `top_every_s` | `60` | the top processes are added to a sample this often |
+| `cooldown_s` | `120` | after a trigger, the same kind stays quiet this long |
+| `snapshots_share` | `0.4` | at most this share of the cap may be snapshots |
+| `max_snapshots_per_day` | `120` | snapshots per day at most |
+| `events_max_mb` | `10` | `events.jsonl` is compressed and started afresh above this size |
+| `escalate_on` | all eight in section 3b | which triggers raise the priority, e.g. `[stall, memory_low]` |
 
 ## 5. What it cannot see
 

@@ -4,7 +4,7 @@
 
 本手冊說明儀表板的設定檔放在哪裡、如何安全地修改，以及每一項設定的意義。
 
-**重點摘要：** 隨附的設定檔不需修改即可使用。大部分設定值為 `auto`（啟動時自動偵測）或屬於選填。通常只需要填入相機與光達（LiDAR）的 IP 位址，或在自動偵測結果不正確時手動指定。
+**重點摘要：** 隨附的設定檔不需修改即可使用。大部分設定值為 `auto`（啟動時自動偵測）或屬於選填。相機的 IP 位址已預先設定。通常只需要加入光達（LiDAR；隨附設定沒有），或在自動偵測結果不正確時手動指定。
 
 ---
 
@@ -43,10 +43,11 @@
    ```
    也可以打開維護頁面（`http://<jetson-ip>:8081`）：**Network** 頁面會顯示偵測到的 `aio_nav.yaml` 路徑與網路介面，**ROS 2** 頁面會顯示選用的 topic。
 
-**重新啟動權限需要多一個步驟：** 如果修改了哪些驅動程式服務可以重新啟動（`services` 底下的 `restartable` 或 `unit`），也必須重新執行一次安裝程式。允許重新啟動的 sudo 權限是依據已安裝的設定檔產生的：
+**重新啟動權限需要多一個步驟：** 如果修改了哪些系統服務可以重新啟動（`services` 底下的 `restartable` 或 `unit`），也必須重新執行一次安裝程式。允許重新啟動的 sudo 權限是依據已安裝的設定檔產生的：
 ```bash
 cd ~/web_monitor && sudo deploy/install.sh --user jetson
 ```
+`user_unit` 不需要重新執行：它以 `systemctl --user` 重新啟動，不經過 sudo。
 
 ### 新裝置的兩種設定方式
 
@@ -57,7 +58,7 @@ cd ~/web_monitor && sudo deploy/install.sh --user jetson
 
 ### 安裝程式對系統做的變更
 
-除了 `/opt/aio-dashboard` 與其服務之外，`install.sh` 還會讓裝置可以無人值守運作（選配部分與安裝程式的選項見 README 的 *Deployment*）：
+除了 `/opt/aio-dashboard` 與其服務之外，`install.sh` 還會讓裝置可以無人值守運作（選配部分見下一張表；安裝程式的其他選項見 README 的 *Deployment*）：
 
 | 變更 | 檔案 | 原因 |
 |------|------|------|
@@ -69,8 +70,20 @@ cd ~/web_monitor && sudo deploy/install.sh --user jetson
 | 重新啟動的權限 | `/etc/sudoers.d/aio-dashboard` | 只允許 `restartable` 服務的 `systemctl restart`。 |
 | Wi-Fi／熱點權限（`wifi`、`hotspot` 部分） | polkit 規則 `50-aio-dashboard-wifi` | 服務使用者可以管理 NetworkManager（第 4.5a 節）。 |
 | 封閉的熱點（`hotspot` 部分） | `/etc/NetworkManager/dispatcher.d/50-aio-hotspot` | 不轉送任何進出熱點的封包（第 4.5a 節）。 |
+| 系統 journal 保存在磁碟（`sysmon` 部分） | `/etc/systemd/journald.conf.d/aio-persistent.conf`（`Storage=persistent`，300 MB） | 核心訊息在卡死、重開機或斷電後仍然保留（[SYSMON.zh-TW.md](SYSMON.zh-TW.md)）。 |
 
-`sudo deploy/uninstall.sh` 會移除以上全部，lingering 除外（核心 panic 的設定在下次開機時回到預設）。
+`sudo deploy/uninstall.sh` 會移除以上全部，lingering 與保存在磁碟的 journal 除外（核心 panic 的設定在下次開機時回到預設）。
+
+### 選配部分
+
+安裝程式有四個選配部分。在安裝程式的選單（第一次執行，或加上 `--choose` 時出現）中選擇，或使用 `--with-<部分>`／`--without-<部分>`。選擇會保存在 `config/installed-options`，之後再執行會安裝相同的部分。其中只有 `replay` 是模組（第 4.12 節）；另外三個是系統上的變更。
+
+| 部分 | 安裝程式 | 安裝的內容 | 設定開關 | 發行包 |
+|------|----------|------------|----------|--------|
+| `replay` | `--with-replay`／`--without-replay` | `/opt/aio-dashboard` 中的 `aio_dashboard_replay/` 套件 | `modules.replay.enabled`（預設 `true`） | 只有以 `tools/build_release.sh --with-replay` 建置時才有 |
+| `sysmon` | `--with-sysmon`／`--without-sysmon` | `aio-sysmon.service`、`/var/log/aio-sysmon`、保存在磁碟的 journal（解除安裝時保留）、`aio-sysmon` 指令 | 無：它是獨立的服務（[SYSMON.zh-TW.md](SYSMON.zh-TW.md)） | 永遠沒有（要從原始碼目錄安裝） |
+| `wifi` | `--with-wifi`／`--without-wifi` | 只有 polkit 規則；Wi-Fi 的程式一律包含在儀表板中 | `wifi.enabled`（預設 `true`，與這個部分無關：沒有安裝這個部分時面板仍會顯示，但變更會被拒絕） | 程式一律包含 |
+| `hotspot` | `--with-hotspot`／`--without-hotspot`（會一併開啟 `wifi`；需要 `dnsmasq`，以及 `nft` 或 `iptables`） | 分享連線的 polkit 權限、NetworkManager dispatcher 腳本、`config/installed-options` 中的 `hotspot` 一詞 | `wifi.hotspot.enabled: auto`（= 已安裝） | 程式一律包含 |
 
 ## 3. 需要注意的 YAML 規則
 
@@ -85,7 +98,7 @@ cd ~/web_monitor && sudo deploy/install.sh --user jetson
 - **設定檔無法讀取**（YAML 語法錯誤，或不是設定檔）：儀表板改用上次成功啟動時的設定（`state/dashboard.lastgood.yaml`），沒有的話就用內建預設值，並發出故障「Settings file has an error」。
 - **數值型別不對**（數字欄位寫成文字、`true` 寫成 `yes`）：該值改用預設值，日誌寫出 `settings: <key>: … is not a valid value; using the default …`，並發出故障「Settings with an invalid value: defaults used」。
 
-重新啟動前可用 `aio-dashboard check` 或以下指令檢查設定檔：
+重新啟動前可用 `aio-dashboard check` 檢查設定檔。它以儀表板相同的方式載入設定檔，回報 YAML 語法錯誤以及每一個型別不對的值。沒有這個指令時，以下指令只檢查 YAML 語法：
 ```bash
 python3 -c "import yaml; yaml.safe_load(open('/opt/aio-dashboard/config/dashboard.yaml')); print('OK')"
 ```
@@ -95,6 +108,8 @@ python3 -c "import yaml; yaml.safe_load(open('/opt/aio-dashboard/config/dashboar
 ---
 
 ## 4. 設定項目說明
+
+「預設值」是省略該項目時使用的值（內建預設值）。隨附的 `dashboard.yaml` 把某個開關設成不同的值時，表格先寫隨附設定的值，再寫內建值，例如 `true`（內建：`false`）。
 
 ### 4.1 `product` 與 `maintenance`：兩個網頁
 
@@ -106,8 +121,8 @@ maintenance:  { host: 0.0.0.0, port: 8081 }
 | 項目 | 預設值 | 說明 |
 |------|--------|------|
 | `host` | `0.0.0.0` | 監聽的網路位址。`0.0.0.0` = 所有網路介面，其他電腦可以開啟頁面；`127.0.0.1` = 只有這台 Jetson 本身可以開啟。 |
-| `port` | `8080` / `8081` | 產品頁面／維護頁面的連接埠。 |
-| `maintenance.password_file` | `config/maint_password` | 維護密碼雜湊值存放的位置（用 `aio-dashboard password` 設定）。沒有這個檔案時，受保護的部分會保持鎖住。 |
+| `port` | `8080` / `8081` | 產品頁面／維護頁面的連接埠。`aio-dashboard urls` 與 `aio-dashboard status` 從這裡讀取連接埠。 |
+| `maintenance.password_file` | `config/maint_password` | 維護密碼雜湊值存放的位置。`aio-dashboard password` 會寫入這個檔案。沒有這個檔案時，受保護的部分會保持鎖住。 |
 | `maintenance.lock` | `all` | `all`：整個維護頁面都需要密碼。`tools`：只有 AIO NAV 設定編輯器與終端機需要（其他維護頁面開放，例如開發用的機器）。 |
 | `maintenance.unlock_minutes` | `15` | 登入後這麼多分鐘沒有使用就會自動登出（頁面自己的定時更新不算使用）。 |
 | `maintenance.config_test_start` | `true` | 在**維護頁面 → AIO NAV config** 儲存 AIO NAV 設定檔之前，先讓 AIO NAV 以新檔案短暫啟動一次（與網路隔離）；AIO NAV 無法啟動的檔案會被拒絕，並顯示 AIO NAV 的訊息。`false` 時只做規則檢查就儲存。 |
@@ -136,14 +151,13 @@ access:
 | `aio_nav_config` | `auto` | AIO NAV 的 `aio_nav.yaml` 路徑。儀表板從中讀取 UDP 目的地（`output_udp`）與輸出頻率（`output_rate`）來顯示。`auto` 會搜尋 `/home/*/aio-nav-ros/install/...` 與 `~/.local/opt/aio-nav-ros/...`，並使用最新的檔案；也可以用環境變數 `AIO_NAV_CONFIG` 指定。修改檔案後約 2 秒內就會生效，而且 **Start**／**Restart** 一定會先重新讀取，讓 AIO NAV 以磁碟上最新的設定啟動。如果修改了目前模式的 ROS domain 或 localhost 設定，儀表板會在啟動後自己重新啟動（幾秒鐘；AIO NAV 不受影響），讓它自己的 ROS 連線跟上。 |
 | `expected_rate_hz` | `null` | 預期的封包頻率。`null` = 使用 `aio_nav.yaml` 中的 `output_rate`。 |
 | `service` | `aio_nav` | `services` 中哪一個項目代表 AIO NAV。 |
-| `allow_control` | `false`（預設設定檔：`true`） | `true` 時，首頁會顯示 AIO NAV 的 **Start / Restart / Stop**。**Start** 會先啟動濾波器再啟動 DSO，**Stop** 兩者一起停止，做法與 AIO Nav 桌面程式相同（程序已在執行就不會重複啟動，所以不會跟桌面程式啟動的那份重複）。啟動的是 aio-nav-ros `install/` 資料夾內的 `aio-nav` 與 `aio-nav-dso`，不需要原始碼。Stop 與 Restart 需要再按一次確認。只有 `access.allowed_clients` 內的電腦連得到頁面。 |
+| `allow_control` | `true`（內建：`false`） | `true` 時，首頁會顯示 AIO NAV 的 **Start / Restart / Stop**。**Start** 會先啟動濾波器再啟動 DSO，**Stop** 兩者一起停止，做法與 AIO Nav 桌面程式相同（程序已在執行就不會重複啟動，所以不會跟桌面程式啟動的那份重複）。啟動的是 aio-nav-ros `install/` 資料夾內的 `aio-nav` 與 `aio-nav-dso`，不需要原始碼。Stop 與 Restart 需要再按一次確認。只有 `access.allowed_clients` 內的電腦連得到頁面。 |
 | `control_group` | `[aio_nav, dso]` | Start/Stop 作用在 `services` 的哪些項目，依序啟動。每個項目都需要設定 `launch`。 |
 | `startup_grace_s` | `3.0` | 儀表板啟動後的這段時間內，還在確認 AIO NAV 是否執行時顯示「Unknown」。 |
 | `startup_timeout_s` | `60` | AIO NAV 啟動後，在第一筆輸出到達前顯示 **Starting**。超過這段時間仍沒有輸出，狀態就變成 **Fault**（「running but sends no navigation output」）。AIO NAV 沒有執行、也沒有人要求它執行時是 **Stopped**，永遠不算故障。 |
 | `stale_warn_s` | `0.5` | 封包超過這個秒數未更新時，UDP 輸出顯示 **Stale**。 |
 | `stale_fault_s` | `2.0` | 封包超過這個秒數未更新時，UDP 輸出顯示 **Lost**，狀態變成 **Fault**。 |
 | `low_rate_ratio` | `0.8` | 實測頻率低於預期頻率的這個比例時，UDP 輸出顯示 **Low rate**。 |
-| `gnss_timeout_s` | `3.0` | 超過這段時間沒有 GNSS 更新時，GNSS 顯示 **Unavailable**。這只是提示，永遠不會讓 Ready 變成 Fault。 |
 | `flag_active_s` | `1.0` | 濾波器最後一次使用 ZUPT、ZIHR、NHC、VUPT 之後，對應指示燈保持 **Active** 的時間。 |
 | `ready_requires` | `[alignment, heading_valid, fine_alignment]` | 必須全部成立才算 **Ready** 的濾波器旗標，在此之前狀態為 **Initializing**。可用值：`alignment`、`heading_valid`、`fine_alignment`。 |
 | `trajectory.recent_window_s` | `60` | 以完整細節顯示的最近軌跡長度（秒）。 |
@@ -196,13 +210,13 @@ AIO NAV 預設為全自動：開機後自動啟動、失敗後重新啟動，而
 
 | 項目 | 預設值 | 說明 |
 |------|--------|------|
-| `enabled` | `true` | 自動啟動 AIO NAV 與 DSO（`nav.control_group`）。需要 `nav.allow_control: true`（隨附設定已開啟）。`false` = 只能手動 Start／Stop。 |
+| `enabled` | `true` | 自動啟動 AIO NAV 與 DSO（`nav.control_group`）。需要 `nav.allow_control: true`：隨附設定有開啟，內建預設值沒有，所以少了那一行就不會自動啟動。`false` = 只能手動 Start／Stop。 |
 | `prerequisites` | `[imu]` | 啟動前必須成立的 readiness 條件（見 4.2a，例如 `imu`、`gnss`），避免在感測器尚未就緒時啟動 AIO NAV。 |
 | `prerequisite_stable_s` | `2.0` | 前置條件需要持續成立的時間。 |
 | `prerequisite_timeout_s` | `120` | 超過這個時間仍缺少前置條件即為 **Fault**（例如「IMU data not available after 120 s」）。它會繼續等待，條件一出現就啟動。等待車輛靜止或等待時鐘都不算故障。 |
 | `require_still` | `true` | 只在車輛靜止時啟動（4.2a）：AIO NAV 的第一個對準步驟需要靜止，而且啟動可能發生在行駛中當機或 watchdog 重開機之後。 |
 | `still_stable_s` | `5.0` | 啟動前車輛需要靜止的時間。 |
-| `start_services` | `[]`（隨附設定：`[drivers]`） | 具有 `user_unit` 的服務，等待啟動期間若沒有在執行就先啟動。操作人員停掉的服務不會被啟動；開機初期使用者的服務管理員還沒回應前也不會啟動。`install.sh` 會為服務使用者開啟 *lingering*，讓這個 user unit 在沒有人登入時也能於開機啟動。 |
+| `start_services` | `[drivers]`（內建：`[]`） | 具有 `user_unit` 的服務，等待啟動期間若沒有在執行就先啟動。操作人員停掉的服務不會被啟動；開機初期使用者的服務管理員還沒回應前也不會啟動。`install.sh` 會為服務使用者開啟 *lingering*，讓這個 user unit 在沒有人登入時也能於開機啟動。 |
 | `retry_backoff_s` | `[5, 15, 30, 60]` | 每次嘗試之間的等待時間，最後一個值會一直重複。次數以這次開機為範圍保存（儀表板重新啟動不會縮短等待），達到 READY 後重新計算。 |
 | `max_attempts` | `0` | `0` = 永不放棄。填數字則在該次數後停止（*automatic start gave up*；按 **Start** 再試一次）。 |
 | `stale_grace_s` | `10.0` | AIO NAV 在執行但輸出停止、輸入正常時，給它這麼久恢復，之後停止再重新啟動。若有輸入缺少（沒有 IMU 資料、沒有有效時間）則讓它繼續執行，因為重新啟動也沒用：*Waiting for …; AIO NAV may resume by itself*。 |
@@ -245,7 +259,7 @@ Jetson 斷電後不會保留時間，野外也沒有 NTP。儀表板把 IMU 的 
 | 項目 | 預設值 | 說明 |
 |------|--------|------|
 | `enabled` | `true` | 監看感測器驅動服務（只在即時模式；播放 bag 時 IMU 來自 bag）。 |
-| `service` | `auto` | 具有 `user_unit` 的 `services` 項目；`auto` = 第一個。 |
+| `service` | `auto` | 具有 `user_unit` 的 `services` 項目。`auto` = `drivers` 項目（若它有 `user_unit`），否則為第一個有 `user_unit` 的項目。 |
 | `stale_s` | `45.0` | 服務在執行但 IMU 這麼久沒有資料（或 systemd 已放棄它）：重新啟動。 |
 | `retry_backoff_s` | `[60, 120, 300]` | 重新啟動沒有用時的等待時間，最後一個值會一直重複。 |
 
@@ -253,21 +267,26 @@ Jetson 斷電後不會保留時間，野外也沒有 NTP。儀表板把 IMU 的 
 
 ### 4.3 `services`：要監看（及重新啟動）的 systemd 服務
 
+隨附的設定：
+
 ```yaml
 services:
-  aio_nav:   { label: AIO NAV, unit: aio-nav.service, process_pattern: lib/aio_nav_ros/aio_nav_node }
-  camera:    { label: Camera driver, unit: camera.service, restartable: true }
-  ouster:    { label: Ouster driver, unit: ouster.service, restartable: true }
+  aio_nav:   { label: AIO NAV, unit: aio-nav.service, process_pattern: '^[^ ]*lib/aio_nav_ros/aio_nav_node', launch: aio-nav }
+  dso:       { label: DSO, process_pattern: '^[^ ]*lib/dso_ros/dso_live', launch: aio-nav-dso, optional: true }
+  drivers:   { label: Sensor drivers, user_unit: openrtk330-basler-drivers.service, process_pattern: '^[^ ]*aceinna_openrtk330_driver_node', optional: true }
+  camera:    { label: Camera driver, process_pattern: '^[^ ]*pylon_ros2_camera_wrapper' }
   dashboard: { label: Dashboard, unit: aio-dashboard.service }
 ```
+
+相機驅動沒有自己的服務：它和 IMU／GNSS 驅動一起在 `drivers` 這個 user unit 裡執行。這裡沒有 LiDAR 項目；加裝 LiDAR 時一起加入（第 5 節）。
 
 | 項目 | 說明 |
 |------|------|
 | （項目名稱） | 內部名稱，例如 `camera`。`devices.<名稱>.service` 與 `nav.service` 會用到它。 |
 | `label` | 介面上顯示的名稱。 |
 | `unit` | systemd 服務名稱（`systemctl status <unit>`）。 |
-| `process_pattern` | 選填。若有程序符合這段文字（`pgrep -f`），也視為正在執行。AIO NAV 使用這個設定，因此從 AIO Nav 桌面應用程式啟動也能偵測到。 |
-| `restartable` | `true` 會在相機或 LiDAR 頁面加上 **Restart driver** 按鈕。修改後請重新執行安裝程式（見第 2 節）。 |
+| `process_pattern` | 選填。若有程序的完整命令列符合這個正規表示式（`pgrep -f`），也視為正在執行。AIO NAV 使用這個設定，因此從 AIO Nav 桌面應用程式啟動也能偵測到。隨附的樣式以 `'^[^ ]*'` 開頭：程式路徑必須是命令列的第一個字，所以只是提到這個路徑的編輯器、`tail` 或 shell 不會被算進去。請保留引號。 |
+| `restartable` | `true` 會在相機或 LiDAR 頁面加上 **Restart driver** 按鈕（需要 `unit` 或 `user_unit`）。系統的 `unit` 修改後請重新執行安裝程式（見第 2 節）：重新啟動要經過 sudo。`user_unit` 以 `systemctl --user` 重新啟動，不需要重新執行。 |
 | `launch` | aio-nav-ros `install/aio_nav_ros/lib/aio_nav_ros/` 資料夾內的啟動程式名稱（`aio-nav`、`aio-nav-dso`），或絕對路徑。設定後儀表板可以啟動與停止這個程式，並用 `process_pattern` 找到它。程式以儀表板的使用者身分在獨立的 session 中執行，ROS 網域由 `aio_nav.yaml` 決定，不是儀表板的設定。輸出寫到 `logs/<name>.log`。儀表板服務使用 `KillMode=process`，所以重新啟動儀表板時 AIO NAV 不會被停掉。 |
 | `optional` | `true` 代表這個程式停止時不算警告（DSO 使用）。 |
 | `user_unit` | systemd **使用者**服務名稱（`systemctl --user`），例如 `openrtk330-basler-drivers.service`（相機與 IMU/GNSS 驅動）。設定後，維護頁面 **ROS 2** 會多一個 **Sensor drivers** 面板，可以 Start / Stop / Restart，方便播 bag 前先停掉即時驅動（否則即時與錄製的資料會混在一起）。以儀表板的使用者身分執行，不需要 sudo。Stop 與 Restart 需要確認；驅動服務啟動後約 15 秒才會開始發布資料。 |
@@ -275,30 +294,29 @@ services:
 裝置上不存在的服務會顯示 **Not installed**，不會產生警告，所以用不到的項目放著也沒關係。查詢實際的服務名稱：
 ```bash
 systemctl list-units --type=service | grep -iE "camera|ouster|lidar|ros"
+systemctl --user list-units --type=service   # user unit，以儀表板的使用者執行
 ```
 只有這個檔案中列出的 `unit` 可以被重新啟動，網頁無法執行任何其他指令。
 
 ### 4.4 `devices`：相機與 LiDAR
 
+隨附設定只有相機，位址已預先設定：
+
 ```yaml
 devices:
   camera:
     label: Camera
-    host: ""
+    host: 192.168.116.82
     service: camera
     topic_group: camera
     preview: { kind: image, topic: auto, max_width: 960 }
-  lidar:
-    label: LiDAR
-    host: ""
-    service: ouster
-    topic_group: lidar
-    preview: { kind: pointcloud, topic: auto, max_points: 30000 }
 ```
+
+LiDAR 以 `lidar` 項目加入（第 5 節）。
 
 | 項目 | 說明 |
 |------|------|
-| （項目名稱） | 請保留 `camera` 與 `lidar`，維護頁面正是依這兩個名稱提供頁面。 |
+| （項目名稱） | `camera` 或 `lidar`，維護頁面正是依這兩個名稱提供頁面。 |
 | `label` | 指示燈與頁面上顯示的名稱。 |
 | `host` | 選填。感測器的 IP 位址，每隔 `network.ping_interval_s` 秒用 ping 檢查一次。留空 = 顯示 **Not set up**，不會 ping，也不會有警告。 |
 | `service` | `services` 中哪一個項目是這個感測器的驅動程式。 |
@@ -374,26 +392,27 @@ ros2 param get /ouster/os_driver sensor_hostname   # Ouster IP（節點名稱可
 
 ### 4.7 `ros`：ROS 2 監看
 
+隨附的節點與 topic：
+
 ```yaml
 ros:
   enabled: true
-  graph_interval_s: 2
-  rate_window_s: 2
-  nodes: [/aio_nav_node]
+  nodes: [/basler/pylon_ros2_camera_node, /openrtk330_driver]
   topics:
-    - { name: /nav/odometry, group: nav, label: NAV odometry, expected_hz: 100 }
-    - { name: auto, type: sensor_msgs/msg/CameraInfo,  group: camera, label: Camera }
-    - { name: auto, type: sensor_msgs/msg/PointCloud2, group: lidar,  label: LiDAR points, hint: ouster }
-    - { name: auto, type: sensor_msgs/msg/Imu,         group: lidar,  label: Ouster IMU,   hint: ouster, strict: true }
+    - { name: /openrtk330/imu/data_raw, group: nav, label: INS IMU, expected_hz: 100 }
+    - { name: /openrtk330/gnss/fix, group: nav, label: GNSS, expected_hz: 1 }
+    - { name: auto, type: sensor_msgs/msg/CameraInfo,  group: camera, label: Camera, expected_hz: 20 }
 ```
+
+AIO NAV 自己的資料經由 UDP 送到儀表板，所以 `/nav/odometry` 與 `/aio_nav_node` 不透過 ROS 監看。加裝 LiDAR 時，把它的 topic 以 group `lidar` 加入（第 5 節）。
 
 | 項目 | 預設值 | 說明 |
 |------|--------|------|
 | `enabled` | `true` | `false` 會關閉 ROS 2 監看，topic 指示燈會顯示 Unknown。 |
-| `mode` | `null`（預設設定檔：`live`） | 在維護頁面 **Replay** 另外選擇之前使用的模式（選擇存在 `state/ros_mode.json`，優先於這個設定）。選擇模式需要選配的 replay 模組（4.12）；沒有安裝時只會使用這個設定，所以產品機固定在 `live`。`null` 表示沿用服務的環境變數。 |
+| `mode` | `live`（內建：`null`） | 上電時使用的模式。安裝 replay 模組（4.12）時，可以在維護頁面 **Replay** 另外選擇（存在 `state/ros_mode.json`）。選擇了 `mode` 以外的模式只維持到下次上電，所以停在 Bag replay 的裝置下次上電會回到 `mode`。沒有 replay 模組時沒有模式切換，一律使用這個設定，所以產品機固定在 `live`。`null` 表示沿用服務的環境變數。 |
 | `modes` | `live`：`aio_nav.yaml`；`bag`：`aio_nav_bag.yaml` | 每個模式對應一份 aio-nav-ros 設定檔（與一般的 `aio_nav.yaml` 同一個資料夾）。啟動 AIO NAV 與 DSO 時會把該檔案當參數，檔案裡的 `ros_domain_id` / `ros_localhost_only` 也會成為儀表板自己的 ROS 環境，所以三者一定一致。`use_sim_time` 也由該檔案決定。模式可另加 `domain_id` / `localhost_only` 覆蓋檔案的值。找不到設定檔的模式無法選取。切換會停止 AIO NAV 與 DSO 並重新啟動儀表板（幾秒鐘），之後需要再次啟動 AIO NAV。相機與 IMU 驅動不受影響。 |
-| `isolation_restart` | `false`（預設設定檔：`true`） | 儀表板自己的 ROS 連線卡住時，自動重新啟動儀表板。曾經發生過：開機後儀表板比感測器驅動先啟動，之後一直沒有發現驅動，導致 IMU、相機與 GNSS 看起來都不見了。只有在感測器驅動程序**與儀表板在同一個 ROS domain 和 localhost 設定**下執行，但連續 `isolation_grace_s`（30 秒）都看不到任何其他節點時才會動作；驅動停止或在別的 domain 時不會動作；而且最多每 `isolation_cooldown_s`（600 秒）一次，所以不會形成重新啟動的迴圈。重新啟動會記錄在事件紀錄中。 |
-| `sampling` | `enabled: false`（預設設定檔：`true`）、`period_s: 5`、`window_s: 1.5`、`above_hz: 30` | 降低高頻 topic 的 CPU 使用。被監看的 topic 若 `expected_hz` 大於等於 `above_hz`（例如 100 Hz 的 IMU），每 `period_s` 秒只聽 `window_s` 秒；ROS 2 頁面顯示的頻率與即時性是上一個視窗的結果，並標示 *sampled*。不啟用時，100 Hz 的 topic 每筆訊息都要在 Python 裡處理一次，約佔單一核心的 12%。**代價：**發布者還在但資料凍結時，*Stale* 最多晚 `period_s` 秒才顯示（不取樣時約 1 秒）；短於 `period_s` 的中斷可能看不到。topic 整個消失仍會立刻顯示 *Missing*。這只改變儀表板自己的訂閱，不影響 GNSS、視覺里程計監控、相機／LiDAR 預覽、驅動程式與 ROS 本身。 |
+| `isolation_restart` | `true`（內建：`false`） | 儀表板自己的 ROS 連線卡住時，自動重新啟動儀表板。曾經發生過：開機後儀表板比感測器驅動先啟動，之後一直沒有發現驅動，導致 IMU、相機與 GNSS 看起來都不見了。只有在感測器驅動程序**與儀表板在同一個 ROS domain 和 localhost 設定**下執行，但連續 `isolation_grace_s`（30 秒）都看不到任何其他節點時才會動作；驅動停止或在別的 domain 時不會動作；而且最多每 `isolation_cooldown_s`（600 秒）一次，所以不會形成重新啟動的迴圈。重新啟動會記錄在事件紀錄中。 |
+| `sampling` | `enabled: true`（內建：`false`）、`period_s: 5`、`window_s: 1.5`、`above_hz: 30` | 降低高頻 topic 的 CPU 使用。被監看的 topic 若 `expected_hz` 大於等於 `above_hz`（例如 100 Hz 的 IMU），每 `period_s` 秒只聽 `window_s` 秒；ROS 2 頁面顯示的頻率與即時性是上一個視窗的結果，並標示 *sampled*。不啟用時，100 Hz 的 topic 每筆訊息都要在 Python 裡處理一次，約佔單一核心的 12%。**代價：**發布者還在但資料凍結時，*Stale* 最多晚 `period_s` 秒才顯示（不取樣時約 1 秒）；短於 `period_s` 的中斷可能看不到。topic 整個消失仍會立刻顯示 *Missing*。這只改變儀表板自己的訂閱，不影響 GNSS、視覺里程計監控、相機／LiDAR 預覽、驅動程式與 ROS 本身。 |
 | `graph_interval_s` | `2` | 重新整理節點與 topic 清單的間隔。 |
 | `rate_window_s` | `2` | 計算每個 topic 頻率所用的時間窗。 |
 | `nodes` | `[]` | 必須存在的節點名稱（顯示於 ROS 2 頁面，缺少時會產生警告）。 |
@@ -442,7 +461,7 @@ dso_watchdog:
 
 | 設定 | 預設 | 說明 |
 |-----|------|------|
-| `enabled` | `false`（預設設定檔：`true`） | 開啟監控。 |
+| `enabled` | `true`（內建：`false`） | 開啟監控。 |
 | `topic` | `/dso/odometry` | 要監看的 `nav_msgs/Odometry`。位置或速度中有任何 NaN 或無限大就算異常。 |
 | `service` | `dso` | 要重新啟動或啟動的 `services` 項目（需設定 `launch`）。 |
 | `bad_messages` | `1` | 連續幾筆 NaN 才重新啟動（1 = 立刻）。 |
@@ -463,6 +482,25 @@ gnss:
 ```
 
 GNSS 燈號顯示接收機的定位品質，來自 `NavSatFix.status.status`（已用一段實際行車紀錄核對）：**綠色**「RTK 固定解」（status 2，約 3 公分）、**琥珀色**「RTK 浮動解」（status 1，約 10 公分）、**紅色**「單點定位（SPP）」（status 0，約 10 公尺）。這個驅動也會送出*帶有*有效位置的 status -1（約 10 公分，出現在 RTK 浮動解期間的單一時刻），所以只要訊息有可用的位置（有限的經緯度與已知的共變異數），就不會是「無定位」（No signal）：status 沒有對應的種類時顯示「定位（類型不明）」（Fix (type unknown)），水平不確定度（1σ）優於 1 公尺時為琥珀色，否則為紅色。「無定位」表示沒有可用的位置：超過 `timeout_s` 沒收到訊息，或 status 沒有附位置；提示會說明是哪一種（例如 *no GNSS message for 3 h*，也就是接收機驅動完全沒有送資料）。這只是提示，不會影響 Ready。它和 Navigation 頁面的「GNSS」輔助燈不同，後者是顯示導航濾波器最近一秒有沒有使用 GNSS。
+
+### 4.7c `gnss_diag`：GNSS / RTK 頁面
+
+```yaml
+gnss_diag:
+  topic: /openrtk330/gnss/diagnostics
+  timeout_s: 5
+  history_s: 600
+```
+
+接收機驅動每秒發布一次自己的診斷資料：接收機的解與衛星、各衛星系統的訊號強度，以及 RTK 修正資料（NTRIP）的狀態。**維護頁面 → GNSS / RTK** 會顯示這些資料，並指出 RTK 問題最可能的原因。它的警告也會出現在 Diagnostics 頁面，修正資料中斷或恢復會記錄在事件紀錄。它不用於 READY。
+
+| 項目 | 預設值 | 說明 |
+|------|--------|------|
+| `topic` | `/openrtk330/gnss/diagnostics` | 接收機驅動的 `diagnostic_msgs/DiagnosticArray` topic。 |
+| `timeout_s` | `5` | 超過這段時間沒有訊息時，頁面顯示 *no message on …*。 |
+| `history_s` | `600` | 頁面保留幾秒的歷史（每秒一筆）。 |
+
+這個頁面可能短暫與 GNSS 燈號（4.7b）不一致：燈號來自 `gnss.topic` 的 `NavSatFix`，這個頁面來自診斷資料。READY 與燈號使用的是 `NavSatFix`。
 
 ### 4.8 `data`：資料下載頁面
 
@@ -512,7 +550,7 @@ data:
 
 ### 4.12 `modules`：選配模組
 
-不是每台機器都需要的功能，做成獨立的模組。模組**預設不安裝**，要在安裝時加旗標；裝好之後預設啟用，可以在這裡關閉。
+模組是不是每台機器都需要的獨立套件。只有 `replay` 是模組；安裝程式的其他選配部分（第 2 節「選配部分」）不是模組，這裡也沒有它們的項目。模組**預設不安裝**，要在安裝時加旗標；裝好之後預設啟用，可以在這裡用 `modules.<名稱>.enabled: false` 關閉。
 
 ```yaml
 modules:
@@ -520,7 +558,7 @@ modules:
     bag_roots: ["~", /media/jetson/data]
 ```
 
-**`replay`**：Live／Bag replay 切換，以及維護頁面 **Replay** 的 bag 播放器（操作手冊第 4.6 節）。安裝：`sudo deploy/install.sh --user <使用者> --with-replay`。沒有安裝時，機器固定以 Live 執行。
+**`replay`**：Live／Bag replay 切換，以及維護頁面 **Replay** 的 bag 播放器（操作手冊第 4.6 節）。安裝：`sudo deploy/install.sh --user <使用者> --with-replay`。發行包只有在以 `tools/build_release.sh --with-replay` 建置時才包含它。沒有安裝時，機器固定以 Live 執行。
 
 | 設定 | 預設 | 說明 |
 |------|------|------|
@@ -535,31 +573,47 @@ modules:
 
 ## 5. 常見操作
 
-**填入相機與 LiDAR 的 IP 位址。** 在現有的 `devices` 區段中填入 `host` 這一行，其他行保持不變：
+**修改相機的 IP 位址。** 在現有的 `devices` 區段中只修改 `host` 這一行：
 ```yaml
 devices:
   camera:
     label: Camera
     host: 192.0.2.10
     ...
+```
+
+**加入 LiDAR。** 隨附設定沒有 LiDAR。在 `devices` 加入 `lidar` 項目，在 `services` 加入它的驅動，並把它的 topic 加進 `ros.topics`（要寫出整份清單，見第 3 節）：
+```yaml
+services:
+  ...
+  ouster:    { label: Ouster driver, unit: ouster.service, restartable: true }
+devices:
+  camera:
+    ...
   lidar:
     label: LiDAR
     host: 192.0.2.20
-    ...
+    service: ouster
+    topic_group: lidar
+    preview: { kind: pointcloud, topic: auto, max_points: 30000 }
+ros:
+  topics:
+    - ...                      # 隨附的項目
+    - { name: auto, type: sensor_msgs/msg/PointCloud2, group: lidar, label: LiDAR points, hint: ouster }
 ```
+系統服務設定 `restartable: true` 時，請重新執行 `sudo deploy/install.sh --user jetson`。
 
 **在 Live view 顯示指定的相機串流。** 修改 `devices.camera` 中的 `preview` 這一行：
 ```yaml
     preview: { kind: image, topic: /camera/color/image_raw/compressed, max_width: 960 }
 ```
 
-**使用自己的驅動程式服務名稱，讓重新啟動按鈕可以運作。** 修改 `services` 中 `camera` 與 `ouster` 這兩行：
+**使用自己的驅動程式服務名稱，讓重新啟動按鈕可以運作。** 修改 `services` 中該驅動的那一行：
 ```yaml
 services:
-  camera: { label: Camera driver, unit: usb-cam.service, restartable: true }
   ouster: { label: Ouster driver, unit: ouster-driver.service, restartable: true }
 ```
-接著重新執行 `sudo deploy/install.sh --user jetson`。
+接著重新執行 `sudo deploy/install.sh --user jetson`（`user_unit` 不需要）。
 
 **預設三顆對準燈（粗對準、初始航向、精對準；英文介面為 Coarse alignment、Initial heading、Fine alignment）都亮才算 Ready。** 若要放寬，修改 `nav` 中的 `ready_requires` 這一行：
 ```yaml
@@ -581,10 +635,10 @@ nav:
 |------|------------------|
 | 修改後沒有效果 | 改到的是 `~/web_monitor/config/dashboard.yaml` 而不是 `/opt/aio-dashboard/config/dashboard.yaml`，或忘了執行 `sudo systemctl restart aio-dashboard`。 |
 | 修改後出現故障「Settings file has an error」 | YAML 語法錯誤：儀表板以上次正常的設定執行。執行 `aio-dashboard check`（第 3 節），修正後重新啟動。 |
-| 故障「Settings with an invalid value: defaults used」 | 某個值的型別不對；`journalctl -u aio-dashboard -n 40` 會指出是哪一項。 |
+| 故障「Settings with an invalid value: defaults used」 | 某個值的型別不對。`aio-dashboard check` 或 `journalctl -u aio-dashboard -n 40` 會指出是哪一項。 |
 | 「Sending to」顯示錯誤的位址 | 這個位址來自 `aio_nav.yaml` 的 `output_udp`，不是這個設定檔（見 4.2）。 |
 | Network 頁面顯示找不到 `aio_nav.yaml` | 將 `nav.aio_nav_config` 設為完整路徑（見第 5 節）。 |
 | ROS 2 頁面顯示 rclpy 無法使用 | `/opt/ros/humble` 沒有安裝 ROS 2 Humble，服務無法載入 ROS 2。 |
 | Live view 顯示「no PointCloud2 topic found」 | 沒有符合的 topic 正在發布。用 `ros2 topic list -t` 檢查，或設定 `preview.topic`。 |
 | 相機／LiDAR 顯示「Not set up」 | 沒有設定 `host`。若不需要 ping 檢查，這是正常的。 |
-| Restart driver 出現 sudo 錯誤 | 安裝後更改過服務名稱，請重新執行安裝程式（見第 2 節）。 |
+| Restart driver 出現 sudo 錯誤 | 安裝後更改過系統服務的名稱，請重新執行安裝程式（見第 2 節）。 |

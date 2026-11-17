@@ -105,7 +105,7 @@ aio-sysmon snapshots stall       # 開啟名稱含 "stall" 的最新一份
 
 ## 3b. 機器吃緊時它怎麼保持運作
 
-平常它只是一個安靜的一般程式（稍微優先：nice −5、不容易被 OOM 殺掉、記憶體固定在 RAM 裡，記憶體吃緊時不會被換出去，約 11 MB）。
+平常它只是一個安靜的一般程式（稍微優先：nice −5、不容易被 OOM 殺掉、記憶體固定在 RAM 裡，記憶體吃緊時不會被換出去，約 15 MB）。
 只有觸發條件顯示機器**已經沒有回應**（`stall`、`iowait`、`disk_wait_tasks`、`memory_low`、`swapping`、`swap_high`、`hot`、`slow_disk_write`）時，
 它才把自己暫時提高為低優先序的即時排程 60 秒，讓詳細取樣不被餓到，之後自動降回（事件 `priority`）。
 只是忙（`load`、`cpu_saturated`）不會觸發。它不會暫停或影響其他程式。保險：優先序遠低於核心自己的執行緒；
@@ -114,10 +114,11 @@ aio-sysmon snapshots stall       # 開啟名稱含 "stall" 的最新一份
 
 ## 4. 設定
 
-`/opt/aio-dashboard/config/sysmon.yaml`（修改後執行 `sudo systemctl restart aio-sysmon`）。全部都是選填。最常用的項目：
+`/opt/aio-dashboard/config/sysmon.yaml`（修改後執行 `sudo systemctl restart aio-sysmon`）。安裝程式只在這個檔案不存在、或加上 `--reset-config` 時才複製它；更新時會保留您的修改。全部都是選填。最常用的項目：
 
 | 設定 | 預設 | 說明 |
 |------|------|------|
+| `dir` | `/var/log/aio-sysmon` | 紀錄存放的位置。由安裝程式設定：服務只能寫入這裡（第 6 節），所以只改這裡不會生效 |
 | `interval_s` | `5` | 每幾秒一筆完整樣本 |
 | `ring_mb` | `4` | 逐秒環狀檔的大小（每 4 MB 約 2 小時） |
 | `max_total_mb` | 推算 | 整個資料夾的硬上限 |
@@ -128,6 +129,19 @@ aio-sysmon snapshots stall       # 開啟名稱含 "stall" 的最新一份
 | `lock_memory` | `true` | 把紀錄器固定在 RAM |
 | `escalate`、`escalate_s`、`escalate_priority` | `true`、`60`、`10` | 上述暫時提高優先序 |
 | `kmsg` | `true` | 複製核心的警告與錯誤（需要 root） |
+
+進階項目，很少需要修改：
+
+| 設定 | 預設 | 說明 |
+|------|------|------|
+| `ring_interval_s` | `1` | 每幾秒一筆環狀檔紀錄 |
+| `ring_sync_s` | `5` | 環狀檔每隔這麼久寫入磁碟一次（斷電最多少這麼久的紀錄） |
+| `top_every_s` | `60` | 每隔這麼久在樣本中附上耗用資源最多的程序 |
+| `cooldown_s` | `120` | 觸發之後，同一種觸發安靜這麼久 |
+| `snapshots_share` | `0.4` | 快照最多佔上限的比例 |
+| `max_snapshots_per_day` | `120` | 一天最多幾份快照 |
+| `events_max_mb` | `10` | `events.jsonl` 超過這個大小就壓縮，並重新開始一個檔案 |
+| `escalate_on` | 第 3b 節的全部八種 | 哪些觸發會提高優先序，例如 `[stall, memory_low]` |
 
 ## 5. 它看不到什麼
 

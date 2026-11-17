@@ -22,7 +22,7 @@ DEFAULTS: Dict = {
     "kmsg": True,                   # copy kernel warnings/errors (needs root)
     "triggers": {},                 # override any derived limit, e.g. {"iowait_pct": 15}
     "cooldown_s": 120,
-    "lock_memory": True,            # keep the recorder in RAM (needs root; ~20 MB)
+    "lock_memory": True,            # keep the recorder in RAM (needs root; ~15 MB)
     "escalate": True,               # when the machine stops responding: low real-time priority for a while
     "escalate_s": 60,
     "escalate_priority": 10,        # far below the kernel's own threads (50+)
