@@ -70,7 +70,8 @@ flowchart LR
 | 頁面啟動 / 停止 AIO NAV | 使用者頁 總覽、導航 | `nav.allow_control` | 開(內建關) | `services.*.launch` |
 | 自動啟動 | 背景;設定頁顯示 | `autostart.enabled` | 開 | **`nav.allow_control`**、靜止偵測、GNSS 校時(等時鐘) |
 | 0x05 狀態封包 | 背景;設定頁「車輛連線」 | `status_udp.enabled` | 開 | 目的地 = `aio_nav.yaml` 的 `output_udp` |
-| READY 需要 RTK | 設定頁、維護 Overview | `readiness.require_rtk`,頁面選擇存 `state/readiness.json` | 開 | GNSS 燈(NavSatFix)→ 接收機 → NTRIP → 網際網路 |
+| 環境偵測(網路、RTK、車輛) | 設定頁「環境」卡片、維護 Overview | 沒有開關(`state/environment.py`);RTK、車輛可在頁面改,存 `state/environment.json` | 開 | `network.internet_check`、預設路由、GNSS 診斷(`gnss_diag`)、`aio_nav.yaml` 的 `output_udp` |
+| READY 需要 RTK | 設定頁「環境」卡片、維護 Overview | `readiness.require_rtk`(`auto` / `true` / `false`);頁面選擇存 `state/environment.json`(舊的 `state/readiness.json` 在被取代前仍有效) | `auto`:環境有 RTK 才需要(未知 = 需要) | 環境偵測 → GNSS 燈(NavSatFix)→ 接收機 → NTRIP → 網際網路 |
 | 其他 READY 條件 | — | `readiness.require` | 無 | 各條件的來源;`dso` 只在 `Odometry.vupt` 開時算 |
 | 靜止偵測 | 維護 Still detection | `autostart.require_still`,門檻存 `state/still_limits.json` | 開 | IMU、接收機速度 |
 | GNSS 校時 | 背景 | `gnss_time.enabled` | 開 | IMU 時間戳、chrony(安裝程式設定) |
@@ -142,7 +143,7 @@ flowchart LR
 
 **為什麼互斥:** 只有一個無線網卡。熱點一旦開啟,每次開機都會自己起來,直到有人關掉。
 
-**連鎖影響:** 網際網路只走 Wi-Fi 的機器開熱點會斷掉 NTRIP,於是沒有 RTK。「需要 RTK」開著時就**到不了 READY**(READY 之後則變成 DEGRADED)。啟動熱點時頁面只會提醒「網際網路路由(RTK 修正)經過 Wi-Fi」,確認後照樣開。
+**連鎖影響:** 網際網路只走 Wi-Fi 的機器開熱點會斷掉 NTRIP,於是沒有 RTK。如果這次上電還沒有過 RTK,環境會判斷「沒有網路 → 沒有 RTK」,READY 不等 RTK。但在有 RTK 的地方(這次上電已收到 RTK 修正資料或 RTK 定位),這個結果會鎖住到下次上電,RTK 仍然需要:開熱點後就**到不了 READY**(READY 之後則變成 DEGRADED)。啟動熱點時頁面只會提醒「網際網路路由（RTK 修正資料）經由 Wi-Fi」,確認後照樣開。
 
 ### 3.4 本機 UDP 9000 的接收者
 
@@ -162,10 +163,10 @@ flowchart LR
 | 同一件事 | 機制 | 關係 | 說明在哪 |
 |----------|------|------|----------|
 | 重啟出問題的部分 | 自動啟動、DSO 監控、driver 監控、ROS 隔離檢查、systemd watchdog | 各管各的對象。**⚠ driver 監控和 ROS 隔離檢查會對同一個症狀反應,沒有協調** | [FLOWS 7](FLOWS.md#7-who-restarts-what) |
-| GNSS 好不好 | GNSS 燈(NavSatFix)、GNSS / RTK 頁(diagnostics)、導航頁的 GNSS 輔助燈(0x04 旗標) | 只有 GNSS 燈影響 READY。**⚠ 三者可能說法不同,沒有對照** | [設定手冊 4.7b / 4.7c](CONFIG.zh-TW.md) |
-| READY 要不要 GNSS 品質 | `readiness.require_rtk`(頁面可切)、`readiness.require: [gnss_quality]` | 兩條路各自獨立:在頁面關掉 RTK,`require` 裡的 `gnss_quality` 還是有效 | [FLOWS 8](FLOWS.md#8-where-a-setting-comes-from) |
+| GNSS 好不好 | GNSS 燈(NavSatFix)、GNSS / RTK 頁(diagnostics)、導航頁的 GNSS 輔助燈(0x04 旗標) | 只有 GNSS 燈直接影響 READY;diagnostics 用來判斷環境有沒有 RTK(也就是 READY 要不要 RTK)。**⚠ 三者可能說法不同,沒有對照** | [設定手冊 4.7b / 4.7c](CONFIG.zh-TW.md) |
+| READY 要不要 GNSS 品質 | 環境的 RTK(偵測,頁面可改)、`readiness.require_rtk`、`readiness.require: [gnss_quality]` | 兩條路各自獨立:在頁面選「這裡沒有 RTK」,`require` 裡的 `gnss_quality` 還是有效 | [FLOWS 8](FLOWS.md#8-where-a-setting-comes-from) |
 | 修改 `aio_nav.yaml` | 使用者頁 Setup(槓桿臂)、維護頁設定編輯器 | 兩邊都會試啟動並做版本檢查,不會互相覆蓋。**⚠ Setup 不用密碼,設定編輯器要** | 操作手冊 3.6、8 |
-| Wi-Fi 與 RTK 開關 | 使用者頁 Settings、維護頁 Network / Overview | 同一段程式。使用者頁不用密碼,但 Wi-Fi 只接受用網路線連進來的瀏覽器 | [FLOWS 5](FLOWS.md#5-wi-fi-change) |
+| Wi-Fi 與環境(RTK、車輛) | 使用者頁 Settings、維護頁 Network / Overview | 同一段程式。使用者頁不用密碼,但 Wi-Fi 只接受用網路線連進來的瀏覽器 | [FLOWS 5](FLOWS.md#5-wi-fi-change) |
 | 狀態 | 頁面狀態(6 種)、readiness(10 種)、頁面顯示(`_health_view` 再轉換) | 同一個快照,只是轉成不同的呈現 | [FLOWS 2–3](FLOWS.md#2-one-health-tick-5-hz) |
 | 啟動 drivers | 自動啟動的 `start_services`、driver 監控、維護頁按鈕 | 都尊重操作員的停止 | [FLOWS 4、7](FLOWS.md) |
 
@@ -174,7 +175,7 @@ flowchart LR
 ## 5. 依賴鏈(關掉 A 會讓 B 失效)
 
 - `nav.allow_control` 關掉 → 頁面按鈕、自動啟動、Setup 存檔後的重啟全部失效。
-- 網際網路(Wi-Fi 或有線)→ NTRIP → RTK → READY(「需要 RTK」開著時)。熱點、Wi-Fi 變更、網路線都在這條鏈上。
+- 網際網路(Wi-Fi 或有線)→ NTRIP → RTK → READY(需要 RTK 時,也就是環境有 RTK 的地方)。熱點、Wi-Fi 變更、網路線都在這條鏈上。網路和 GNSS 診斷也決定環境偵測的「有沒有 RTK」。
 - IMU → GNSS 校時 → 自動啟動(先等時鐘)→ AIO NAV。
 - IMU → 靜止偵測 → 自動啟動(要靜止才啟動)。
 - `output_udp`(設定編輯器可改)→ 0x04 的目的地,**也是** 0x05 的目的地(`status_udp.destination: auto`)。
@@ -189,7 +190,7 @@ flowchart LR
 | # | 問題 | 可能的做法 |
 |---|------|------------|
 | 1 | Bag 模式下仍然送 0x05、仍然自動啟動、仍然校時(3.2) | Bag 模式時 0x05 固定送 MAINTENANCE(或停送)、自動啟動不啟動、校時停餵;或規定 `aio_nav_bag.yaml` 不得指向車輛 |
-| 2 | 熱點會切斷 Wi-Fi 網際網路,連帶切斷 RTK(3.3) | 「需要 RTK」開著時禁止開熱點,或要求加強確認;或規定 NTRIP 只走有線 |
+| 2 | 熱點會切斷 Wi-Fi 網際網路,連帶切斷 RTK(3.3) | 部分解決(2026-11-19):沒有網路時環境判斷沒有 RTK,READY 不等 RTK。剩下的是有 RTK 的地方(這次上電已有 RTK,鎖住):開熱點時要求加強確認;或規定 NTRIP 只走有線 |
 | 3 | 桌面 App 停掉 AIO NAV 會被當成當機(3.1) | 出貨機不裝桌面 App;或偵測外部停止並當成操作員停止 |
 | 4 | driver 監控和 ROS 隔離檢查沒有協調(4) | 看不到任何其他節點時,driver 監控不動作 |
 | 5 | GNSS 三個來源說法可能不同(4) | GNSS / RTK 頁顯示燈號的判斷,不一致時提示 |

@@ -4,7 +4,7 @@ Web dashboard for the Jetson AIO navigation system.
 
 | UI | Port | Audience | Pages |
 |----|------|----------|-------|
-| Product | `:8080` | Operators (no login) | Overview · Navigation · Data · Setup (lever arms) · Settings (Wi-Fi, RTK requirement, automatic start, vehicle link), with Start / Restart / Stop / Resume of AIO NAV; English / 繁體中文 |
+| Product | `:8080` | Operators (no login) | Overview · Navigation · Data · Setup (lever arms) · Settings (Wi-Fi, environment: network / RTK / vehicle, automatic start, vehicle link), with Start / Restart / Stop / Resume of AIO NAV; English / 繁體中文 |
 | Maintenance | `:8081` | Engineers (password) | Overview · System · ROS 2 · GNSS / RTK · Camera · LiDAR · Network (Wi-Fi, hotspot) · Diagnostics · Still detection · AIO NAV config · Terminal (· Replay with the replay part) |
 
 The main data source is the **AIO NAV 0x04 binary packet** that `aio_nav_node`
@@ -47,14 +47,15 @@ aio_system_dashboard/
                        dso_watchdog, ros_guard, hotspot_relay, fake
   media/               on-demand camera image / point-cloud preview (tap.py), decoders, fake frames
   state/               health.py (5 Hz evaluator: product state, alignment step, advisories, events),
-                       readiness.py (states, actions and reasons, by name), still.py
+                       readiness.py (states, actions and reasons, by name), environment.py
+                       (network / RTK / vehicle, detected; decides whether READY needs RTK), still.py
                        (vehicle still detection), indicator.py (debounced lamps), store.py
   actions/             fixed actions only: process_control (AIO NAV / DSO), service_control (drivers),
                        autostart, driver_watchdog, diagnostics, aionav_config (config editor),
                        terminal (shell sessions), wifi (NetworkManager, with rollback; hotspot)
   data_access/         read-only browse/download inside configured roots
   web/                 Flask apps: product.py, setup.py (lever arms), maintenance.py, still.py,
-                       tools.py (editor, terminal), auth.py, access.py, settings_api.py (Wi-Fi / RTK on
+                       tools.py (editor, terminal), auth.py, access.py, settings_api.py (Wi-Fi / environment on
                        both apps), server.py, i18n.py + i18n_zh.py (user-page languages)
   templates/, static/  Bootstrap + Alpine.js + Leaflet + xterm.js (vendored, offline)
   vehicle/             output to the vehicle, a layer the core never imports: output.py (listens to the
@@ -76,8 +77,8 @@ Two layers, computed together every 0.2 s (`state/health.py`, `state/readiness.p
 | **STOPPED** | AIO NAV not running and nobody asked it to run (normal, not a fault) |
 | **STARTING** | asked to start, or running without output yet (up to `startup_timeout_s`, 60 s); also while the automatic start waits |
 | **INITIALIZING** | packets fresh but `ready_requires` flags (default `alignment`, `heading_valid`, `fine_alignment`) not all set; reports the current step and what to do |
-| **READY** | process up, packets fresh, alignment complete, and the required conditions held: by default RTK (`readiness.require_rtk`), plus anything in `readiness.require` |
-| **DEGRADED** | was READY in this AIO NAV run, and a required condition (RTK by default) or the alignment was lost |
+| **READY** | process up, packets fresh, alignment complete, and the required conditions held: RTK where the environment has RTK (detected by `state/environment.py`, or set on a page; `readiness.require_rtk`), plus anything in `readiness.require` |
+| **DEGRADED** | was READY in this AIO NAV run, and a required condition (such as RTK) or the alignment was lost |
 | **FAULT** | AIO NAV stopped although it should run, no output after the start-up time, output stopped for `stale_fault_s` (2 s) or frozen, the UDP listener failed, AIO NAV running twice, or the automatic start gave up |
 
 For the vehicle the same snapshot gives a finer state (BOOTING, CHECKING, NAV_STARTING, KEEP_STILL,
@@ -86,7 +87,8 @@ SAFE_STOP, …) and inhibit bits; they go out in the 0x05 packet
 ([operation 6.8](docs/OPERATION.md), [FLOWS 3](docs/FLOWS.md#3-readiness-states)).
 
 Camera/LiDAR not connected, sensor-LAN link down and low disk are **advisories**: they never
-change READY. GNSS is an advisory too only when "RTK required" is switched off. A state gets worse
+change READY. GNSS is an advisory too where RTK is not required (no RTK detected here, or *No*
+chosen for RTK on the Settings page). A state gets worse
 after about 0.5 s and recovers after about 2 s, so a single missed sample does not flicker.
 
 "UDP Output: Streaming" means `aio_nav_node` is sending packets. UDP has no ACK,
@@ -248,7 +250,7 @@ Re-run `install.sh` after changing which units are restartable.
   Sessions are HttpOnly / SameSite=Strict cookies bound to the client IP and end after 15 minutes
   without use; repeated wrong passwords lock out briefly. `maintenance.lock: tools` leaves the
   pages open to view and asks for the password only for changes (config editor, terminal, still
-  detection, Wi-Fi / hotspot, RTK requirement).
+  detection, Wi-Fi / hotspot, environment: RTK and vehicle).
 - The **Terminal** page is a real shell of the service user. Choose a strong password, and keep
   `access.allowed_clients` to the computers that need it.
 - Elsewhere no command strings are accepted: actions are fixed IDs, each target in a whitelist built from config.
@@ -258,7 +260,7 @@ Re-run `install.sh` after changing which units are restartable.
 - Each port serves only its own routes. Maintenance APIs are not reachable on :8080. The product view has no login;
   its only changes are Start / Stop / Resume, the lever arms on Setup (written to the Live `aio_nav.yaml` after a test
   start, with a backup), Wi-Fi (accepted only from a browser connected by cable, so a change cannot cut off the page
-  that made it) and the RTK requirement (turning it off needs a confirmation). All are logged.
+  that made it) and the environment (RTK, vehicle; saying *No RTK here* needs a confirmation). All are logged.
 
 ## Not included
 

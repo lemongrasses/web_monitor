@@ -72,6 +72,9 @@ flowchart TD
 ```
 
 - Not READY always has at least one inhibit bit; READY always has none (tested exhaustively).
+- Before the readiness conditions, `state/environment.py` decides the environment (network, RTK,
+  vehicle) from the network, GNSS and GNSS diagnostics sections. Its RTK answer decides whether
+  READY needs RTK (section 8). A detected change holds 10 s first.
 - The READY latch is per AIO NAV process: after a crash it says SAFE_STOP, not "starting".
 
 ## 3. Readiness states
@@ -213,14 +216,19 @@ are healthy. Not coordinated yet.
 ## 8. Where a setting comes from
 
 Some settings can be changed on the pages. The page's choice is kept in `state/` and wins over
-`config/dashboard.yaml`:
+`config/dashboard.yaml`. Some are also detected by the device when nobody chose:
 
 | Setting | In the config | Changed on | Kept in | How long the page's choice holds |
 |---------|---------------|------------|---------|-----------------------------------|
-| RTK required for READY | `readiness.require_rtk` (`true`) | Settings page, Maintenance > Overview | `state/readiness.json` | until changed again |
+| RTK required for READY | `readiness.require_rtk` (`auto`: detected; `true` / `false` pin it) | Settings page (Environment), Maintenance > Overview | `state/environment.json` (an older `state/readiness.json` counts until replaced) | until set back to automatic |
+| Vehicle connected (shown only) | — (detected from `output_udp` in `aio_nav.yaml`) | Settings page (Environment) | `state/environment.json` | until set back to automatic |
 | Live / Bag replay | `ros.mode` (`live`) | Maintenance > Replay (replay part only) | `state/ros_mode.json` | until the next power-on |
 | Operator Stop (hold) | — | Stop / Start / Resume | `state/autostart.json` | until Start / Resume or the next power-on |
 | Still limits | `readiness.still_*` | Maintenance > Still detection | `state/still_limits.json` | until reset |
 
+RTK required for READY, in this order: the choice made on a page; else `readiness.require_rtk`
+when it is `true` or `false`; else the detected RTK answer (RTK corrections or an RTK position in
+this power-on = yes; no NTRIP set up, or no network = no; unknown = required).
+
 `readiness.require: [gnss_quality]` is a second way to require GNSS quality; it is independent of
-the RTK switch (switching RTK off does not remove it).
+the RTK requirement (choosing *No RTK here* does not remove it).

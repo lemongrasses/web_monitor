@@ -178,11 +178,11 @@ GNSS、相機、LiDAR 與網路只會產生提示，永遠不會讓 Ready 變成
 
 儀表板維護一份 *readiness* 快照：給車端的狀態（`BOOTING`、`CHECKING`、`NAV_STARTING`、`KEEP_STILL`、`MOVE_STRAIGHT`、`REFINING`、`READY`、`DEGRADED`、`FAULT`、`MAINTENANCE`）、操作人員該做的動作，以及兩組位元遮罩：成立條件（哪些條件正常）與不可用原因（所有不可使用輸出的原因）。網頁、`GET /api/readiness` 與 0x05 狀態封包（第 4.2c 節）顯示的都是同一份快照。
 
-READY 需要 AIO NAV 正在執行、輸出即時、`nav.ready_requires` 的旗標都成立，並且預設需要 **RTK**：GNSS 位置至少為 RTK 浮動解（`require_rtk`）。`require` 可以再增加其他條件。
+READY 需要 AIO NAV 正在執行、輸出即時、`nav.ready_requires` 的旗標都成立；在環境有 RTK 的地方還需要 **RTK**：GNSS 位置至少為 RTK 浮動解（`require_rtk`，以及下方的環境）。`require` 可以再增加其他條件。
 
 | 項目 | 預設值 | 說明 |
 |------|--------|------|
-| `require_rtk` | `true` | READY 需要 GNSS 位置至少為 `gnss_min_quality`（RTK 浮動解）。可在產品頁面的**設定**頁切換（關閉時會先確認），或在**維護頁面 → Overview → Readiness for the vehicle** 切換（需要密碼）；會記錄在事件紀錄，並保存在 `state/readiness.json`，之後以它為準。也可以在這裡設定。 |
+| `require_rtk` | `auto` | READY 是否需要 GNSS 位置至少為 `gnss_min_quality`（RTK 浮動解）。`auto`：環境有 RTK 的地方才需要（見下方「環境」）。`true`／`false`：不論偵測結果，一律需要／一律不需要。在產品頁面的**設定**頁（環境卡片；選「否」會先確認）或**維護頁面 → Overview → Readiness for the vehicle**（需要密碼）做的選擇優先於這個值：會記錄在事件紀錄，並保存在 `state/environment.json`，直到改回自動。之前存在 `state/readiness.json` 的 RTK 開關仍然有效，直到有新的選擇取代它。 |
 | `require` | `[]` | READY 的額外條件，可選：`imu`（IMU topic 正常）、`gnss`（接收機有位置）、`gnss_quality`（品質至少為 `gnss_min_quality`）、`dso`（DSO 里程計即時且有效）、`vehicle_route`（核心有通往 `output_udp` 目的地的路由）、`storage`（磁碟用量低於 `system.disk_warn_percent`）。 |
 | `stable_s` | `2.0` | 條件必須持續成立這麼久，READY 才會採計。 |
 | `loss_s` | `1.0` | 條件一旦被採計，要持續失敗這麼久才會被撤銷，避免偶爾掉一筆資料就讓 READY 跳動。 |
@@ -199,9 +199,19 @@ READY 需要 AIO NAV 正在執行、輸出即時、`nav.ready_requires` 的旗�
 
 每次自動啟動前（4.2b）以及安裝頁的**儲存並重新啟動**都會用到「車輛靜止」。以上四個值是預設值：在**維護頁面 → Still detection** 於車上量測的門檻會取代它們（保存在 `state/still_limits.json`；*Back to defaults* 會移除）。
 
+**環境**（網路、RTK、車輛）。裝置在每個健康檢查週期判斷自己所在的環境。偵測到的變化要維持 10 秒才算數。
+
+| 項目 | 值 | 怎麼偵測 |
+|------|----|----------|
+| 網路 | 網路線／Wi-Fi／沒有／未知 | 對外連線是否正常（`network.internet_check`），以及經由哪個網路介面（預設路由；無線網卡為 Wi-Fi）。尚未檢查，或 `internet_check: []` 時為未知。 |
+| RTK 修正資料 | 是／否／未知 | 這次上電後收到過 RTK 修正資料，或出現過 RTK 浮動解／固定解，就是「是」。維持到下次上電，儀表板重新啟動也不變：在橋下短暫中斷仍算是有 RTK 的地方，所以 READY 後失去 RTK 會變成 DEGRADED。接收機沒有設定 NTRIP（GNSS 診斷資訊：修正資料未啟用），或設定了 NTRIP 但沒有網路時為「否」。其他情況為「未知」（例如沒有診斷資訊的舊版驅動）。 |
+| 連接車輛 | 是／否 | `aio_nav.yaml` 有車端位址（`output_udp`）時為「是」。只是顯示，目前沒有功能使用它。 |
+
+READY 是否需要 RTK，依序決定：頁面上的選擇；沒有時，`require_rtk` 為 `true` 或 `false` 就照它；再沒有時，看偵測到的 RTK（未知視為需要，較保守的選擇）。選擇保存在 `state/environment.json`。RTK 與連接車輛可以手動設定（網路不行）：`POST /api/environment`（使用者頁面）或 `POST /api/maint/environment`（需要密碼），內容為 `{"key": "rtk" | "vehicle", "value": true | false | null, "confirm": bool}`；`null` 表示改回自動，`"rtk"` 設為 `false` 需要 `"confirm": true`。對同一路徑 `GET` 會回傳目前的環境；`/api/settings` 與 `/api/state` 也以 `environment` 包含它。舊的 `POST /api/settings/rtk` 與 `/api/maint/readiness/rtk`（`{"required": bool}`）仍可使用，設定的是 RTK 這一項。
+
 某次導航執行一旦達到 READY，之後若必要條件（或對準）失效，會進入 **DEGRADED**，動作為「停止使用導航」，而不會回到對準提示：此時車輛可能正在行駛。若是 AIO NAV 本身在 READY 後停止，狀態為 **FAULT**、動作 **SAFE_STOP**（*AIO NAV stopped after it was ready*），儀表板重新啟動後也一樣，直到 AIO NAV 再次執行。新的一次執行（AIO NAV 重新啟動）才會重新開始流程。
 
-> 要求 RTK 時，沒有 RTK（只有 SPP）的場地永遠不會 READY：在那裡請把 RTK 關掉。
+> 需要 RTK 時，沒有 RTK（只有 SPP）的場地永遠不會 READY。若裝置在那裡誤判有 RTK，請在設定頁把 RTK 選為「否」。
 > `require` 中若有不認得的名稱（打錯字），會以 `CONFIG_INVALID` 讓 READY 無法成立，而不是被忽略。
 
 ### 4.2b `autostart`：不需操作人員的 AIO NAV
@@ -341,7 +351,7 @@ ros2 param get /ouster/os_driver sensor_hostname   # Ouster IP（節點名稱可
 |------|--------|------|
 | `sensor_interface` | `auto` | 連接感測器網路的網路介面，例如 `eth0`。`auto` = 通往裝置 `host` 的介面，若沒有則使用預設路由的介面。其連線狀態顯示在 Maintenance > Network；未接上時會有提醒。可用 `ip -br link` 列出所有介面。 |
 | `ping_interval_s` | `5` | 每次 ping 裝置 `host`（以及檢查網際網路）之間的秒數。 |
-| `internet_check` | `["1.1.1.1:443", "8.8.8.8:443"]` | **網際網路**指示燈的檢查目標（`host:port`）：依序嘗試 TCP 連線，任一個連得上就顯示「已連線」（不傳送任何資料）。只接上網路線、或 Wi-Fi 沒有對外連線時顯示「未連線」。`[]` = 不檢查，顯示「未設定」。若所在網路封鎖這些位址，請改用該網路允許的伺服器。 |
+| `internet_check` | `["1.1.1.1:443", "8.8.8.8:443"]` | **網際網路**指示燈的檢查目標（`host:port`）：依序嘗試 TCP 連線，任一個連得上就顯示「已連線」（不傳送任何資料）。只接上網路線、或 Wi-Fi 沒有對外連線時顯示「未連線」。`[]` = 不檢查，顯示「未設定」。若所在網路封鎖這些位址，請改用該網路允許的伺服器。環境的「網路」（4.2a）也來自這項檢查。 |
 
 ### 4.5a `wifi`：設定頁與維護頁面的 Wi-Fi
 
@@ -492,7 +502,7 @@ gnss_diag:
   history_s: 600
 ```
 
-接收機驅動每秒發布一次自己的診斷資料：接收機的解與衛星、各衛星系統的訊號強度，以及 RTK 修正資料（NTRIP）的狀態。**維護頁面 → GNSS / RTK** 會顯示這些資料，並指出 RTK 問題最可能的原因。它的警告也會出現在 Diagnostics 頁面，修正資料中斷或恢復會記錄在事件紀錄。它不用於 READY。
+接收機驅動每秒發布一次自己的診斷資料：接收機的解與衛星、各衛星系統的訊號強度，以及 RTK 修正資料（NTRIP）的狀態。**維護頁面 → GNSS / RTK** 會顯示這些資料，並指出 RTK 問題最可能的原因。它的警告也會出現在 Diagnostics 頁面，修正資料中斷或恢復會記錄在事件紀錄。它不是 READY 的條件，但環境用它判斷這裡有沒有 RTK（第 4.2a 節）。
 
 | 項目 | 預設值 | 說明 |
 |------|--------|------|

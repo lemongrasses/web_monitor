@@ -121,7 +121,7 @@ At the bottom of the status panel, the Overview page lists the power-on sequence
 | Step | Done (green tick) when | Opens to show |
 |------|------------------------|---------------|
 | **Sensors** | The sensor drivers run and IMU data arrives. | Each driver, IMU data |
-| **GNSS / RTK** | A GNSS position, and RTK when Ready requires it (the default). | GNSS position, the current quality, whether RTK is required |
+| **GNSS / RTK** | A GNSS position, and RTK when Ready requires it (where the environment has RTK, section 3.5). | GNSS position, the current quality, whether RTK is required |
 | **AIO NAV** | AIO NAV runs and sends output. | AIO NAV, output rate, visual odometry (DSO: not needed for Ready by default) |
 | **Alignment** | All three alignment steps are done. | *Keep still*, *Drive straight*, *Fine alignment* with Done / In progress / Waiting, and the instruction for the current step |
 | **Vehicle link** | The navigation data and the Ready signal are being sent to the vehicle address. | The vehicle address, what is being sent |
@@ -153,15 +153,15 @@ colored dot and a word:
 | **Camera / LiDAR** (if fitted) | The sensor answers on the network. "Not set up" means no IP is configured; this is normal if not needed. |
 | **Internet** | This device reaches the Internet (a test connection out succeeds, checked every few seconds). A plugged-in network cable or a joined Wi-Fi without a way out shows *Not connected*. Only RTK corrections need it; navigation runs without it. |
 | **Coarse alignment**, **Initial heading**, **Fine alignment** (Navigation page) | The three alignment steps in order: **Done**, **In progress** (the current step), **Waiting** (a later step), or **—** while AIO NAV sends no output. |
-| **GNSS** (Navigation page) | Position quality of the GNSS receiver, from its position topic: green = *RTK fix* (centimeter level), amber = *RTK float* (about 10 cm), red = *SPP* (single-point positioning, meters) or *No signal*. *Fix (type unknown)* means the receiver gives a position but does not say what kind: amber when its uncertainty is 1 m or better, red otherwise. Inertial navigation continues in every case. With **RTK required** (the default) Ready needs RTK float or better (section 3.5). |
+| **GNSS** (Navigation page) | Position quality of the GNSS receiver, from its position topic: green = *RTK fix* (centimeter level), amber = *RTK float* (about 10 cm), red = *SPP* (single-point positioning, meters) or *No signal*. *Fix (type unknown)* means the receiver gives a position but does not say what kind: amber when its uncertainty is 1 m or better, red otherwise. Inertial navigation continues in every case. Where RTK is required (the environment has RTK, section 3.5) Ready needs RTK float or better. |
 | **ZUPT / ZIHR / NHC / VUPT** (Navigation page) | Which aiding the filter is using at the moment (see the [glossary](#10-glossary)). Idle is normal. |
 
 GNSS, camera, LiDAR and network problems are also shown as **advisories** (amber notes under the
 line). Camera, LiDAR and network problems never change the state. GNSS is different when RTK is
-required (the default): Ready needs RTK float or better, and if that is lost for about 3 s after
-Ready, the state becomes **Degraded** and the vehicle is told to stop using navigation. Only with
-**Require RTK before Ready** switched off (Settings page, or Maintenance → Overview) is GNSS an
-advisory only.
+required: Ready needs RTK float or better, and if that is lost for about 3 s after Ready, the
+state becomes **Degraded** and the vehicle is told to stop using navigation. RTK is required where
+the environment has RTK: detected by the device, or set on the Settings page (or Maintenance →
+Overview), section 3.5. Where there is no RTK, GNSS is an advisory only.
 
 ### 3.4 Pages
 
@@ -176,7 +176,7 @@ advisory only.
 - **Data**: AIO NAV log folders. Click a folder to open it and **Download** to save a
   file. Nothing on the device can be changed from this page.
 - **Setup**: where the GNSS antenna and the rear axle centre are, measured from the IMU (section 3.6).
-- **Settings**: Wi-Fi, the RTK requirement, automatic start and the vehicle link (section 3.5).
+- **Settings**: Wi-Fi, the environment (network, RTK, vehicle), automatic start and the vehicle link (section 3.5).
 
 ![Navigation page](images/user/navigation.png)
 *Navigation page: the whole track of this run, every value with its accuracy.*
@@ -196,7 +196,7 @@ advisory only.
 | Card | What you can do |
 |------|-----------------|
 | **Wi-Fi** | See the network in use. Choose a network from the list (strongest first; *Other network (hidden)…* to type a name), enter the password, **Connect**. The result is said in plain words: *Connected to …*, or *The password was not accepted. Back on …* (*Still on …* when the device never left its network). A failed attempt always returns to the previous Wi-Fi within about a minute. While the hotspot is on, the card shows *Hotspot: …* and how phones open the pages, and no network can be joined here (the hotspot is switched on Maintenance → Network). |
-| **Position accuracy for Ready** | The switch **Require RTK before Ready** (on by default, recommended). Turning it off asks for confirmation, because Ready can then be given with a position accurate to only a few metres. **GNSS now** shows the receiver's current quality. The time of the last change is shown, and every change is recorded in the event log. |
+| **Environment** | Where the device is: *Detected automatically. Change it only if the detection is wrong.* **Network**: *Cable*, *Wi-Fi*, *None* or *Unknown*, with how it was detected (read only). **RTK corrections** and **Vehicle connected**: each has the buttons *Auto (…)* (with the detected value), *Yes* and *No*, and says how it was detected, or *Set by hand; detected: …*. **Ready** says whether Ready waits for RTK. Choosing *No* for RTK asks first (*No RTK here?*), because Ready can then be given with a position accurate to only a few metres. **GNSS now** shows the receiver's current quality, **Last changed** the time RTK was last set by hand. Every change is recorded in the event log. Vehicle connected is shown only; nothing uses it yet. |
 | **Automatic start** | *On*: AIO NAV starts by itself after power-on. *Starting*: it is waiting, and says for what (for example *Waiting for the vehicle to be still*). *Paused*: an operator pressed Stop; it stays stopped until **Resume** (on this card, or on the Overview page) or the next power-on. *Problem*: a sensor it waits for is missing, or it gave up. *Off*: press Start on the Overview page. |
 | **Vehicle link** | The vehicle address, and that the navigation data (0x04) and the Ready signal (0x05) go there on the same port, and how many Ready signals were sent. Read only: the address is set on Maintenance → AIO NAV config. |
 
@@ -206,6 +206,21 @@ computer sees *Connect with a network cable to change Wi-Fi.* While navigation i
 the vehicle or the internet route (RTK corrections) goes over Wi-Fi, the page asks before it
 changes anything. These settings need no password on the user pages; the same settings are on the
 Maintenance view too. Wi-Fi needs a one-time setup by the installer (configuration manual 4.5a).
+
+How the environment is detected (every health step; a change must hold 10 s before it counts):
+
+- **Network**: a connection out works (the Internet check), and over which interface. Wi-Fi when
+  that interface is wireless, Cable otherwise; None when no connection out works.
+- **RTK corrections**: *Yes* once RTK corrections arrived or an RTK float/fix position was seen
+  since power-on. This stays until the next power-on, also across a dashboard restart: a short
+  loss under a bridge is still an RTK place, so losing RTK after Ready gives **Degraded**. *No*
+  when the receiver has no NTRIP set up, or NTRIP is set up but there is no network. *Unknown*
+  otherwise (for example an older receiver driver without diagnostics): RTK is then required.
+- **Vehicle connected**: *Yes* when `aio_nav.yaml` has a vehicle address (`output_udp`).
+
+Ready needs RTK when: the choice made on a page says so; else when `readiness.require_rtk` in the
+configuration is `true` (or not, when `false`); else when RTK is detected here (unknown counts as
+required). See configuration manual 4.2a.
 
 ### 3.6 Setup page: lever arms
 
@@ -271,7 +286,7 @@ power-on the system goes through:
 | 2. Sensor drivers started if needed; wait for IMU data, for the system clock to match GNSS time (at most 2 min), and for the vehicle to be still for 5 s | **Starting** — *Starting automatically: Waiting for …* | `CHECKING` / `HOLD_STILL` | Keep the vehicle still |
 | 3. AIO NAV (and DSO) started | **Starting** | `NAV_STARTING` / `HOLD_STILL` | Keep the vehicle still |
 | 4. Alignment ([SOP](#5-alignment-sop)) | **Initializing**, step 1 → 2 → 3 | `KEEP_STILL` → `MOVE_STRAIGHT` → `REFINING` | Follow the step shown |
-| 5. RTK float or better (when RTK is required, the default), stable 3 s | **Ready** | `READY`, inhibit 0 | Use navigation |
+| 5. RTK float or better (when RTK is required: where the environment has RTK), stable 3 s | **Ready** | `READY`, inhibit 0 | Use navigation |
 
 The **start-up progress** (section 3.2) shows which step it is on and what it is waiting for. If
 the sensors do not come within 2 minutes the state becomes **Fault** naming them (for example
@@ -293,9 +308,11 @@ What happens after a failure:
 - **Power-off while it runs**: normal. The next power-on starts it again; it is not reported as a
   crash.
 
-RTK is required for Ready by default. After Ready, losing RTK float for about 3 s gives
-**Degraded** (the vehicle is told `SAFE_STOP`). At a site without RTK the requirement can be
-switched off on the **Settings** page (with a confirmation; recorded), or on Maintenance → Overview.
+RTK is required for Ready where the environment has RTK (detected, or set on a page; section 3.5).
+After Ready, losing RTK float for about 3 s gives **Degraded** (the vehicle is told `SAFE_STOP`).
+Where the device finds no RTK (no NTRIP set up, or no network), Ready does not wait for it. If the
+detection is wrong, choose *Yes* or *No* for **RTK corrections** on the **Settings** page (*No*
+asks for a confirmation; recorded), or use Maintenance → Overview.
 
 If the state becomes **Fault** with *AIO NAV stopped unexpectedly*, or the message under the
 buttons reads *AIO NAV did not start: …* or *AIO NAV exited right after starting: …*, see [Troubleshooting](#9-troubleshooting). If there
@@ -306,8 +323,8 @@ ask the administrator to enable it. AIO NAV that was started in another way is d
 
 - Keep an eye on the status area. **Ready** means the output can be used.
 - GNSS advisories (such as *GNSS: SPP* or *GNSS: No signal*): inertial navigation continues, but
-  accuracy degrades; check the ± values on the Navigation page. With RTK required (the default),
-  losing RTK float for about 3 s after Ready also makes the state **Degraded**: stop using
+  accuracy degrades; check the ± values on the Navigation page. Where RTK is required (the
+  environment has RTK), losing RTK float for about 3 s after Ready also makes the state **Degraded**: stop using
   navigation.
 - If the state becomes **Fault**, follow the reason shown in the status area
   ([Troubleshooting](#9-troubleshooting)).
@@ -412,7 +429,7 @@ The administrator can require more (`readiness.require`, configuration manual).
 | **Coarse alignment** stays amber for well over 10 s | Check the GNSS lamp (initial position comes from GNSS; it should not be red) and that the vehicle is really still. Then restart. |
 | **Initial heading** does not turn green while driving | GNSS may be blocked (trees, buildings, tunnel). Drive in an open area. |
 | **Fine alignment** takes long | It completes at the latest when the fine-alignment time limit passes (default 300 s). Keep driving in open sky. |
-| GNSS is lost after Ready | With RTK required (the default): when GNSS stays below RTK float for about 3 s, the state becomes **Degraded** and the vehicle is told to stop using navigation (`SAFE_STOP`). Follow the vehicle's safety procedure and move to open sky; it becomes **Ready** again once RTK is back and stable for 3 s. With RTK not required: navigation continues on inertial sensors (advisory only); accuracy degrades over time, watch the ± values. |
+| GNSS is lost after Ready | Where RTK is required (the environment has RTK): when GNSS stays below RTK float for about 3 s, the state becomes **Degraded** and the vehicle is told to stop using navigation (`SAFE_STOP`). Follow the vehicle's safety procedure and move to open sky; it becomes **Ready** again once RTK is back and stable for 3 s. With RTK not required: navigation continues on inertial sensors (advisory only); accuracy degrades over time, watch the ± values. |
 
 > The alignment method and times are set in AIO NAV's own settings file (`aio_nav.yaml`,
 > section `Alignment`): `coarse_duration` (default 10 s), `fine_duration` (300 s),
@@ -521,7 +538,7 @@ first, then read:
 
 **When is the data valid?** ALIGN, HEADING and FINE all 1 is the minimum for the solution to be
 meaningful. It is not the whole go/no-go: the dashboard's **Ready** also needs RTK when it is
-required (the default) and any other condition set in `readiness.require`. The authoritative
+required (where the environment has RTK, section 3.5) and any other condition set in `readiness.require`. The authoritative
 go/no-go is the 0x05 status packet (section 6.8): use the data only while it says READY with
 `inhibit_flags` 0. ZUPT, ZIHR, NHC, GNSS and VUPT change from
 epoch to epoch and only report which aiding was used; GNSS updates arrive at the GNSS
@@ -717,7 +734,7 @@ Download them from the **Data** page of the product view.
 
 | Page | Use it to |
 |------|-----------|
-| **Overview** | See the four layers (System, Services, Data flow, Network) and the list of active issues. Each issue links to the page that explains it. **Readiness for the vehicle**: what the vehicle is told (state, action, reasons, bit masks), the condition table, the automatic start, the 0x05 counters, and the **RTK required** switch (also on the user Settings page). |
+| **Overview** | See the four layers (System, Services, Data flow, Network) and the list of active issues. Each issue links to the page that explains it. **Readiness for the vehicle**: what the vehicle is told (state, action, reasons, bit masks), the condition table, the automatic start, the 0x05 counters, and the **RTK required for Ready** row: *Yes* or *No* and where that comes from (*set on a page*, *config*, *environment*), *Turn on* / *Turn off*, and *Automatic* when RTK was set by hand (the same as the Environment card on the user Settings page). The **Environment** row shows network · RTK · vehicle; hover over it to see how each was detected. |
 | **System** | CPU, GPU, memory, disk, temperatures, systemd services, network interfaces. |
 | **ROS 2** | Required nodes, monitored topics (rate, freshness, publishers, subscribers), all topics. Also here: **Sensor drivers** (Start / Stop / Restart the camera and IMU/GNSS drivers) and the ROS environment in use. |
 | **GNSS / RTK** | Why the receiver has no RTK: a **Diagnosis** checked in order (receiver, antenna signal, corrections, whether the receiver uses them), the **Receiver solution**, the **Antenna signal** (satellites and signal strength), the **RTK corrections (NTRIP)** and a chart of the **Last 10 minutes**. The data comes from the receiver driver's diagnostics topic (`gnss_diag.topic`, default `/openrtk330/gnss/diagnostics`). It can differ from the GNSS lamp of the user pages, which comes from the receiver's position topic (NavSatFix). |
@@ -735,7 +752,7 @@ the maintenance view stays locked and its sign-in page says how to set one). By 
 (`maintenance.lock: all`), opening any maintenance page shows the sign-in page first, then the page
 you asked for. With `maintenance.lock: tools`, the pages open without it and only the tools need the
 password: the AIO NAV config editor, the terminal, measuring and changing still detection, and
-changing Wi-Fi, the hotspot or the RTK requirement. You are signed out after
+changing Wi-Fi, the hotspot or the environment (RTK, vehicle). You are signed out after
 15 minutes without use (opening pages and taking actions count as use; the pages refreshing
 themselves do not), or with **Sign out** at the bottom of the sidebar. Sign-ins, failed attempts,
 saved settings and opened terminals are recorded in the event log (Diagnostics).
@@ -871,7 +888,7 @@ another network at the same time.
 | Stuck at **Initializing** | Alignment not finished | Follow the [Alignment SOP](#5-alignment-sop) and 5.3. |
 | Event *DSO used too much memory: restarting DSO* (Maintenance → Diagnostics) | DSO kept growing (it was seen keeping every camera frame); the watchdog restarted it before the machine ran out of memory | Nothing to do right away; AIO NAV keeps running. If it repeats, report it to the DSO maintainers. The limit is `dso_watchdog.max_memory_mb`. |
 | Event *DSO odometry is NaN: restarting DSO* or *DSO is not running: starting it again* | DSO lost tracking, or crashed | Nothing to do if it recovers; AIO NAV keeps running. While it keeps failing, the waits between tries grow up to 300 s. Check the camera view (Maintenance → Camera). |
-| **GNSS** lamp amber or red (*RTK float*, *SPP*, *No signal*) | Sky view blocked, no RTK correction data, antenna or GNSS receiver issue | Inertial navigation continues. With RTK required (the default), below RTK float there is no Ready, and after Ready the state becomes **Degraded**. Move to open sky; check the antenna and the correction link. Maintenance → **GNSS / RTK** says which one is the likely cause. |
+| **GNSS** lamp amber or red (*RTK float*, *SPP*, *No signal*) | Sky view blocked, no RTK correction data, antenna or GNSS receiver issue | Inertial navigation continues. Where RTK is required (the environment has RTK), below RTK float there is no Ready, and after Ready the state becomes **Degraded**. Move to open sky; check the antenna and the correction link. Maintenance → **GNSS / RTK** says which one is the likely cause. |
 | **GNSS: No signal** with *no GNSS message for …* | The receiver driver publishes no position at all (no sky view, or the receiver/driver needs a restart) | Check the antenna and sky view; restart the sensor drivers (Maintenance → ROS 2); the driver log is `~/openrtk330-basler-driver.log`. Maintenance → **GNSS / RTK** shows what the receiver itself reports. |
 | **Low rate** / **Stale** | Device overloaded or filter input interrupted | Check the System page (CPU, temperature) and the ROS 2 page. |
 | Camera/LiDAR **Not connected** | Sensor powered off, cable, or wrong IP | Check power and cable; Maintenance → Camera/LiDAR → **Run diagnostic**. |

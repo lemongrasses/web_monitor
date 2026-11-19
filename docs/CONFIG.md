@@ -224,13 +224,13 @@ The dashboard keeps one *readiness* snapshot: the state for the vehicle (`BOOTIN
 and of every reason the output must not be used. The pages, `GET /api/readiness` and the 0x05
 status packet (section 4.2c) all show this same snapshot.
 
-READY needs AIO NAV running with fresh output and the `nav.ready_requires` flags set, and, by
-default, **RTK**: a GNSS position of at least RTK float (`require_rtk`). `require` adds further
-conditions.
+READY needs AIO NAV running with fresh output and the `nav.ready_requires` flags set, and, where
+the environment has RTK, **RTK**: a GNSS position of at least RTK float (`require_rtk`, and the
+environment below). `require` adds further conditions.
 
 | Key | Default | Meaning |
 |-----|---------|---------|
-| `require_rtk` | `true` | READY needs a GNSS position of at least `gnss_min_quality` (RTK float). Switch it on the user **Settings** page (turning it off asks for a confirmation) or on **Maintenance → Overview → Readiness for the vehicle** (password); recorded in the event log and kept in `state/readiness.json`, which then wins over this value. Or set it here. |
+| `require_rtk` | `auto` | Whether READY needs a GNSS position of at least `gnss_min_quality` (RTK float). `auto`: where the environment has RTK (see *The environment* below). `true` / `false`: always / never, whatever is detected. A choice made on the user **Settings** page (Environment card; *No* asks for a confirmation) or on **Maintenance → Overview → Readiness for the vehicle** (password) wins over this value: recorded in the event log and kept in `state/environment.json` until set back to automatic. An RTK switch saved before in `state/readiness.json` still counts until a new choice replaces it. |
 | `require` | `[]` | Extra conditions for READY. Any of: `imu` (the IMU topic is healthy), `gnss` (the receiver reports a position), `gnss_quality` (at least `gnss_min_quality`), `dso` (DSO odometry is fresh and valid), `vehicle_route` (the kernel has a route to the `output_udp` destination), `storage` (disk below `system.disk_warn_percent`). |
 | `stable_s` | `2.0` | A condition must hold this long before READY counts it. |
 | `loss_s` | `1.0` | Once counted, a condition is dropped only after failing this long, so a single missed sample does not toggle READY. |
@@ -249,13 +249,33 @@ conditions.
 Setup page. The four values above are defaults: limits measured on the vehicle on **Maintenance →
 Still detection** replace them (kept in `state/still_limits.json`; *Back to defaults* removes them).
 
+**The environment** (network, RTK, vehicle). The device decides every health step where it is.
+A detected change must hold 10 s before it counts.
+
+| Answer | Values | How it is detected |
+|--------|--------|--------------------|
+| Network | Cable / Wi-Fi / None / Unknown | A connection out works (`network.internet_check`), and over which interface (the default route; Wi-Fi = a wireless interface). Unknown while not checked, or with `internet_check: []`. |
+| RTK corrections | Yes / No / Unknown | Yes once RTK corrections arrived or an RTK float / fix position was seen in this power-on. Kept until the next power-on, also across a dashboard restart: a short loss under a bridge stays an RTK place, so losing RTK after READY gives DEGRADED. No when the receiver has no NTRIP set up (GNSS diagnostics: corrections not enabled), or NTRIP is set up but there is no network. Unknown otherwise (for example an older driver without diagnostics). |
+| Vehicle connected | Yes / No | Yes when `aio_nav.yaml` has a vehicle address (`output_udp`). Shown only; nothing uses it yet. |
+
+Whether READY needs RTK, in this order: a choice made on a page; else `require_rtk` when it is
+`true` or `false`; else the detected RTK answer (Unknown = required, the careful choice). The
+choices are kept in `state/environment.json`. RTK and Vehicle connected can be set by hand
+(Network cannot): `POST /api/environment` (user pages) or `POST /api/maint/environment`
+(password) with `{"key": "rtk" | "vehicle", "value": true | false | null, "confirm": bool}`;
+`null` is back to automatic, and `"rtk"` with `false` needs `"confirm": true`. `GET` on the same
+paths returns the current environment; `/api/settings` and `/api/state` include it as
+`environment`. The older `POST /api/settings/rtk` and `/api/maint/readiness/rtk`
+(`{"required": bool}`) still work and set the RTK answer.
+
 After READY was reached in a navigation run, losing a required condition (or the alignment)
 gives **DEGRADED** with the action *stop using navigation*, never a return to the alignment
 prompts: the vehicle may be moving. If AIO NAV itself stops after READY, the state is **FAULT**
 with **SAFE_STOP** (*AIO NAV stopped after it was ready*), also across a dashboard restart, until
 it is running again. A new run (AIO NAV restarted) starts the flow again.
 
-> With RTK required, a site without RTK (only SPP) never becomes READY: switch RTK off there.
+> Where RTK is required, a site without RTK (only SPP) never becomes READY. If the device
+> detects RTK there by mistake, choose *No* for RTK on the Settings page.
 > An unknown name in `require` (a typo) blocks READY with `CONFIG_INVALID` instead of being ignored.
 
 ### 4.2b `autostart`: run AIO NAV without an operator
@@ -415,7 +435,7 @@ ros2 param get /ouster/os_driver sensor_hostname   # Ouster IP (node name may di
 |-----|---------|---------|
 | `sensor_interface` | `auto` | Network interface connected to the sensor LAN, e.g. `eth0`. `auto` = the interface that routes to a device `host`, else the one with the default route. Its link is shown on Maintenance > Network; a link down is an advisory. List interfaces with `ip -br link`. |
 | `ping_interval_s` | `5` | Seconds between ping checks of device `host`s (and of the Internet). |
-| `internet_check` | `["1.1.1.1:443", "8.8.8.8:443"]` | `host:port` targets for the **Internet** lamp: *Connected* when a TCP connection to one of them opens (tried in order; nothing is sent). A cable or Wi-Fi without a way out shows *Not connected*. `[]` = not checked, shown as *Not set up*. On a network that blocks these, use a server it does allow. |
+| `internet_check` | `["1.1.1.1:443", "8.8.8.8:443"]` | `host:port` targets for the **Internet** lamp: *Connected* when a TCP connection to one of them opens (tried in order; nothing is sent). A cable or Wi-Fi without a way out shows *Not connected*. `[]` = not checked, shown as *Not set up*. On a network that blocks these, use a server it does allow. The environment's Network answer (4.2a) comes from this check too. |
 
 ### 4.5a `wifi`: Wi-Fi on the Settings page and the Maintenance page
 
@@ -614,7 +634,8 @@ The receiver driver publishes its own diagnostics once a second: the receiver's 
 satellites, the signal strength per constellation, and the state of the RTK corrections (NTRIP).
 **Maintenance > GNSS / RTK** shows them and names the likely cause of an RTK problem. Its warnings
 also appear on the Diagnostics page, and a loss or recovery of the corrections is in the event log.
-It is not used for READY.
+It is not a READY condition, but the environment uses it to decide whether there is RTK here
+(section 4.2a).
 
 | Key | Default | Meaning |
 |-----|---------|---------|
