@@ -11,8 +11,11 @@ pages show. This module derives from it, with no I/O and no clock of its own:
   vehicle). They are required when ``readiness.require`` lists them; ``readiness.require_rtk``
   (on by default) adds gnss and gnss_quality.
 
-The same snapshot feeds /api/readiness, the pages, and the 0x05 status packet. Bit numbers and
-codes are part of the 0x05 protocol (docs/OPERATION.md, "Status packet"): append, never renumber.
+The same snapshot feeds /api/readiness, the pages, the start-up coordinator and, when the
+vehicle output layer is there, the 0x05 status packet. Everything here is by name: the numbers
+on the wire (state and action codes, bit positions) belong to that layer
+(``vehicle/protocol.py``), and nothing in the core imports it. A new state, action, health or
+inhibit name needs its number there too (a test checks it).
 """
 
 from typing import Dict, List, Optional
@@ -21,11 +24,9 @@ SCHEMA_VERSION = 1
 
 STATES = ("BOOTING", "CHECKING", "NAV_STARTING", "KEEP_STILL", "MOVE_STRAIGHT", "REFINING",
           "READY", "DEGRADED", "FAULT", "MAINTENANCE")
-STATE_CODE = {s: i for i, s in enumerate(STATES)}
 
 ACTIONS = ("NONE", "HOLD_STILL", "DRIVE_STRAIGHT", "KEEP_DRIVING", "SAFE_STOP", "SERVICE_REQUIRED",
            "MAINTENANCE_HOLD")
-ACTION_CODE = {a: i for i, a in enumerate(ACTIONS)}
 ACTION_TEXT = {
     "NONE": "",
     "HOLD_STILL": "Keep the vehicle completely still.",
@@ -36,22 +37,17 @@ ACTION_TEXT = {
     "MAINTENANCE_HOLD": "Stopped. Press Resume or Start on the Overview page.",
 }
 
-# health_flags: a condition that holds. inhibit_flags: a reason the output must not be used.
-HEALTH_BITS = {
-    "DASHBOARD_OK": 0, "CONFIG_OK": 1, "IMU_STREAM_OK": 2, "GNSS_STREAM_OK": 3,
-    "GNSS_QUALITY_OK": 4, "NAV_PROCESS_OK": 5, "NAV_OUTPUT_OK": 6, "ALIGNMENT_OK": 7,
-    "HEADING_OK": 8, "FINE_ALIGNMENT_OK": 9, "DSO_OK": 10, "EXTERNAL_ROUTE_OK": 11,
-    "RTK_CORRECTION_OK": 12, "STORAGE_OK": 13, "VEHICLE_ACK_OK": 14, "TIME_SYNC_OK": 15,
-    "NO_DUPLICATE_PROCESS": 16, "WIFI_OK": 17,
-}
-INHIBIT_BITS = {
-    "BOOT_IN_PROGRESS": 0, "CONFIG_INVALID": 1, "IMU_MISSING_OR_STALE": 2,
-    "GNSS_MISSING_OR_STALE": 3, "GNSS_QUALITY_LOW": 4, "NAV_NOT_RUNNING": 5, "NAV_OUTPUT_STALE": 6,
-    "KEEP_STILL_REQUIRED": 7, "MOVE_STRAIGHT_REQUIRED": 8, "FINE_ALIGNMENT_REQUIRED": 9,
-    "DSO_NOT_READY": 10, "EXTERNAL_ROUTE_DOWN": 11, "RTK_CORRECTION_LOST": 12,
-    "STORAGE_NOT_WRITABLE": 13, "MAINTENANCE_HOLD": 14, "STARTUP_TIMEOUT": 15,
-    "OWNERSHIP_CONFLICT": 16, "INTERNAL_FAULT": 17,
-}
+# health: conditions that hold. inhibit: reasons the output must not be used (never empty unless
+# READY). Listed in display order.
+HEALTH = ("DASHBOARD_OK", "CONFIG_OK", "IMU_STREAM_OK", "GNSS_STREAM_OK", "GNSS_QUALITY_OK",
+          "NAV_PROCESS_OK", "NAV_OUTPUT_OK", "ALIGNMENT_OK", "HEADING_OK", "FINE_ALIGNMENT_OK",
+          "DSO_OK", "EXTERNAL_ROUTE_OK", "RTK_CORRECTION_OK", "STORAGE_OK", "VEHICLE_ACK_OK",
+          "TIME_SYNC_OK", "NO_DUPLICATE_PROCESS", "WIFI_OK")
+INHIBIT = ("BOOT_IN_PROGRESS", "CONFIG_INVALID", "IMU_MISSING_OR_STALE", "GNSS_MISSING_OR_STALE",
+           "GNSS_QUALITY_LOW", "NAV_NOT_RUNNING", "NAV_OUTPUT_STALE", "KEEP_STILL_REQUIRED",
+           "MOVE_STRAIGHT_REQUIRED", "FINE_ALIGNMENT_REQUIRED", "DSO_NOT_READY",
+           "EXTERNAL_ROUTE_DOWN", "RTK_CORRECTION_LOST", "STORAGE_NOT_WRITABLE", "MAINTENANCE_HOLD",
+           "STARTUP_TIMEOUT", "OWNERSHIP_CONFLICT", "INTERNAL_FAULT")
 
 # Optional READY conditions: config name -> (health bit, inhibit bit, label)
 CONDITIONS = {
@@ -67,7 +63,7 @@ CONDITIONS = {
 # inside RTK float periods with this driver (collectors/gnss_monitor.py), so it counts as float;
 # a poor unrated fix counts as SPP.
 GNSS_RANK = {None: 0, "none": 1, "spp": 2, "unrated_poor": 2, "float": 3, "unrated": 3, "fixed": 4}
-GNSS_CODE_NAMES = ("unknown", "none", "spp", "rtk_float", "rtk_fix")      # 0x05 gnss_quality
+GNSS_QUALITY_NAMES = ("unknown", "none", "spp", "rtk_float", "rtk_fix")   # by rank
 MIN_QUALITY = {"spp": 2, "float": 3, "rtk_float": 3, "fixed": 4, "fix": 4, "rtk_fix": 4}
 
 # Why "not READY" when it is only an alignment flag of the latest packet (the product state,
@@ -84,15 +80,9 @@ def gnss_rank(quality: Optional[str]) -> int:
     return GNSS_RANK.get(quality, 0)
 
 
-def mask(names, table) -> int:
-    out = 0
-    for n in names:
-        out |= 1 << table[n]
-    return out
-
-
-def names_of(value: int, table) -> List[str]:
-    return [n for n, b in sorted(table.items(), key=lambda kv: kv[1]) if value >> b & 1]
+def gnss_quality_name(quality: Optional[str]) -> str:
+    """The receiver quality as the snapshot names it (unknown, none, spp, rtk_float, rtk_fix)."""
+    return GNSS_QUALITY_NAMES[gnss_rank(quality)]
 
 
 def evaluate(inp: Dict) -> Dict:
@@ -162,11 +152,9 @@ def evaluate(inp: Dict) -> Dict:
         for r in why:
             if r and r not in reasons:
                 reasons.append(r)
-        return {"state": state, "state_code": STATE_CODE[state],
-                "requested_action": action, "requested_action_code": ACTION_CODE[action],
-                "action_text": ACTION_TEXT[action],
-                "health_flags": mask(health, HEALTH_BITS), "inhibit_flags": mask(inhibit, INHIBIT_BITS),
-                "inhibit": sorted(inhibit, key=INHIBIT_BITS.get), "reasons": reasons}
+        return {"state": state, "requested_action": action, "action_text": ACTION_TEXT[action],
+                "health": [h for h in HEALTH if h in health], "inhibit": [i for i in INHIBIT if i in inhibit],
+                "reasons": reasons}
 
     product_why = [r for r in (inp.get("product_reasons") or []) if r]
 

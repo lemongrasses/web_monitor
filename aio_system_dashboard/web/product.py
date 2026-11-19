@@ -67,7 +67,7 @@ def create_product_app(ctx):
     def api_settings():
         """What the Settings page shows besides Wi-Fi: Ready requirement, automatic start, vehicle."""
         auto = getattr(ctx, "autostart", None)
-        tx = getattr(ctx, "status_udp", None)
+        tx = getattr(ctx, "vehicle", None)       # the vehicle output layer, when there is one
         external = [d for d in ctx.cfg.nav_destinations() if d.get("kind") == "external"]
         return jsonify({
             "rtk": rtk_view(ctx.cfg),
@@ -79,11 +79,12 @@ def create_product_app(ctx):
 
     @app.route("/api/state")
     def api_state():
-        return jsonify(ctx.store.get("product", {}) or {})
+        # status_udp: the 0x05 sender's counters, from the vehicle output layer (absent without it)
+        return jsonify({**(ctx.store.get("product", {}) or {}), "status_udp": ctx.store.get("status_udp")})
 
     @app.route("/api/readiness")
     def api_readiness():
-        """The readiness snapshot alone: the same data the 0x05 status packet carries."""
+        """The readiness snapshot alone: with the vehicle output layer, also the numbers the 0x05 status packet carries."""
         snap = ctx.store.get("readiness")
         if not snap:
             return jsonify({"schema_version": 1, "state": "BOOTING", "reasons": ["System starting"]}), 503

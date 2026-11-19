@@ -654,7 +654,7 @@ Bits that are not implemented stay 0 (for example `VEHICLE_ACK_OK`, `RTK_CORRECT
 `TIME_SYNC_OK`, `WIFI_OK`); receivers ignore unknown bits. `nav_flags` is 0 while the 0x04 output
 is not fresh.
 
-**Receiver rules** (the reference implementation is `aio_system_dashboard/nav/vehicle_gate.py`):
+**Receiver rules** (the reference implementation is `aio_system_dashboard/vehicle/gate.py`):
 
 1. Start blocked. Block at once when no valid 0x05 arrived for 3 s, on a bad checksum or an
    unknown version, and when `session_id` changes (the dashboard restarted).

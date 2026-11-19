@@ -1,4 +1,7 @@
-"""Readiness: the pure evaluator, condition hysteresis, and the health engine that feeds it."""
+"""Readiness: the pure evaluator, condition hysteresis, and the health engine that feeds it.
+
+All by name: the wire numbers (codes, bit masks) belong to the vehicle output layer and are
+tested in test_vehicle_layer.py."""
 
 import copy
 import tempfile
@@ -25,9 +28,9 @@ def ev(**kw):
 class EvaluateTest(unittest.TestCase):
     def test_default_ready_is_the_product_ready(self):
         r = ev()
-        self.assertEqual((r["state"], r["requested_action"], r["inhibit_flags"]), ("READY", "NONE", 0))
+        self.assertEqual((r["state"], r["requested_action"], r["inhibit"]), ("READY", "NONE", []))
         for bit in ("NAV_PROCESS_OK", "NAV_OUTPUT_OK", "ALIGNMENT_OK", "HEADING_OK", "FINE_ALIGNMENT_OK"):
-            self.assertTrue(r["health_flags"] >> rd.HEALTH_BITS[bit] & 1, bit)
+            self.assertIn(bit, r["health"])
 
     def test_alignment_phases_and_actions(self):
         for key, state, action, bit in (("alignment", "KEEP_STILL", "HOLD_STILL", "KEEP_STILL_REQUIRED"),
@@ -36,7 +39,6 @@ class EvaluateTest(unittest.TestCase):
             r = ev(product_state="INITIALIZING", step={"key": key})
             self.assertEqual((r["state"], r["requested_action"]), (state, action))
             self.assertEqual(r["inhibit"], [bit])
-            self.assertEqual(r["state_code"], rd.STATES.index(state))
 
     def test_output_before_alignment_never_authorises(self):
         """0x04 flows long before alignment; only READY clears every inhibit bit."""
@@ -44,7 +46,7 @@ class EvaluateTest(unittest.TestCase):
                          ("STOPPED", None), ("UNKNOWN", None)):
             r = ev(product_state=st, step=step, nav_running=st != "STOPPED")
             self.assertNotEqual(r["state"], "READY")
-            self.assertNotEqual(r["inhibit_flags"], 0, st)
+            self.assertNotEqual(r["inhibit"], [], st)
 
     def test_required_condition_holds_ready_back(self):
         c = {"gnss_quality": {"required": True, "ok": False, "ready": False, "reason": "GNSS SPP"}}
@@ -55,7 +57,7 @@ class EvaluateTest(unittest.TestCase):
         c["gnss_quality"]["required"] = False                      # advisory: READY, health bit off
         r = ev(conditions=c)
         self.assertEqual(r["state"], "READY")
-        self.assertFalse(r["health_flags"] >> rd.HEALTH_BITS["GNSS_QUALITY_OK"] & 1)
+        self.assertNotIn("GNSS_QUALITY_OK", r["health"])
 
     def test_degraded_after_ready_asks_for_a_safe_stop(self):
         lost = {"dso": {"required": True, "ok": False, "ready": False, "reason": "DSO odometry bad"}}
@@ -117,7 +119,7 @@ class EvaluateTest(unittest.TestCase):
                          ("NAV_STARTING", "HOLD_STILL", ["Starting AIO NAV (attempt 1)"]))
 
     def test_not_ready_always_has_an_inhibit_bit(self):
-        """The vehicle may check only inhibit_flags == 0, so every other state must set a bit,
+        """The vehicle may check only inhibit_flags == 0, so every other state must give a reason,
         whatever combination of inputs (the product state is debounced and can lag)."""
         import itertools
         for st, run, fresh, flags, ever in itertools.product(
@@ -126,10 +128,10 @@ class EvaluateTest(unittest.TestCase):
             r = ev(product_state=st, nav_running=run, nav_fresh=fresh, nav_flags=flags, ever_ready=ever,
                    step={"key": "alignment"} if st == "INITIALIZING" else None)
             if r["state"] == "READY":
-                self.assertEqual(r["inhibit_flags"], 0)
+                self.assertEqual(r["inhibit"], [])
                 self.assertTrue(fresh and run and flags == ALIGNED, (st, run, fresh, flags))
             else:
-                self.assertNotEqual(r["inhibit_flags"], 0, (st, run, fresh, flags, ever))
+                self.assertNotEqual(r["inhibit"], [], (st, run, fresh, flags, ever))
 
     def test_boot_comes_first_even_while_autostart_waits(self):
         r = ev(product_state="UNKNOWN", nav_running=False, booting=True,
@@ -146,10 +148,6 @@ class EvaluateTest(unittest.TestCase):
         self.assertNotEqual(r["state"], "READY")
         self.assertIn("CONFIG_INVALID", r["inhibit"])
         self.assertIn("unknown condition 'gnss-quality'", r["reasons"][0])
-
-    def test_masks_round_trip(self):
-        r = ev(product_state="INITIALIZING", step={"key": "heading_valid"}, nav_fresh=True)
-        self.assertEqual(rd.names_of(r["inhibit_flags"], rd.INHIBIT_BITS), r["inhibit"])
 
     def test_gnss_rank_counts_unrated_as_float(self):
         need = rd.MIN_QUALITY["float"]
@@ -266,7 +264,6 @@ class EngineTest(unittest.TestCase):
         r = self.run_for(eng, 6)
         product = self.store.get("product")
         self.assertEqual((r["state"], product["health"]["state"]), ("READY", "READY"))
-        self.assertEqual(r["session_id"], eng.session_id)
         self.assertEqual(product["readiness"]["state"], "READY")
         self.assertEqual(r["nav"]["flags_c"], 0xE8)
 
@@ -454,7 +451,7 @@ class EngineTest(unittest.TestCase):
         self.stop_process()
         r = self.run_for(eng, 4)
         self.assertEqual((r["state"], r["requested_action"]), ("MAINTENANCE", "MAINTENANCE_HOLD"))
-        self.assertNotEqual(r["inhibit_flags"], 0)
+        self.assertNotEqual(r["inhibit"], [])
 
     def test_rtk_is_required_by_default_and_can_be_switched_off(self):
         from aio_system_dashboard.state.health import set_rtk_setting
@@ -478,14 +475,13 @@ class EngineTest(unittest.TestCase):
         self.gnss("spp")
         self.run_for(eng, 4)
         steps = {c["key"]: c for c in self.store.get("product")["checks"]}
-        self.assertEqual(list(steps), ["sensors", "gnss", "nav", "alignment", "vehicle"])
+        self.assertEqual(list(steps), ["sensors", "gnss", "nav", "alignment"])   # vehicle link: test_vehicle_layer
         self.assertEqual((steps["sensors"]["level"], steps["sensors"]["label"]), ("warning", "Waiting"))
         self.assertIn({"k": "Sensor drivers", "v": "Starting"}, steps["sensors"]["rows"])
         self.assertEqual((steps["gnss"]["level"], steps["gnss"]["label"]), ("warning", "SPP"))
         self.assertIn({"k": "RTK required for Ready", "v": "Yes (RTK float or fix)"}, steps["gnss"]["rows"])
         self.assertEqual((steps["nav"]["level"], steps["nav"]["label"]), ("healthy", "Running"))
         self.assertEqual((steps["alignment"]["level"], steps["alignment"]["label"]), ("warning", "Step 2 of 3"))
-        self.assertEqual(steps["vehicle"]["label"], "Ready signal off")       # no 0x05 sender here
 
     def test_time_in_state_is_for_the_state_shown(self):
         """Regression: "Degraded for 1:00" after a minute of Ready and a moment of Degraded."""

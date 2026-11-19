@@ -10,14 +10,14 @@ Payload (little-endian, fixed 36 bytes)::
 
     off size field              type  meaning
       0   1  protocol_version   u8    1
-      1   1  state              u8    readiness.STATES index (6 = READY)
-      2   1  requested_action   u8    readiness.ACTIONS index
+      1   1  state              u8    protocol.STATE_CODE (6 = READY)
+      2   1  requested_action   u8    protocol.ACTION_CODE
       3   1  gnss_quality       u8    0 unknown, 1 none, 2 SPP, 3 RTK float, 4 RTK fix
       4   4  session_id         u32   new at every dashboard start
       8   4  sequence           u32   +1 per packet, wraps to 0
      12   8  uptime_ms          u64   dashboard monotonic uptime
-     20   4  health_flags       u32   readiness.HEALTH_BITS
-     24   4  inhibit_flags      u32   readiness.INHIBIT_BITS; any bit set = do not use 0x04
+     20   4  health_flags       u32   protocol.HEALTH_BITS
+     24   4  inhibit_flags      u32   protocol.INHIBIT_BITS; any bit set = do not use 0x04
      28   1  nav_flags          u8    0x04 flags, C-side bit order (NOT bit-reversed like 0x04)
      29   1  reserved           u8    0
      30   2  nav_rate_dhz       u16   navigation output rate x 10
@@ -80,7 +80,7 @@ def decode(data: bytes, message_id: int = DEFAULT_MESSAGE_ID) -> Optional[Dict]:
 
 
 def from_snapshot(snap: Dict, sequence: int) -> Dict:
-    """The packet fields of a readiness snapshot (state/health.py)."""
+    """The packet fields of a readiness snapshot with its wire numbers (vehicle/output.py)."""
     nav = snap.get("nav") or {}
     return {"state": snap["state_code"], "requested_action": snap["requested_action_code"],
             "gnss_quality": snap.get("gnss_quality_code", 0), "session_id": snap["session_id"],

@@ -41,13 +41,13 @@ aio_system_dashboard/
   config.py            config/dashboard.yaml + the active aio-nav-ros config file (re-read when it changes)
   modules.py           optional modules (packages installed only with --with-<name>; today: replay)
   nav/                 decoder.py (0x04, with the VUPT + velocity_up fixes), trajectory.py (last 60 s
-                       @10 Hz + older @1 Hz), status_packet.py (0x05), vehicle_gate.py (reference receiver)
+                       @10 Hz + older @1 Hz)
   collectors/          nav_udp (raw rate), system, services, network, ros2 (sampled), gnss_monitor
                        (GNSS lamp), gnss_diag (GNSS / RTK page), gnss_time (clock -> chrony), speed,
-                       dso_watchdog, ros_guard, status_udp (0x05 sender), hotspot_relay, fake
+                       dso_watchdog, ros_guard, hotspot_relay, fake
   media/               on-demand camera image / point-cloud preview (tap.py), decoders, fake frames
   state/               health.py (5 Hz evaluator: product state, alignment step, advisories, events),
-                       readiness.py (states, actions and inhibit bits for the vehicle), still.py
+                       readiness.py (states, actions and reasons, by name), still.py
                        (vehicle still detection), indicator.py (debounced lamps), store.py
   actions/             fixed actions only: process_control (AIO NAV / DSO), service_control (drivers),
                        autostart, driver_watchdog, diagnostics, aionav_config (config editor),
@@ -57,6 +57,9 @@ aio_system_dashboard/
                        tools.py (editor, terminal), auth.py, access.py, settings_api.py (Wi-Fi / RTK on
                        both apps), server.py, i18n.py + i18n_zh.py (user-page languages)
   templates/, static/  Bootstrap + Alpine.js + Leaflet + xterm.js (vendored, offline)
+  vehicle/             output to the vehicle, a layer the core never imports: output.py (listens to the
+                       health step), protocol.py (state / action codes, bit numbers), packet.py (0x05),
+                       sender.py (UDP), gate.py (reference receiver for the vehicle side)
 aio_dashboard_replay/  optional module: Live / Bag replay switch and bag player
 aio_sysmon/            optional system recorder (separate service)
 ```

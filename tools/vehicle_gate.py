@@ -7,7 +7,7 @@ navigation becomes usable or blocked.
     python3 tools/vehicle_gate.py --port 9000 --status-port 9001   # 0x05 sent elsewhere
     python3 tools/vehicle_gate.py --port 9000 --verbose        # also every status packet
 
-The rules are in aio_system_dashboard/nav/vehicle_gate.py (docs/OPERATION.md, "Status packet").
+The rules are in aio_system_dashboard/vehicle/gate.py (docs/OPERATION.md, "Status packet").
 Exit with Ctrl+C; a summary of packets, losses and time spent usable is printed.
 """
 
@@ -19,8 +19,8 @@ import time
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-from aio_system_dashboard.nav.vehicle_gate import VehicleGate      # noqa: E402
-from aio_system_dashboard.state.readiness import ACTIONS, STATES    # noqa: E402
+from aio_system_dashboard.vehicle.gate import VehicleGate          # noqa: E402
+from aio_system_dashboard.vehicle.protocol import ACTIONS, STATES   # noqa: E402
 
 
 def main() -> int:

@@ -40,8 +40,10 @@ flowchart TB
   COL -. "copies of 0x04 / 0x05<br/>(hotspot part only)" .-> HOT[("Phones / tablets<br/>on the hotspot")]
 ```
 
-- One snapshot (`state/readiness.py`) feeds the pages, `/api/readiness` and the 0x05 packet, so
-  they never disagree.
+- One snapshot (`state/readiness.py`, by name) feeds the pages, `/api/readiness`, the automatic
+  start and the 0x05 packet, so they never disagree. The 0x05 side is its own layer
+  (`vehicle/`): it listens to the health step, adds the wire numbers and sends; the core never
+  imports it.
 - The dashboard is the only listener on 127.0.0.1:9000; `output_udp` in `aio_nav.yaml` is the
   vehicle. 0x05 goes to that same address and port (`status_udp.destination: auto`).
 - Process control starts and stops AIO NAV and DSO together (`nav.control_group`); the automatic
@@ -173,7 +175,7 @@ flowchart TD
 
 ## 6. Vehicle side
 
-The reference receiver, `nav/vehicle_gate.py` (`tools/vehicle_gate.py` runs it on live UDP).
+The reference receiver, `vehicle/gate.py` (`tools/vehicle_gate.py` runs it on live UDP).
 
 ```mermaid
 flowchart TD

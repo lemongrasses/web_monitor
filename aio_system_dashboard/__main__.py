@@ -33,7 +33,6 @@ from .collectors.ros_guard import RosIsolationGuard
 from .collectors.network import NetworkCollector
 from .collectors.ros2 import Ros2Collector
 from .collectors.services import ServicesCollector
-from .collectors.status_udp import StatusUdpPublisher
 from .collectors.system import SystemCollector
 from . import modules
 from .config import drivers_service, fallback_config, load_config_safely, remember_good, resolve_path
@@ -45,6 +44,7 @@ from .state.store import EventLog, StateStore
 from .web.server import BoundedWSGIServer
 from .web.maintenance import create_maintenance_app
 from .web.product import create_product_app
+from .vehicle.output import VehicleOutput
 
 logger = logging.getLogger("aio_dashboard")
 
@@ -105,15 +105,16 @@ class DashboardContext:
         self.data = DataRoots(cfg["data"]["roots"])
         self.ros_env_at_start = dict(cfg.ros_env())   # this process's own ROS connection uses these
         self.actions.after_run = self._after_action
-        # Start-up coordinator (autostart) and the 0x05 status packet; both off unless configured.
+        # Start-up coordinator (autostart); off unless configured.
         self.autostart = StartupCoordinator(cfg, self.store, self.actions, self.events,
                                             on_start=lambda: self.nav.clear("AIO NAV automatic start"))
         self.health.autostart_status = self.autostart.status
         self.health.clock_status = self.gnss_clock.status if self.gnss_clock else None
         self.driver_watchdog = DriverWatchdog(cfg, self.store, self.actions, self.events)
-        self.status_udp = StatusUdpPublisher(cfg, self.store)
-        self.status_udp.relay = self.hotspot_relay.send
-        self.health.status_publisher = self.status_udp
+        # Output to the vehicle (0x05): a separate layer that listens to the health step.
+        self.vehicle = VehicleOutput(cfg, self.store, relay=self.hotspot_relay.send)
+        self.health.snapshot_listeners.append(self.vehicle.on_snapshot)
+        self.health.extra_steps.append(self.vehicle.startup_step)
         self.modules = modules.load(cfg)      # optional modules (installed with --with-<name>)
         self.maint_pages = []                 # sidebar of the Maintenance app, filled when it is built
         self._workers = [self.nav, self.system, self.services, self.network, self.ros, self.health,
@@ -165,7 +166,7 @@ class DashboardContext:
             w.stop()
         for w in self._workers:
             w.join()
-        self.status_udp.close()
+        self.vehicle.close()
 
 
 def main(argv=None) -> int:

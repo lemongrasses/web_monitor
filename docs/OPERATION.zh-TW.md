@@ -498,7 +498,7 @@ C/C++ 請使用緊密排列的 struct（`#pragma pack(push, 1)`），欄位順�
 
 尚未實作的位元維持 0（例如 `VEHICLE_ACK_OK`、`RTK_CORRECTION_OK`、`TIME_SYNC_OK`、`WIFI_OK`）；接收端應忽略未知位元。0x04 輸出不是即時資料時，`nav_flags` 為 0。
 
-**接收端規則**（參考實作：`aio_system_dashboard/nav/vehicle_gate.py`）：
+**接收端規則**（參考實作：`aio_system_dashboard/vehicle/gate.py`）：
 
 1. 預設為不可用。3 秒內沒有收到有效的 0x05、檢查碼錯誤、版本不支援，或 `session_id` 改變（儀表板重新啟動）時，立即判定為不可用。
 2. 只有在 `state` 為 READY（6）**且** `inhibit_flags` 為 0，並在同一個 session 中持續 2 秒，才判定為可用。

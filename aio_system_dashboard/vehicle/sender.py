@@ -1,8 +1,8 @@
-"""Sends the readiness snapshot to the vehicle as the 0x05 status packet (nav/status_packet.py).
+"""Sends the readiness snapshot to the vehicle as the 0x05 status packet (vehicle/packet.py).
 
-Called from the health step (about 5 Hz): a packet goes out every 1/rate_hz seconds and at once
-when the state, requested action or inhibit mask changes, so a transition never waits for the
-next tick. It keeps sending after READY: silence must mean "do not use".
+Called for every readiness snapshot (vehicle/output.py, about 5 Hz): a packet goes out every
+1/rate_hz seconds and at once when the state, requested action or inhibit mask changes, so a
+transition never waits for the next tick. It keeps sending after READY: silence must mean "do not use".
 
 Destination: status_udp.destination, or "auto" = output_udp of the active aio_nav.yaml, the
 same address and port where the vehicle already reads 0x04. Any number of senders may send to
@@ -20,7 +20,7 @@ import time
 from typing import Dict, Optional, Tuple
 
 from ..config import parse_host_port
-from ..nav import status_packet
+from . import packet as status_packet
 
 logger = logging.getLogger(__name__)
 

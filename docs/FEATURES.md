@@ -59,7 +59,7 @@ flowchart LR
 | 功能 | 位置 | 程式 |
 |------|------|------|
 | 0x04 接收與解碼 | 全部頁面 | `collectors/nav_udp.py`、`nav/decoder.py` |
-| 健康評估(頁面 6 種狀態、給車 10 種狀態) | 全部頁面、0x05 | `state/health.py`、`state/readiness.py` |
+| 健康評估(頁面 6 種狀態、10 種階段) | 全部頁面、自動啟動 | `state/health.py`、`state/readiness.py`(只用名稱,不含數字代碼) |
 | 系統 / 服務 / 網路 / ROS 監看 | 維護頁 | `collectors/` |
 | 軌跡、資料下載 | 使用者頁 導航、資料 | `nav/trajectory.py`、`data_access/` |
 

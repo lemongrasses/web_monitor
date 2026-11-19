@@ -24,8 +24,8 @@ Pure: feed packets with their arrival time, ask allowed(now).
 import math
 from typing import Dict, Optional, Tuple
 
-from . import status_packet
-from .decoder import NAV_MSG_ID_SOLUTION, parse_nav_packet
+from . import packet as status_packet
+from ..nav.decoder import NAV_MSG_ID_SOLUTION, parse_nav_packet
 
 READY_CODE = 6
 REORDER_WINDOW = 5         # status packets (2.5 s at 2 Hz) that may arrive late and be ignored

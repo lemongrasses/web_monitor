@@ -149,7 +149,7 @@ class RelayTest(unittest.TestCase):
 
     def test_nav_and_status_packets_are_handed_to_the_relay(self):
         from aio_system_dashboard.collectors.nav_udp import NavUdpCollector
-        from aio_system_dashboard.collectors.status_udp import StatusUdpPublisher
+        from aio_system_dashboard.vehicle.sender import StatusUdpPublisher
         got = []
         nav = NavUdpCollector("127.0.0.1:9000", DEFAULTS["nav"]["trajectory"], relay=got.append)
         nav.handle_datagram(b"\x00garbage", 1.0)                      # copied as received

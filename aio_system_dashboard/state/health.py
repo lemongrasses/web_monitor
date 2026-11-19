@@ -15,10 +15,9 @@ shows DEGRADED (readiness.py). The 10-state readiness for the vehicle is derived
 
 import datetime
 import logging
-import secrets
 import threading
 import time
-from typing import Dict, List, Optional, Tuple
+from typing import Callable, Dict, List, Optional, Tuple
 
 from ..actions import process_control
 from . import readiness as rd
@@ -193,9 +192,8 @@ class HealthEngine:
         self._run_since: Optional[float] = None       # when the current AIO NAV process was first seen
         self._step: Optional[Dict] = None
         self._fresh_since: Optional[float] = None
-        # Readiness (state/readiness.py): one snapshot for the pages, /api/readiness and 0x05.
-        self.session_id = secrets.randbits(32) or 1     # new at every dashboard start
-        self._sequence = 0
+        # Readiness (state/readiness.py): one snapshot for the pages, /api/readiness, the start-up
+        # coordinator and the listeners below (the vehicle output layer adds the 0x05 numbers).
         rcfg = cfg["readiness"]
         self.conditions = {
             n: rd.Condition(rcfg["gnss_stable_s"] if n == "gnss_quality" else rcfg["stable_s"],
@@ -218,7 +216,9 @@ class HealthEngine:
         self.clock_status = None                       # callable -> dict: GNSS time vs the system clock
         self.still_limits = None                       # state/still.StillLimits, set by the app
         self.last_step: Optional[float] = None         # monotonic time of the last step (watchdog)
-        self.status_publisher = None                   # 0x05 sender, set by the app
+        # Other layers, set by the app; the core never imports them (vehicle/output.py is one):
+        self.snapshot_listeners: List[Callable[[Dict, float], None]] = []   # (snapshot, now), before it is stored
+        self.extra_steps: List[Callable[[bool], Dict]] = []   # (nav output fresh) -> a start-up step for the pages
         self._stop = threading.Event()
         self._thread: Optional[threading.Thread] = None
 
@@ -347,6 +347,11 @@ class HealthEngine:
                   for k in ("zupt", "zihr", "nhc", "vupt", "gnss")}
 
         readiness = self._readiness(now, shown, nav, nav_svc, gq, fresh, latest, in_grace)
+        for listener in self.snapshot_listeners:
+            try:
+                listener(readiness, now)
+            except Exception:                  # another layer must never stop the health step
+                logger.exception("readiness listener failed")
         health_view = self._health_view(shown, readiness)
 
         checks = self._startup_checks(readiness, services, nav_svc, latest, fresh, health_view["state"],
@@ -424,7 +429,6 @@ class HealthEngine:
                     "age_s": nav.get("age_s"), "destinations": self._destinations(network)},
             "indicators": indicators,
             "control": self._nav_control(nav_svc),
-            "status_udp": self.status_publisher.status() if self.status_publisher is not None else None,
             "aiding": aiding,
             "advisories": advisories,
             "storage": storage,
@@ -436,8 +440,6 @@ class HealthEngine:
         maint = self._maintenance(now, services, network, system, shown, u_shown, nav, expected)
         maint["product_state"] = health_view["state"]      # the same state the user pages show
         self.store.set("maint", maint)
-        if self.status_publisher is not None:
-            self.status_publisher.publish(readiness, now)
 
     # -------------------------------------------------------------- readiness
     def _imu_topic(self, ros: Dict) -> Optional[Dict]:
@@ -494,7 +496,7 @@ class HealthEngine:
         need = rd.MIN_QUALITY.get(str(want).lower(), 3)
         label = GNSS_LEVEL.get(quality, (None, "no data"))[1]
         out["gnss_quality"] = (rd.gnss_rank(quality) >= need,
-                               f"GNSS {label}; needs {rd.GNSS_CODE_NAMES[need].replace('_', ' ')} or better")
+                               f"GNSS {label}; needs {rd.GNSS_QUALITY_NAMES[need].replace('_', ' ')} or better")
 
         dso = (self.store.get("watchdog", {}) or {}).get("dso") or {}
         age = dso.get("last_msg_age_s")
@@ -575,15 +577,11 @@ class HealthEngine:
             if self._rd_state is not None:
                 self.events.add(level, "readiness", f"Readiness {snap['state']}", "; ".join(snap["reasons"]))
             self._rd_state, self._rd_since = snap["state"], now
-        self._sequence = (self._sequence + 1) & 0xFFFFFFFF
         quality = gq.get("quality") if gq.get("available") else None
-        code = {"none": 1, "spp": 2, "unrated_poor": 2, "float": 3, "unrated": 3, "fixed": 4}.get(quality, 0)
         snap.update({
-            "schema_version": rd.SCHEMA_VERSION, "session_id": self.session_id, "sequence": self._sequence,
-            "state_age_s": round(now - self._rd_since, 1),
+            "schema_version": rd.SCHEMA_VERSION, "state_age_s": round(now - self._rd_since, 1),
             "observed_at": datetime.datetime.now().astimezone().isoformat(timespec="milliseconds"),
-            "uptime_ms": int((now - self.started) * 1000),
-            "gnss_quality": rd.GNSS_CODE_NAMES[code], "gnss_quality_code": code,
+            "gnss_quality": rd.gnss_quality_name(quality),
             "nav": {"age_ms": None if nav.get("age_s") is None else int(nav["age_s"] * 1000),
                     "rate_hz": round(nav.get("rate_hz") or 0.0, 1),
                     "flags_c": int(latest.get("flags_c", 0)) if fresh and latest else 0},
@@ -597,8 +595,8 @@ class HealthEngine:
 
     def _startup_checks(self, r: Dict, services: Dict, nav_svc: Dict, latest: Dict, fresh: bool,
                         shown: str, align_lamps: Dict, nav: Dict) -> List[Dict]:
-        """The power-on sequence for the user pages, as five steps: sensors, GNSS / RTK, AIO NAV,
-        alignment, vehicle link. Each has a level, a short status and rows of plain detail
+        """The power-on sequence for the user pages, as four steps: sensors, GNSS / RTK, AIO NAV,
+        alignment; then the steps of other layers (extra_steps: the vehicle link). Each has a level, a short status and rows of plain detail
         ({k, v}) that the page shows when the step is opened. Same data as the readiness snapshot."""
         conds = {c["name"]: c for c in r.get("conditions") or []}
         auto = r.get("autostart") or {}
@@ -682,25 +680,11 @@ class HealthEngine:
                       "label": "Done" if all(done) else (f"Step {sum(done) + 1} of 3" if fresh else "Not started"),
                       "hint": (step or {}).get("action", "")})
 
-        # 5. Vehicle link: what the vehicle is sent (UDP: sent, never confirmed received).
-        tx = self.status_publisher.status() if self.status_publisher is not None else {"enabled": False}
-        externals = [d for d in self.cfg.nav_destinations() if d.get("kind") == "external"]
-        dest = f'{externals[0]["host"]}:{externals[0]["port"]}' if externals else None
-        rows = [{"k": "Vehicle address", "v": dest or "Not set"},
-                {"k": "Navigation data (0x04)", "v": ("Sending" if fresh else "Not sending") if dest else "Not set"},
-                {"k": "Ready signal (0x05)", "v": ("Sending" if tx.get("sent") and not tx.get("destination_error") else
-                                                   "Problem" if tx.get("destination_error") else "Starting")
-                                                  if tx.get("enabled") else "Off"}]
-        if not dest:
-            v_level, v_label, hint = WARNING, "No vehicle address", "Set the vehicle address in Maintenance, AIO NAV config."
-        elif not tx.get("enabled"):
-            v_level, v_label, hint = IDLE, "Ready signal off", "The vehicle gets navigation data but no Ready signal."
-        elif tx.get("destination_error") or tx.get("errors"):
-            v_level, v_label, hint = WARNING, "Problem", tx.get("destination_error") or tx.get("last_error") or ""
-        else:
-            v_level, v_label, hint = HEALTHY, "Sending", "Sent over UDP: the vehicle does not reply, so delivery is not confirmed."
-        steps.append({"key": "vehicle", "name": "Vehicle link", "level": v_level, "label": v_label,
-                      "rows": rows, "hint": hint})
+        for extra in self.extra_steps:          # other layers (vehicle/output.py: the vehicle link)
+            try:
+                steps.append(extra(fresh))
+            except Exception:
+                logger.exception("start-up step of another layer failed")
         return steps
 
     def _health_view(self, shown: str, r: Dict) -> Dict:

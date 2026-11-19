@@ -7,11 +7,11 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
-from aio_system_dashboard.collectors.status_udp import StatusUdpPublisher
+from aio_system_dashboard.vehicle.sender import StatusUdpPublisher
 from aio_system_dashboard.config import DEFAULTS, Config
-from aio_system_dashboard.nav import status_packet as sp
+from aio_system_dashboard.vehicle import packet as sp
 from aio_system_dashboard.nav.decoder import encode_nav_packet, flags_to_int
-from aio_system_dashboard.nav.vehicle_gate import VehicleGate
+from aio_system_dashboard.vehicle.gate import VehicleGate
 from aio_system_dashboard.state.store import StateStore
 from tests import manuals
 
