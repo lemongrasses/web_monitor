@@ -78,7 +78,13 @@
         const r = this.s && this.s.readiness;
         return !!(r && r.autostart && r.autostart.hold);
       },
-      action() { return this.connected && this.s && this.s.health ? ACTION[this.s.health.action] : null; },
+      action() {
+        if (!this.connected || !this.s || !this.s.health) return null;
+        const a = this.s.health.action;
+        // "Stop using navigation" is said to a vehicle; without one the state line says what happened
+        if (a === "SAFE_STOP" && !this.vehicle) return null;
+        return ACTION[a];
+      },
       actionIcon() { const a = this.action(); return a ? a[0] : ""; },
       actionText() { const a = this.action(); return a ? tr(a[1]) : ""; },
       sinceText() {
@@ -90,17 +96,38 @@
         if (!this.connected) return "idle";
         return { READY: "go", INITIALIZING: "work", STARTING: "info", DEGRADED: "stop", FAULT: "stop" }[this.state] || "idle";
       },
+      // The environment (state/environment.py): with no vehicle connected the page speaks of the
+      // data being collected, not of a vehicle using navigation.
+      env(key) { const e = this.s && this.s.environment; return (e && e[key]) || {}; },
+      get vehicle() { return this.env("vehicle").value !== false; },
+      step(key) { return ((this.s && this.s.checks) || []).find((c) => c.key === key) || null; },
       headline() {
         if (this.actionText()) return this.actionText();
-        if (this.state === "READY") return tr("Ready to use");
+        if (this.state === "READY") {
+          if (this.vehicle) return tr("Ready to use");
+          const rec = this.step("recording");
+          return rec && rec.level === "healthy" ? tr("Recording, data usable") : tr("Ready, not recording");
+        }
         return this.stateTitle;
       },
+      envChip() {
+        const e = this.s && this.s.environment;
+        if (!this.connected || !e || !e.network) return "";
+        const net = { wired: tr("Cable"), wifi: tr("Wi-Fi"), none: tr("No network") }[e.network.value] || tr("Unknown");
+        const rtk = e.rtk.value === true ? "RTK" : e.rtk.value === false ? tr("No RTK") : "RTK ?";
+        return [net, rtk].concat(e.vehicle.value ? [tr("Vehicle")] : []).join(" · ");
+      },
+      maintUrl(path) { return location.protocol + "//" + location.hostname + ":" + (window.AIO_MAINT_PORT || 8081) + path; },
       whatLine() {
         if (this.actionText() || this.state === "READY") return this.stateTitle;
         return this.stateDetail;
       },
       whyLine() { return this.actionText() ? this.stateDetail : ""; },
-      // Ring segment i = start-up step i: its level, or idle while there is none.
+      // Ring segment i = step i: its level, or idle while there is none. n arcs share the circle.
+      arcCount() { return (this.connected && this.s && this.s.checks && this.s.checks.length) || 6; },
+      arcShown(i) { return i < this.arcCount(); },
+      arcDash() { const seg = 276.46 / this.arcCount(); return (seg - 10).toFixed(2) + " 276.46"; },
+      arcOffset(i) { return (-(i * 276.46 / this.arcCount() + 5)).toFixed(2); },
       arc(i) {
         const c = this.connected && this.s && this.s.checks && this.s.checks[i];
         return c ? c.level : "idle";

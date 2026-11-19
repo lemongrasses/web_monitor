@@ -107,7 +107,8 @@ def create_base_app(name: str, ctx) -> Flask:
     @app.context_processor
     def _inject():
         return {"fake_mode": ctx.cfg.fake,
-                "devices": ctx.cfg["devices"]}
+                "devices": ctx.cfg["devices"],
+                "maint_port": ctx.cfg["maintenance"]["port"]}
 
     @app.after_request
     def _no_cache_api(resp):

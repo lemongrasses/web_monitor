@@ -292,7 +292,8 @@ def _read_aio_nav_params(path: str) -> Dict[str, Any]:
         path = discover_aio_nav_config()
     result: Dict[str, Any] = {"path": path, "auto": auto, "loaded": False, "output_udp": "",
                               "output_rate": None, "fusion_txt_path": "", "ros_domain_id": None,
-                              "ros_localhost_only": None, "use_sim_time": None, "vupt": False}
+                              "ros_localhost_only": None, "use_sim_time": None, "vupt": False,
+                              "save_fusion_txt": None, "save_parsed_txt": None}
     if not path:
         result["error"] = "aio_nav.yaml not found in the usual locations; set nav.aio_nav_config"
         return result
@@ -314,8 +315,9 @@ def _read_aio_nav_params(path: str) -> Dict[str, Any]:
             for key in ("ros_domain_id", "ros_localhost_only"):
                 v = params.get(key)
                 result[key] = int(v) if isinstance(v, (int, float)) and not isinstance(v, bool) else None
-            if isinstance(params.get("use_sim_time"), bool):
-                result["use_sim_time"] = params["use_sim_time"]
+            for key in ("use_sim_time", "save_fusion_txt", "save_parsed_txt"):
+                if isinstance(params.get(key), bool):
+                    result[key] = params[key]
             odo = params.get("Odometry")
             result["vupt"] = bool(odo.get("vupt")) if isinstance(odo, dict) else False
             break

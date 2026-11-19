@@ -497,13 +497,13 @@ class EngineTest(unittest.TestCase):
         self.gnss("spp")
         self.run_for(eng, 4)
         steps = {c["key"]: c for c in self.store.get("product")["checks"]}
-        self.assertEqual(list(steps), ["sensors", "gnss", "nav", "alignment"])   # vehicle link: test_vehicle_layer
+        self.assertEqual(list(steps), ["sensors", "gnss", "nav", "alignment", "recording", "storage"])   # vehicle link: test_vehicle_layer
         self.assertEqual((steps["sensors"]["level"], steps["sensors"]["label"]), ("warning", "Waiting"))
         self.assertIn({"k": "Sensor drivers", "v": "Starting"}, steps["sensors"]["rows"])
         self.assertEqual((steps["gnss"]["level"], steps["gnss"]["label"]), ("warning", "SPP"))
         self.assertIn({"k": "RTK required for Ready", "v": "Yes (RTK float or fix)"}, steps["gnss"]["rows"])
         self.assertEqual((steps["nav"]["level"], steps["nav"]["label"]), ("healthy", "Running"))
-        self.assertEqual((steps["alignment"]["level"], steps["alignment"]["label"]), ("warning", "Step 2 of 3"))
+        self.assertEqual((steps["alignment"]["level"], steps["alignment"]["label"]), ("busy", "Step 2 of 3"))   # blue: in progress
 
     def test_time_in_state_is_for_the_state_shown(self):
         """Regression: "Degraded for 1:00" after a minute of Ready and a moment of Degraded."""

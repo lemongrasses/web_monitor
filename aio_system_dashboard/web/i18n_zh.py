@@ -271,6 +271,17 @@ ZH = {
     "RTK: detected automatically": "RTK：自動偵測", "Vehicle: detected automatically": "車輛：自動偵測",
     "RTK is required for Ready": "就緒需要 RTK", "Ready no longer waits for RTK": "就緒不再等待 RTK",
     "No vehicle connected": "沒有連接車輛",
+    # user-page steps: recording and storage (state/health.py)
+    "Recording": "記錄", "Checking": "檢查中", "Writing": "寫入中", "Off": "關閉",
+    "Folder not found": "找不到資料夾", "Not writing": "沒有寫入", "Full": "已滿", "Almost full": "快滿了",
+    "Folder": "資料夾", "Why": "原因", "This recording": "這次已記錄", "Write rate": "寫入速度",
+    "Newest file": "最新檔案", "Last write": "上次寫入", "Free": "剩餘", "Recording time left": "還能記錄",
+    "Not used here": "這裡不使用", "No RTK": "無 RTK", "GNSS": "GNSS",
+    "AIO NAV is set not to save logs (save_fusion_txt, save_parsed_txt)":
+        "AIO NAV 設定為不儲存紀錄（save_fusion_txt、save_parsed_txt）",
+    "The log folder of AIO NAV was not found": "找不到 AIO NAV 的紀錄資料夾",
+    "Recording, data usable": "正在記錄，資料可用", "Ready, not recording": "就緒，但沒有在記錄",
+    "Environment: {0}": "環境：{0}", "No network": "沒有網路", "Vehicle": "車輛", "View in Maintenance (read only)": "在維護頁查看（唯讀）",
 }
 
 PATTERNS = [
@@ -347,6 +358,13 @@ PATTERNS = [
     (r"cannot save: (.+)", "無法儲存：{0}"),
     (r"Wi-Fi change to (.+) requested", "已要求將 Wi-Fi 變更為 {0}"),
     (r"Connection out works, over (.+)", "對外連線正常，經由 {0}"),
+    (r"(\d+) GB free", "剩 {0} GB"),
+    (r"([\d.]+) GB \((\d+)%\)", "{0} GB（{1}%）"),
+    (r"([\d.]+) MB/min", "{0} MB／分鐘"),
+    (r"(\d+) s ago", "{0} 秒前"),
+    (r"(\d+) min ago", "{0} 分鐘前"),
+    (r"about (\d+) h", "約 {0} 小時"),
+    (r"about (\d+) min", "約 {0} 分鐘"),
     (r"No connection out \((.+)\)", "沒有對外連線（{0}）"),
     (r"Vehicle address (\S+) \(output_udp in aio_nav\.yaml\)", "車端位址 {0}（aio_nav.yaml 的 output_udp）"),
 ]

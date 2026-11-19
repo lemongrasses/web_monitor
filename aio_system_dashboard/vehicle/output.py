@@ -47,9 +47,11 @@ class VehicleOutput:
         self.sender.close()
 
     # ------------------------------------------------------------ user pages
-    def startup_step(self, fresh: bool) -> Dict:
+    def startup_step(self, fresh: bool, env: Optional[Dict] = None) -> Optional[Dict]:
         """The "Vehicle link" step of the user pages: what the vehicle is sent (UDP: sent, never
-        confirmed received)."""
+        confirmed received). None (no step) where the environment has no vehicle."""
+        if ((env or {}).get("vehicle") or {}).get("value") is False:
+            return None
         tx = self.status()
         externals = [d for d in self.cfg.nav_destinations() if d.get("kind") == "external"]
         dest = f'{externals[0]["host"]}:{externals[0]["port"]}' if externals else None
@@ -59,7 +61,7 @@ class VehicleOutput:
                                                    "Problem" if tx.get("destination_error") else "Starting")
                                                   if tx.get("enabled") else "Off"}]
         if not dest:
-            level, label, hint = WARNING, "No vehicle address", "Set the vehicle address in Maintenance, AIO NAV config."
+            level, label, hint = WARNING, "No vehicle address", ""
         elif not tx.get("enabled"):
             level, label, hint = IDLE, "Ready signal off", "The vehicle gets navigation data but no Ready signal."
         elif tx.get("destination_error") or tx.get("errors"):
@@ -67,4 +69,4 @@ class VehicleOutput:
         else:
             level, label, hint = HEALTHY, "Sending", "Sent over UDP: the vehicle does not reply, so delivery is not confirmed."
         return {"key": "vehicle", "name": "Vehicle link", "level": level, "label": label,
-                "rows": rows, "hint": hint}
+                "rows": rows, "hint": hint, "maint": "/network"}

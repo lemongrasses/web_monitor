@@ -6,13 +6,13 @@
 <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="10.5" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M12 4.5 L16.5 17 L12 14.2 L7.5 17 Z" fill="currentColor"/></svg>
 {%- endmacro %}
 
-{#- Five arcs, one per start-up step (state/health.py _startup_checks), around what to do now. -#}
+{#- One arc per step under the status (state/health.py _startup_checks: 6, or 7 with the vehicle
+    link), around what to do now. Up to MAX_ARCS circles; product.js sizes and places them. -#}
 {% macro ring() -%}
-{%- set c = 276.46 -%}{%- set seg = c / 5 -%}
 <div class="u-ring" aria-hidden="true">
   <svg class="arcs" viewBox="0 0 100 100">
-    {%- for i in range(5) %}
-    <circle cx="50" cy="50" r="44" :class="'a-' + arc({{ i }})" stroke-dasharray="{{ '%.2f %.2f' % (seg - 10, c) }}" stroke-dashoffset="{{ '%.2f' % -(i * seg + 5) }}"></circle>
+    {%- for i in range(8) %}
+    <circle cx="50" cy="50" r="44" x-show="arcShown({{ i }})" :class="'a-' + arc({{ i }})" :stroke-dasharray="arcDash()" :stroke-dashoffset="arcOffset({{ i }})"></circle>
     {%- endfor %}
   </svg>
   <div class="center">
@@ -82,7 +82,8 @@
           <span class="u-mark" aria-hidden="true">
             <svg x-show="c.level === 'healthy'" viewBox="0 0 16 16"><path d="M3.5 8.5l3 3 6-7" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg>
             <svg x-show="c.level === 'fault'" viewBox="0 0 16 16"><path d="M8 3.5v5.5m0 2.7v.3" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/></svg>
-            <span x-show="c.level !== 'healthy' && c.level !== 'fault'" x-text="i + 1"></span>
+            <svg x-show="c.level === 'idle'" viewBox="0 0 16 16"><path d="M4.5 8h7" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/></svg>
+            <span x-show="!['healthy', 'fault', 'idle'].includes(c.level)" x-text="c.level === 'busy' ? '…' : '!'"></span>
           </span>
           <span class="u-step-text"><span class="u-step-name" x-text="c.name"></span><span class="u-step-label" x-text="c.label"></span></span>
         </button>
@@ -93,6 +94,7 @@
     <div class="u-step-detail" x-show="openStep === c.key" x-cloak>
       <dl><template x-for="r in c.rows" :key="r.k"><div><dt x-text="r.k"></dt><dd x-text="r.v"></dd></div></template></dl>
       <p x-text="c.hint || ''"></p>
+      <a class="u-step-more" x-show="c.maint" :href="maintUrl(c.maint)" target="_blank" rel="noopener">{{ _("View in Maintenance (read only)") }} →</a>
     </div>
   </template>
   {% endif %}
@@ -110,7 +112,7 @@
   <link rel="stylesheet" href="{{ url_for('static', filename='vendor/bootstrap.min.css') }}">
   <link rel="stylesheet" href="{{ url_for('static', filename='vendor/leaflet.css') }}">
   <link rel="stylesheet" href="{{ url_for('static', filename='css/product.css') }}">
-  <script>window.AIO_LANG = {{ lang|tojson }}; window.AIO_I18N = {{ i18n_js|tojson }};</script>
+  <script>window.AIO_LANG = {{ lang|tojson }}; window.AIO_I18N = {{ i18n_js|tojson }}; window.AIO_MAINT_PORT = {{ maint_port|tojson }};</script>
 </head>
 <body x-data="productPage()" class="u lang-{{ lang }}">
   <header class="u-top">
@@ -123,6 +125,8 @@
       {% endfor %}
     </nav>
     <div class="u-top-end">
+      <a class="u-env" href="/settings#env-h" x-show="envChip()" x-cloak :title="AIO.trf('Environment: {0}', envChip())">
+        <span class="u-env-k">{{ _("Environment") }}</span><span x-text="envChip()"></span></a>
       {% if fake_mode %}<span class="u-demo" title="{{ _('Subsystem state comes from dev/fake_state.json') }}">{{ _("Fake data") }}</span>{% endif %}
       <label class="u-lang">
         <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M3 12h18M12 3c3 3.2 3 14.8 0 18M12 3c-3 3.2-3 14.8 0 18" fill="none" stroke="currentColor" stroke-width="1.6"/></svg>

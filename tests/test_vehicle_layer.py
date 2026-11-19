@@ -133,7 +133,7 @@ class EngineWithVehicleTest(unittest.TestCase):
         for k in ("state_code", "inhibit_flags", "health_flags", "session_id", "sequence"):
             self.assertNotIn(k, r)
         steps = [c["key"] for c in self.store.get("product")["checks"]]
-        self.assertEqual(steps, ["sensors", "gnss", "nav", "alignment"])
+        self.assertEqual(steps, ["sensors", "gnss", "nav", "alignment", "recording", "storage"])
 
     def test_the_layer_adds_the_numbers_the_vehicle_gets(self):
         vo = self.attach()
@@ -149,8 +149,15 @@ class EngineWithVehicleTest(unittest.TestCase):
         self.attach()
         self.run_for(2)
         steps = {c["key"]: c for c in self.store.get("product")["checks"]}
-        self.assertEqual(list(steps), ["sensors", "gnss", "nav", "alignment", "vehicle"])
+        self.assertEqual(list(steps), ["sensors", "gnss", "nav", "alignment", "recording", "storage", "vehicle"])
         self.assertEqual(steps["vehicle"]["label"], "Ready signal off")
+
+    def test_no_vehicle_link_step_where_no_vehicle_is_connected(self):
+        from aio_system_dashboard.state.environment import set_override
+        self.attach()
+        set_override(self.cfg, "vehicle", False, "test")
+        self.run_for(2)
+        self.assertNotIn("vehicle", [c["key"] for c in self.store.get("product")["checks"]])
 
     def test_a_failing_layer_does_not_stop_the_health_step(self):
         def broken(*_a):
@@ -160,7 +167,7 @@ class EngineWithVehicleTest(unittest.TestCase):
         with self.assertLogs("aio_system_dashboard.state.health", "ERROR"):
             r = self.run_for(6)
         self.assertEqual(r["state"], "READY")
-        self.assertEqual(len(self.store.get("product")["checks"]), 4)
+        self.assertEqual(len(self.store.get("product")["checks"]), 6)
 
 
 if __name__ == "__main__":

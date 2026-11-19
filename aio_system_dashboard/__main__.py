@@ -31,6 +31,7 @@ from .collectors.hotspot_relay import HotspotRelay
 from .collectors.nav_udp import NavUdpCollector
 from .collectors.ros_guard import RosIsolationGuard
 from .collectors.network import NetworkCollector
+from .collectors.recording import RecordingCollector
 from .collectors.ros2 import Ros2Collector
 from .collectors.services import ServicesCollector
 from .collectors.system import SystemCollector
@@ -70,6 +71,7 @@ class DashboardContext:
         self.system = SystemCollector(self.store, cfg)
         self.services = ServicesCollector(self.store, cfg, self.fake)
         self.network = NetworkCollector(self.store, cfg, self.fake)
+        self.recording = RecordingCollector(self.store, cfg)       # is AIO NAV writing its logs?
         self.preview = PreviewTap(cfg, fake=cfg.fake, fake_state=self.fake)
         dso = cfg["dso_watchdog"]["service"]
         self.dso_watchdog = DsoWatchdog(
@@ -117,7 +119,7 @@ class DashboardContext:
         self.health.extra_steps.append(self.vehicle.startup_step)
         self.modules = modules.load(cfg)      # optional modules (installed with --with-<name>)
         self.maint_pages = []                 # sidebar of the Maintenance app, filled when it is built
-        self._workers = [self.nav, self.system, self.services, self.network, self.ros, self.health,
+        self._workers = [self.nav, self.system, self.services, self.network, self.recording, self.ros, self.health,
                          self.autostart, self.driver_watchdog, self.hotspot_relay]
 
     def alive(self, max_age_s: float = 20.0) -> bool:

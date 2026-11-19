@@ -36,6 +36,7 @@ PRODUCT_FAULT = "FAULT"
 PRODUCT_UNKNOWN = "UNKNOWN"
 _PRODUCT_SEVERITY = {PRODUCT_UNKNOWN: 0, STOPPED: 0, READY: 1, STARTING: 1, INITIALIZING: 2, PRODUCT_FAULT: 3}
 IDLE = "idle"                      # lamp level: off on purpose (not unknown, not a problem)
+BUSY = "busy"                      # user-page step in progress, nothing wrong (alignment): blue
 START_REQUEST_GRACE_S = 10.0       # a start request with no process yet is "starting" this long
 
 SERVICE_DOWN_STATES = ("stopped", "failed", "not_installed")
@@ -138,6 +139,27 @@ def raw_udp_level(nav: Dict, ncfg: Dict, expected: Optional[float],
     if expected and rate < ncfg["low_rate_ratio"] * expected:
         return WARNING, "Low rate", f"{rate:.0f} Hz (expected {expected:.0f} Hz)"
     return HEALTHY, "Streaming", ""
+
+
+def _duration(seconds: Optional[float]) -> str:
+    if seconds is None:
+        return "—"
+    s = int(seconds)
+    return f"{s // 3600}:{s // 60 % 60:02d}:{s % 60:02d}"
+
+
+def _rate(bps: Optional[float]) -> str:
+    return "—" if bps is None else f"{bps * 60 / 1e6:.1f} MB/min"
+
+
+def _ago(seconds: Optional[float]) -> str:
+    if seconds is None:
+        return "—"
+    return f"{seconds:.0f} s ago" if seconds < 120 else f"{seconds / 60:.0f} min ago"
+
+
+def _hours(seconds: float) -> str:
+    return f"about {seconds / 3600:.0f} h" if seconds >= 3600 else f"about {seconds / 60:.0f} min"
 
 
 class HealthEngine:
@@ -337,7 +359,7 @@ class HealthEngine:
         health_view = self._health_view(shown, readiness)
 
         checks = self._startup_checks(readiness, services, nav_svc, latest, fresh, health_view["state"],
-                                      align_lamps, nav)
+                                      align_lamps, nav, env)
         indicators = {
             **align_lamps,
             "gnss": {"level": g_level, "label": self._gnss_label if g_level != UNKNOWN else "No data",
@@ -577,9 +599,10 @@ class HealthEngine:
         return snap
 
     def _startup_checks(self, r: Dict, services: Dict, nav_svc: Dict, latest: Dict, fresh: bool,
-                        shown: str, align_lamps: Dict, nav: Dict) -> List[Dict]:
-        """The power-on sequence for the user pages, as four steps: sensors, GNSS / RTK, AIO NAV,
-        alignment; then the steps of other layers (extra_steps: the vehicle link). Each has a level, a short status and rows of plain detail
+                        shown: str, align_lamps: Dict, nav: Dict, env: Optional[Dict] = None) -> List[Dict]:
+        """What the user pages list under the status: sensors, GNSS / RTK, AIO NAV, alignment,
+        recording, storage; then the steps of other layers (extra_steps: the vehicle link, where a
+        vehicle is connected). Grey (idle) = not used in this environment or not started. Each has a level, a short status and rows of plain detail
         ({k, v}) that the page shows when the step is opened. Same data as the readiness snapshot."""
         conds = {c["name"]: c for c in r.get("conditions") or []}
         auto = r.get("autostart") or {}
@@ -607,13 +630,14 @@ class HealthEngine:
         if imu != "ready":
             pending.append("IMU data")
         if not pending:
-            steps.append({"key": "sensors", "name": "Sensors", "level": HEALTHY, "label": "Ready", "rows": rows})
+            steps.append({"key": "sensors", "name": "Sensors", "level": HEALTHY, "label": "Ready", "rows": rows,
+                          "maint": "/ros"})
         else:
             waiting_for_it = pending != ["IMU data"] or "imu" in needed
             steps.append({"key": "sensors", "name": "Sensors",
                           "level": (FAULT if timed_out else WARNING) if waiting_for_it else IDLE,
                           "label": "Not found" if timed_out else ("Settling" if imu == "settling" and len(pending) == 1 else "Waiting"),
-                          "rows": rows, "hint": "Check the sensor cables and power." if timed_out else ""})
+                          "rows": rows, "maint": "/ros"})
 
         # 2. GNSS position, and RTK when Ready requires it.
         need_rtk = bool(r.get("rtk_required"))
@@ -626,12 +650,16 @@ class HealthEngine:
                                                       else "Yes (RTK float or fix)") if need_rtk else "No"}]
         gate = cond_state("gnss_quality") if need_rtk else cond_state("gnss")
         g_needed = need_rtk or bool({"gnss", "gnss_quality"} & needed)
-        steps.append({"key": "gnss", "name": "GNSS / RTK", "rows": rows,
-                      "level": HEALTHY if gate == "ready" else (FAULT if timed_out and quality in (None, "none") else
-                                                                WARNING if g_needed else IDLE),
-                      "label": now_text if quality is not None else "Waiting",
-                      "hint": "" if gate == "ready" else ("Move to open sky; RTK needs the correction service (internet)."
-                                                          if need_rtk else "Move to open sky.")})
+        no_rtk_here = not need_rtk and ((env or {}).get("rtk") or {}).get("value") is False
+        level = HEALTHY if gate == "ready" else (FAULT if timed_out and quality in (None, "none") else
+                                                 WARNING if g_needed else IDLE)
+        label = now_text if quality is not None else "Waiting"
+        if no_rtk_here:                     # a place without RTK: a GNSS position is all there is
+            rows.insert(2, {"k": "RTK corrections", "v": "Not used here"})
+            if gate == "ready" and rd.gnss_rank(quality) < rd.MIN_QUALITY["float"]:
+                level, label = IDLE, "No RTK"
+        steps.append({"key": "gnss", "name": "GNSS" if no_rtk_here else "GNSS / RTK", "rows": rows,
+                      "level": level, "label": label, "maint": "/gnss"})
 
         # 3. AIO NAV (DSO runs beside it; it is information only, never a step of its own).
         running = bool(nav_svc.get("pids")) or fresh      # output arriving: it runs, seen or not
@@ -650,7 +678,8 @@ class HealthEngine:
         if running and fresh and nav.get("rate_hz"):
             rows.append({"k": "Output rate", "v": f"{nav['rate_hz']:.0f} Hz"})
         rows.append({"k": "Visual odometry (DSO)", "v": "Running" if dso.get("ok") else "Not running"})
-        steps.append({"key": "nav", "name": "AIO NAV", "level": n_level, "label": n_label, "rows": rows})
+        steps.append({"key": "nav", "name": "AIO NAV", "level": n_level, "label": n_label, "rows": rows,
+                      "maint": "/"})
 
         # 4. Alignment, its three phases.
         names = {"alignment": "Keep still", "heading_valid": "Drive straight", "fine_alignment": "Fine alignment"}
@@ -659,16 +688,69 @@ class HealthEngine:
                 for f in ALIGN_LAMPS]
         step = self._step if fresh and not all(done) else None
         steps.append({"key": "alignment", "name": "Alignment", "rows": rows,
-                      "level": HEALTHY if all(done) else (WARNING if fresh else IDLE),
+                      "level": HEALTHY if all(done) else (BUSY if fresh else IDLE),
                       "label": "Done" if all(done) else (f"Step {sum(done) + 1} of 3" if fresh else "Not started"),
-                      "hint": (step or {}).get("action", "")})
+                      "hint": (step or {}).get("action", ""), "maint": "/"})
+
+        # 5. Recording: AIO NAV writing its logs (collectors/recording.py).
+        steps.append(self._recording_step(r, fresh))
+        # 6. Storage: free space, and how long it lasts at the current rate.
+        steps.append(self._storage_step())
 
         for extra in self.extra_steps:          # other layers (vehicle/output.py: the vehicle link)
             try:
-                steps.append(extra(fresh))
+                step = extra(fresh, env or {})
+                if step:
+                    steps.append(step)
             except Exception:
                 logger.exception("start-up step of another layer failed")
         return steps
+
+    def _recording_step(self, r: Dict, fresh: bool) -> Dict:
+        rec = self.store.get("recording", {}) or {}
+        rows = []
+        if not rec:
+            level, label = IDLE, "Checking"
+        elif not rec.get("enabled", True):
+            level, label = IDLE, "Off"
+            rows.append({"k": "Why", "v": rec.get("reason", "")})
+        elif not rec.get("available"):
+            level, label = IDLE, "Folder not found"
+        elif rec.get("writing"):
+            level, label = HEALTHY, "Writing"
+            rows += [{"k": "This recording", "v": _duration(rec.get("recording_s"))},
+                     {"k": "Write rate", "v": _rate(rec.get("rate_Bps"))},
+                     {"k": "Newest file", "v": rec.get("file") or "—"}]
+        elif fresh and r.get("state") in ("READY", "DEGRADED"):
+            level, label = FAULT, "Not writing"         # navigation in use, and nothing is kept
+            rows.append({"k": "Last write", "v": _ago(rec.get("last_write_age_s"))})
+        else:
+            level, label = IDLE, "Not started"
+            if rec.get("last_write_age_s") is not None:
+                rows.append({"k": "Last write", "v": _ago(rec.get("last_write_age_s"))})
+        if rec.get("folder"):
+            rows.append({"k": "Folder", "v": rec["folder"]})
+        return {"key": "recording", "name": "Recording", "level": level, "label": label, "rows": rows,
+                "maint": "/system"}
+
+    def _storage_step(self) -> Dict:
+        st = self._storage(self.store.get("system", {}) or {})
+        if not st:
+            return {"key": "storage", "name": "Storage", "level": IDLE, "label": "Checking", "rows": [],
+                    "maint": "/system"}
+        free_gb = st["free"] / 1e9
+        rate = (self.store.get("recording", {}) or {}).get("rate_Bps") or 0
+        if st["percent"] >= 99.0 or st["free"] < 1e9:
+            level, label = FAULT, "Full"
+        elif st["percent"] >= self.cfg["system"]["disk_warn_percent"]:
+            level, label = WARNING, "Almost full"
+        else:
+            level, label = HEALTHY, f"{free_gb:.0f} GB free"
+        rows = [{"k": "Free", "v": f"{free_gb:.1f} GB ({100 - st['percent']:.0f}%)"},
+                {"k": "Recording time left", "v": _hours(st["free"] / rate) if rate > 0 else "—"},
+                {"k": "Folder", "v": st["path"]}]
+        return {"key": "storage", "name": "Storage", "level": level, "label": label, "rows": rows,
+                "maint": "/system"}
 
     def _health_view(self, shown: str, r: Dict) -> Dict:
         """What the pages show. The product state as before, except where readiness knows more:
