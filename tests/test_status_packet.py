@@ -32,7 +32,7 @@ class CodecTest(unittest.TestCase):
             self.assertEqual(d[k], v, k)
 
     def test_manuals_publish_the_same_golden_vector(self):
-        for name in ("docs/OPERATION.md", "docs/OPERATION.zh-TW.md"):
+        for name in ("docs/INTEGRATION.md", "docs/OPERATION.md", "docs/OPERATION.zh-TW.md"):
             self.assertIn(GOLDEN_HEX, manuals.read(name), name)
 
     def test_rejects_corrupt_short_and_unknown(self):
