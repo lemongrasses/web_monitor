@@ -1,4 +1,4 @@
-> **歷史文件(2026-11-17 移到 `docs/history/`)。** 這是最初的 v1 實作規格,只保留作為設計由來,**不再描述目前的行為**。目前的行為以 [README](../../README.md)、[操作手冊](../OPERATION.zh-TW.md)、[設定手冊](../CONFIG.zh-TW.md)、[FLOWS](../FLOWS.md) 為準;程式碼註解裡的「spec §N」指的是這份文件的章節。
+> **歷史文件(2026-11-17 移到 `docs/history/`,2026-11-19 再移到 `docs/dev/history/`)。** 這是最初的 v1 實作規格,只保留作為設計由來,**不再描述目前的行為**。目前的行為以 [README](../../../README.md)、[操作手冊](../../OPERATION.zh-TW.md)、[設定手冊](../../CONFIG.zh-TW.md)、[FLOWS](../FLOWS.md) 為準;程式碼註解裡的「spec §N」指的是這份文件的章節。
 >
 > **已被取代:** §4 頁面清單(現在使用者頁多了 Setup、Settings;維護頁有密碼、GNSS / RTK、Still detection、設定編輯器、Terminal)· §5 由 systemd 開機啟動 AIO NAV(現在由儀表板的自動啟動負責,`aio-nav.service` 開機啟用會被判為衝突)· §9 輸出目的地只顯示不修改(現在可在設定編輯器修改)· §11 三種狀態(現在頁面 6 種、給車 10 種,加上 0x05 狀態封包)· §12 GNSS 不影響 READY(現在預設要 RTK,READY 後失去 RTK 會 DEGRADED)· §33 AIO NAV 沒有 Stop / Restart(現在有,另有自動啟動)· §39 不提供任意 shell(現在有 Terminal)· §23 沒有趨勢圖(GNSS 頁有最近 10 分鐘)· LiDAR(Ouster)目前出貨設定沒有。規格完全沒提到的:Wi-Fi、熱點、GNSS 校時、Replay、中英文介面、靜止偵測。
 >

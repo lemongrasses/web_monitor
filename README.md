@@ -17,7 +17,7 @@ without an operator:
   output (READY with no inhibit bit), next to the 0x04 data.
 - **Watchers:** DSO watchdog (NaN, crash, memory), sensor-driver watchdog (IMU silent), ROS
   isolation guard (the dashboard's own ROS connection stuck), systemd watchdog. See
-  [FLOWS 7](docs/FLOWS.md#7-who-restarts-what).
+  [FLOWS 7](docs/dev/FLOWS.md#7-who-restarts-what).
 - **System clock from GNSS time** (chrony), so time stamps are right in the field without NTP.
 
 AIO NAV and DSO run in their own sessions, so a dashboard crash or restart never stops them.
@@ -27,11 +27,11 @@ AIO NAV and DSO run in their own sessions, so a dashboard crash or restart never
 [English](docs/OPERATION.md) · [繁體中文](docs/OPERATION.zh-TW.md).
 Settings: [English](docs/CONFIG.md) · [繁體中文](docs/CONFIG.zh-TW.md).
 Optional system recorder (a black box for the computer, to trace freezes and power cuts; install with `sudo deploy/install.sh --with-sysmon`): [English](docs/SYSMON.md) · [繁體中文](docs/SYSMON.zh-TW.md).
-What the features are and how they relate (which ones exclude each other, which overlap), in Traditional Chinese: [docs/FEATURES.md](docs/FEATURES.md).
-Engineering flowcharts (system data flow, health tick, readiness states, automatic start, Wi-Fi, vehicle side): [docs/FLOWS.md](docs/FLOWS.md).
+What the features are and how they relate (which ones exclude each other, which overlap), in Traditional Chinese: [docs/dev/FEATURES.md](docs/dev/FEATURES.md).
+Engineering flowcharts (system data flow, health tick, readiness states, automatic start, Wi-Fi, vehicle side): [docs/dev/FLOWS.md](docs/dev/FLOWS.md).
 繁體中文 terminology, shared word for word with the vehicle-side aio-nav-receiver: [docs/TERMINOLOGY.zh-TW.md](docs/TERMINOLOGY.zh-TW.md).
-Ideas discussed and kept for later (in Traditional Chinese): [docs/IDEAS.md](docs/IDEAS.md).
-The original v1 specification is kept for history only, no longer up to date: [docs/history/v1-spec.md](docs/history/v1-spec.md).
+Ideas discussed and kept for later (in Traditional Chinese): [docs/dev/IDEAS.md](docs/dev/IDEAS.md).
+The original v1 specification is kept for history only, no longer up to date: [docs/dev/history/v1-spec.md](docs/dev/history/v1-spec.md).
 
 ## Architecture
 
@@ -84,7 +84,7 @@ Two layers, computed together every 0.2 s (`state/health.py`, `state/readiness.p
 For the vehicle the same snapshot gives a finer state (BOOTING, CHECKING, NAV_STARTING, KEEP_STILL,
 MOVE_STRAIGHT, REFINING, READY, DEGRADED, FAULT, MAINTENANCE), a requested action (HOLD_STILL,
 SAFE_STOP, …) and inhibit bits; they go out in the 0x05 packet
-([operation 6.8](docs/OPERATION.md), [FLOWS 3](docs/FLOWS.md#3-readiness-states)).
+([operation 6.8](docs/OPERATION.md), [FLOWS 3](docs/dev/FLOWS.md#3-readiness-states)).
 
 The user pages list the steps under the status from the same snapshot (`_startup_checks`):
 Sensors, GNSS / RTK, AIO NAV, Alignment, Recording (AIO NAV's log folder written within 5 s; red
@@ -274,7 +274,7 @@ Re-run `install.sh` after changing which units are restartable.
 Offline map tiles, trend charts (except the GNSS page's last 10 minutes), deep IMU/camera/LiDAR
 diagnostics, ROS message browsing, and recording. The shipped config has no LiDAR; add a `lidar`
 device to use the LiDAR page.
-Ideas kept for later are in [docs/IDEAS.md](docs/IDEAS.md).
+Ideas kept for later are in [docs/dev/IDEAS.md](docs/dev/IDEAS.md).
 
 ## Optional parts
 

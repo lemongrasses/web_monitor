@@ -2,7 +2,7 @@
 
 目前有哪些功能、各自怎麼開關、彼此依賴什麼,以及**哪些功能互斥(一次只能用一個)**、哪些是**多個機制在管同一件事**。寫給要改功能或加功能的人:動手前先看這裡,確認不會踩到另一個功能。
 
-最後整理:2026-11-19(HEAD 對照程式碼)。細節以 [README](../README.md)、[操作手冊](OPERATION.zh-TW.md)、[設定手冊](CONFIG.zh-TW.md)、[FLOWS](FLOWS.md) 為準;本文件只講關係。標 **⚠** 的是目前程式沒有處理的衝突,列在最後一節待決定。
+最後整理:2026-11-19(HEAD 對照程式碼)。細節以 [README](../../README.md)、[操作手冊](../OPERATION.zh-TW.md)、[設定手冊](../CONFIG.zh-TW.md)、[FLOWS](FLOWS.md) 為準;本文件只講關係。標 **⚠** 的是目前程式沒有處理的衝突,列在最後一節待決定。
 
 ---
 
@@ -167,7 +167,7 @@ flowchart LR
 | 同一件事 | 機制 | 關係 | 說明在哪 |
 |----------|------|------|----------|
 | 重啟出問題的部分 | 自動啟動、DSO 監控、driver 監控、ROS 隔離檢查、systemd watchdog | 各管各的對象。**⚠ driver 監控和 ROS 隔離檢查會對同一個症狀反應,沒有協調** | [FLOWS 7](FLOWS.md#7-who-restarts-what) |
-| GNSS 好不好 | GNSS 燈(NavSatFix)、GNSS / RTK 頁(diagnostics)、導航頁的 GNSS 輔助燈(0x04 旗標) | 只有 GNSS 燈直接影響 READY;diagnostics 用來判斷環境有沒有 RTK(也就是 READY 要不要 RTK)。**⚠ 三者可能說法不同,沒有對照** | [設定手冊 4.7b / 4.7c](CONFIG.zh-TW.md) |
+| GNSS 好不好 | GNSS 燈(NavSatFix)、GNSS / RTK 頁(diagnostics)、導航頁的 GNSS 輔助燈(0x04 旗標) | 只有 GNSS 燈直接影響 READY;diagnostics 用來判斷環境有沒有 RTK(也就是 READY 要不要 RTK)。**⚠ 三者可能說法不同,沒有對照** | [設定手冊 4.7b / 4.7c](../CONFIG.zh-TW.md) |
 | READY 要不要 GNSS 品質 | 環境的 RTK(偵測,頁面可改)、`readiness.require_rtk`、`readiness.require: [gnss_quality]` | 兩條路各自獨立:在頁面選「這裡沒有 RTK」,`require` 裡的 `gnss_quality` 還是有效 | [FLOWS 8](FLOWS.md#8-where-a-setting-comes-from) |
 | 修改 `aio_nav.yaml` | 使用者頁 Setup(槓桿臂)、維護頁設定編輯器 | 兩邊都會試啟動並做版本檢查,不會互相覆蓋。**⚠ Setup 不用密碼,設定編輯器要** | 操作手冊 3.6、8 |
 | Wi-Fi 與環境(RTK、車輛) | 使用者頁 Settings、維護頁 Network / Overview | 同一段程式。使用者頁不用密碼,但 Wi-Fi 只接受用網路線連進來的瀏覽器 | [FLOWS 5](FLOWS.md#5-wi-fi-change) |

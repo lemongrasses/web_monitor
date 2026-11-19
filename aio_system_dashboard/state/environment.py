@@ -1,7 +1,7 @@
 """The environment the device is in: network, RTK, vehicle. Detected, and the pages may override.
 
 The device moves between places with and without a network and RTK corrections, connected to a
-vehicle or not (docs/DIRECTION.md). The other parts follow this one answer instead of guessing
+vehicle or not (docs/dev/DIRECTION.md). The other parts follow this one answer instead of guessing
 each for themselves. Today it decides whether READY needs RTK; the vehicle answer is shown only.
 
 * network: wired / wifi / none: a connection out works (network.internet_check), and the default

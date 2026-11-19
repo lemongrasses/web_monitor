@@ -3,7 +3,7 @@
 Short diagrams of how the parts work together. They are Mermaid: GitHub draws them, and they are
 plain text, so update them in the same commit as the code they describe. The operator view of the
 same sequence (what the page and the vehicle show at each step) is in the
-[Operation manual, section 4.2](OPERATION.md).
+[Operation manual, section 4.2](../OPERATION.md).
 
 1. [System and data flow](#1-system-and-data-flow)
 2. [One health tick (5 Hz)](#2-one-health-tick-5-hz)
