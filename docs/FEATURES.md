@@ -2,7 +2,7 @@
 
 目前有哪些功能、各自怎麼開關、彼此依賴什麼,以及**哪些功能互斥(一次只能用一個)**、哪些是**多個機制在管同一件事**。寫給要改功能或加功能的人:動手前先看這裡,確認不會踩到另一個功能。
 
-最後整理:2026-11-17(HEAD 對照程式碼)。細節以 [README](../README.md)、[操作手冊](OPERATION.zh-TW.md)、[設定手冊](CONFIG.zh-TW.md)、[FLOWS](FLOWS.md) 為準;本文件只講關係。標 **⚠** 的是目前程式沒有處理的衝突,列在最後一節待決定。
+最後整理:2026-11-19(HEAD 對照程式碼)。細節以 [README](../README.md)、[操作手冊](OPERATION.zh-TW.md)、[設定手冊](CONFIG.zh-TW.md)、[FLOWS](FLOWS.md) 為準;本文件只講關係。標 **⚠** 的是目前程式沒有處理的衝突,列在最後一節待決定。
 
 ---
 
@@ -62,6 +62,10 @@ flowchart LR
 | 健康評估(頁面 6 種狀態、10 種階段) | 全部頁面、自動啟動 | `state/health.py`、`state/readiness.py`(只用名稱,不含數字代碼) |
 | 系統 / 服務 / 網路 / ROS 監看 | 維護頁 | `collectors/` |
 | 軌跡、資料下載 | 使用者頁 導航、資料 | `nav/trajectory.py`、`data_access/` |
+| 狀態下方的步驟(感測器、GNSS／RTK、AIO NAV、對準、記錄、儲存空間;有接車輛時加車端連線)、圓環每個步驟一段 | 使用者頁 總覽 | `state/health.py`(`_startup_checks`)、`vehicle/output.py`(車端連線);點開連到維護頁對應頁面(唯讀) |
+| **記錄**步驟(新,2026-11-19):AIO NAV 有沒有在寫紀錄檔 | 使用者頁 總覽 | `collectors/recording.py`:看 `fusion_txt_path` 的資料夾(或 aio-nav-ros 旁的 `output/`),5 秒內有檔案變動 = 寫入中;導航在用(READY / DEGRADED)卻沒寫 = 紅色;`aio_nav.yaml` 的 `save_fusion_txt`、`save_parsed_txt` 都關 = 「關閉」 |
+| **儲存空間**步驟(新,2026-11-19):剩多少、依目前寫入速度還能記錄多久 | 使用者頁 總覽 | `state/health.py`(`_storage_step`):資料夾所在的磁碟;`system.disk_warn_percent` 琥珀,≥99% 或剩不到 1 GB 紅色 |
+| 頂端列的環境標籤(網路 · RTK · 車輛),連到設定頁「環境」卡片 | 使用者頁 全部 | `static/js/product.js`(`envChip`) |
 
 ### 2.2 可開關的功能
 
@@ -70,7 +74,7 @@ flowchart LR
 | 頁面啟動 / 停止 AIO NAV | 使用者頁 總覽、導航 | `nav.allow_control` | 開(內建關) | `services.*.launch` |
 | 自動啟動 | 背景;設定頁顯示 | `autostart.enabled` | 開 | **`nav.allow_control`**、靜止偵測、GNSS 校時(等時鐘) |
 | 0x05 狀態封包 | 背景;設定頁「車輛連線」 | `status_udp.enabled` | 開 | 目的地 = `aio_nav.yaml` 的 `output_udp` |
-| 環境偵測(網路、RTK、車輛) | 設定頁「環境」卡片、維護 Overview | 沒有開關(`state/environment.py`);RTK、車輛可在頁面改,存 `state/environment.json` | 開 | `network.internet_check`、預設路由、GNSS 診斷(`gnss_diag`)、`aio_nav.yaml` 的 `output_udp` |
+| 環境偵測(網路、RTK、車輛) | 設定頁「環境」卡片、維護 Overview、使用者頁頂端列;車輛決定總覽有沒有車端連線步驟與就緒的說法,RTK 決定 GNSS 步驟(沒有 RTK 時灰色「無 RTK」) | 沒有開關(`state/environment.py`);RTK、車輛可在頁面改,存 `state/environment.json` | 開 | `network.internet_check`、預設路由、GNSS 診斷(`gnss_diag`)、`aio_nav.yaml` 的 `output_udp` |
 | READY 需要 RTK | 設定頁「環境」卡片、維護 Overview | `readiness.require_rtk`(`auto` / `true` / `false`);頁面選擇存 `state/environment.json`(舊的 `state/readiness.json` 在被取代前仍有效) | `auto`:環境有 RTK 才需要(未知 = 需要) | 環境偵測 → GNSS 燈(NavSatFix)→ 接收機 → NTRIP → 網際網路 |
 | 其他 READY 條件 | — | `readiness.require` | 無 | 各條件的來源;`dso` 只在 `Odometry.vupt` 開時算 |
 | 靜止偵測 | 維護 Still detection | `autostart.require_still`,門檻存 `state/still_limits.json` | 開 | IMU、接收機速度 |
@@ -168,6 +172,7 @@ flowchart LR
 | 修改 `aio_nav.yaml` | 使用者頁 Setup(槓桿臂)、維護頁設定編輯器 | 兩邊都會試啟動並做版本檢查,不會互相覆蓋。**⚠ Setup 不用密碼,設定編輯器要** | 操作手冊 3.6、8 |
 | Wi-Fi 與環境(RTK、車輛) | 使用者頁 Settings、維護頁 Network / Overview | 同一段程式。使用者頁不用密碼,但 Wi-Fi 只接受用網路線連進來的瀏覽器 | [FLOWS 5](FLOWS.md#5-wi-fi-change) |
 | 狀態 | 頁面狀態(6 種)、readiness(10 種)、頁面顯示(`_health_view` 再轉換) | 同一個快照,只是轉成不同的呈現 | [FLOWS 2–3](FLOWS.md#2-one-health-tick-5-hz) |
+| 磁碟快滿 | 使用者頁的儲存空間步驟、提示「Storage almost full」、維護頁「Disk almost full」、`readiness.require: [storage]` | 都用 `system.disk_warn_percent`;只有 `require` 會影響 READY。「已滿」(紅色)只在儲存空間步驟 | 操作手冊 3.2、設定手冊 4.6 |
 | 啟動 drivers | 自動啟動的 `start_services`、driver 監控、維護頁按鈕 | 都尊重操作員的停止 | [FLOWS 4、7](FLOWS.md) |
 
 ---
@@ -182,6 +187,8 @@ flowchart LR
 - `hotspot` 選配 → 需要 `wifi` 選配;封包複本只在熱點開著時送。
 - Bag 播放器 → 需要 Bag 模式 → 需要 `replay` 選配。
 - `readiness.require` 裡的 `dso` → 只在 `aio_nav.yaml` 的 `Odometry.vupt` 開著時有效。
+- `aio_nav.yaml` 的 `save_fusion_txt` / `save_parsed_txt`、`fusion_txt_path` → 記錄步驟(看哪個資料夾、是不是「關閉」)→ 儲存空間步驟的「還能記錄」(用記錄的寫入速度)。
+- 環境的「有沒有接車輛」(`output_udp`)→ 使用者頁有沒有車端連線步驟、就緒時說「可以使用」還是「正在記錄,資料可用」、要不要把「停止使用導航」當標題。
 
 ---
 

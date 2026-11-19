@@ -4,7 +4,7 @@ Web dashboard for the Jetson AIO navigation system.
 
 | UI | Port | Audience | Pages |
 |----|------|----------|-------|
-| Product | `:8080` | Operators (no login) | Overview · Navigation · Data · Setup (lever arms) · Settings (Wi-Fi, environment: network / RTK / vehicle, automatic start, vehicle link), with Start / Restart / Stop / Resume of AIO NAV; English / 繁體中文 |
+| Product | `:8080` | Operators (no login) | Overview (status and its steps: sensors, GNSS / RTK, AIO NAV, alignment, recording, storage, vehicle link where a vehicle is connected) · Navigation · Data · Setup (lever arms) · Settings (Wi-Fi, environment: network / RTK / vehicle, automatic start, vehicle link), with Start / Restart / Stop / Resume of AIO NAV; English / 繁體中文 |
 | Maintenance | `:8081` | Engineers (password) | Overview · System · ROS 2 · GNSS / RTK · Camera · LiDAR · Network (Wi-Fi, hotspot) · Diagnostics · Still detection · AIO NAV config · Terminal (· Replay with the replay part) |
 
 The main data source is the **AIO NAV 0x04 binary packet** that `aio_nav_node`
@@ -44,7 +44,7 @@ aio_system_dashboard/
                        @10 Hz + older @1 Hz)
   collectors/          nav_udp (raw rate), system, services, network, ros2 (sampled), gnss_monitor
                        (GNSS lamp), gnss_diag (GNSS / RTK page), gnss_time (clock -> chrony), speed,
-                       dso_watchdog, ros_guard, hotspot_relay, fake
+                       recording (is AIO NAV writing its logs), dso_watchdog, ros_guard, hotspot_relay, fake
   media/               on-demand camera image / point-cloud preview (tap.py), decoders, fake frames
   state/               health.py (5 Hz evaluator: product state, alignment step, advisories, events),
                        readiness.py (states, actions and reasons, by name), environment.py
@@ -85,6 +85,13 @@ For the vehicle the same snapshot gives a finer state (BOOTING, CHECKING, NAV_ST
 MOVE_STRAIGHT, REFINING, READY, DEGRADED, FAULT, MAINTENANCE), a requested action (HOLD_STILL,
 SAFE_STOP, …) and inhibit bits; they go out in the 0x05 packet
 ([operation 6.8](docs/OPERATION.md), [FLOWS 3](docs/FLOWS.md#3-readiness-states)).
+
+The user pages list the steps under the status from the same snapshot (`_startup_checks`):
+Sensors, GNSS / RTK, AIO NAV, Alignment, Recording (AIO NAV's log folder written within 5 s; red
+when navigation is in use and nothing is written), Storage (free space of the data disk, amber at
+`system.disk_warn_percent`, red when full), and Vehicle link only where a vehicle is connected
+(the environment). Grey means not used here or not started; without a vehicle, READY reads
+*Recording, data usable* ([operation 3.2](docs/OPERATION.md#32-start-up-progress)).
 
 Camera/LiDAR not connected, sensor-LAN link down and low disk are **advisories**: they never
 change READY. GNSS is an advisory too where RTK is not required (no RTK detected here, or *No*

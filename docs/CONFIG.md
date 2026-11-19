@@ -256,7 +256,7 @@ A detected change must hold 10 s before it counts.
 |--------|--------|--------------------|
 | Network | Cable / Wi-Fi / None / Unknown | A connection out works (`network.internet_check`), and over which interface (the default route; Wi-Fi = a wireless interface). Unknown while not checked, or with `internet_check: []`. |
 | RTK corrections | Yes / No / Unknown | Yes once RTK corrections arrived or an RTK float / fix position was seen in this power-on. Kept until the next power-on, also across a dashboard restart: a short loss under a bridge stays an RTK place, so losing RTK after READY gives DEGRADED. No when the receiver has no NTRIP set up (GNSS diagnostics: corrections not enabled), or NTRIP is set up but there is no network. Unknown otherwise (for example an older driver without diagnostics). |
-| Vehicle connected | Yes / No | Yes when `aio_nav.yaml` has a vehicle address (`output_udp`). Shown only; nothing uses it yet. |
+| Vehicle connected | Yes / No | Yes when `aio_nav.yaml` has a vehicle address (`output_udp`). The user pages follow it: with No, the Overview has no Vehicle link step and Ready reads *Recording, data usable* (operation manual 3.1, 3.2). |
 
 Whether READY needs RTK, in this order: a choice made on a page; else `require_rtk` when it is
 `true` or `false`; else the detected RTK answer (Unknown = required, the careful choice). The
@@ -505,7 +505,7 @@ until it is stopped there. Phones open `http://10.42.0.1:8080`.
 |-----|---------|---------|
 | `interval_s` | `2` | How often CPU, GPU, RAM, disk and temperature are read. |
 | `disk_paths` | `["/"]` | Disks to report. Data folders are added automatically. |
-| `disk_warn_percent` | `90` | Disk usage (%) that raises a "Storage almost full" warning. |
+| `disk_warn_percent` | `90` | Disk usage (%) that raises a "Storage almost full" warning, and turns the **Storage** step of the Overview amber (*Almost full*; operation manual 3.2). |
 | `temp_warn_c` | `85` | Temperature (°C) that raises a "Temperature high" warning. |
 
 ### 4.7 `ros`: ROS 2 monitoring

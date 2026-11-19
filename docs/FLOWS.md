@@ -221,7 +221,7 @@ Some settings can be changed on the pages. The page's choice is kept in `state/`
 | Setting | In the config | Changed on | Kept in | How long the page's choice holds |
 |---------|---------------|------------|---------|-----------------------------------|
 | RTK required for READY | `readiness.require_rtk` (`auto`: detected; `true` / `false` pin it) | Settings page (Environment), Maintenance > Overview | `state/environment.json` (an older `state/readiness.json` counts until replaced) | until set back to automatic |
-| Vehicle connected (shown only) | — (detected from `output_udp` in `aio_nav.yaml`) | Settings page (Environment) | `state/environment.json` | until set back to automatic |
+| Vehicle connected (user pages: Vehicle link step, wording) | — (detected from `output_udp` in `aio_nav.yaml`) | Settings page (Environment) | `state/environment.json` | until set back to automatic |
 | Live / Bag replay | `ros.mode` (`live`) | Maintenance > Replay (replay part only) | `state/ros_mode.json` | until the next power-on |
 | Operator Stop (hold) | — | Stop / Start / Resume | `state/autostart.json` | until Start / Resume or the next power-on |
 | Still limits | `readiness.still_*` | Maintenance > Still detection | `state/still_limits.json` | until reset |

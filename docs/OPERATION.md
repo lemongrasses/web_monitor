@@ -80,19 +80,27 @@ navigation output right now?* On the Overview it shows:
 - in large letters, **what to do now** whenever something is asked of the operator: *Keep still*,
   *Drive straight*, *Keep driving*, *Stop using navigation*, *Maintenance needed* (or *Ready to
   use*). This is the same request the vehicle receives in the status packet (section 6.8), so
-  the page and the vehicle never disagree;
+  the page and the vehicle never disagree. Where no vehicle is connected (the environment,
+  section 3.5) the page speaks of the data instead: Ready reads *Recording, data usable*, or
+  *Ready, not recording* when the Recording step (section 3.2) is not green, and *Stop using
+  navigation* is not shown: the line under it says what happened;
 - a line saying what is happening and a line with the details;
-- a **ring** on the left: its five arcs are the five start-up steps (section 3.2), green when
-  done, amber while waiting, red for a problem. In the middle is an icon for what to do (hand,
-  arrow, curved arrow, stop sign, wrench) or, once Ready, the vehicle's heading;
+- a **ring** on the left: one arc per step under the status (section 3.2: six, or seven where a
+  vehicle is connected), each in the colour of its step. In the middle is an icon for what to do
+  (hand, arrow, curved arrow, stop sign, wrench) or, once Ready, the vehicle's heading;
 - the **Start** (**Resume** after an operator stop), **Restart** and **Stop** buttons.
+
+The top bar of every user page shows the **environment** as a chip, for example
+*Environment Cable · RTK · Vehicle*: the network (*Cable*, *Wi-Fi*, *No network*), *RTK* or *No RTK*,
+and *Vehicle* when one is connected. Select it to open the Environment card of the Settings page
+(section 3.5). On a phone the word *Environment* is left out.
 
 On the other pages the panel is a single line with a small ring. It turns **dark red** when
 navigation must not be used (Fault, Degraded); red is kept for that.
 
 ![Overview page while Ready](images/user/overview-ready.png)
-*The Overview page: the status panel with its ring, the AIO NAV buttons and the start-up steps; the
-map with the recent track; position, motion and attitude.*
+*The Overview page: the environment in the top bar; the status panel with its ring, the AIO NAV
+buttons and the steps; the map with the recent track; position, motion and attitude.*
 
 | State | Shown as | Meaning | What to do |
 |-------|-------|---------|------------|
@@ -105,7 +113,8 @@ map with the recent track; position, motion and attitude.*
 | **Unknown** / **Offline** | Grey label, slate panel | The dashboard just started, or your browser lost its connection to the device. | Wait a few seconds; check the network if it persists. |
 
 ![A fault: what happened and what to do](images/user/status-fault.png)
-*A fault always says what happened and what to do.*
+*A fault always says what happened and what to do: here **AIO NAV stopped after it was ready**, and it
+starts again once the vehicle is still (**Waiting for the vehicle to be still (no IMU data)**).*
 
 A state turns worse only after the condition has lasted about half a second, and turns better
 again (for example back to Ready) only after about 2 stable seconds. A single lost packet never
@@ -115,20 +124,37 @@ processes a recorded bag instead of the live sensors.
 
 ### 3.2 Start-up progress
 
-At the bottom of the status panel, the Overview page lists the power-on sequence as five steps
-(the same five as the arcs of the ring):
+At the bottom of the status panel, the Overview page lists what navigation and data collection
+need, as steps (one arc of the ring each): six steps, and a seventh, **Vehicle link**, only where a
+vehicle is connected (the environment, section 3.5).
 
 | Step | Done (green tick) when | Opens to show |
 |------|------------------------|---------------|
 | **Sensors** | The sensor drivers run and IMU data arrives. | Each driver, IMU data |
-| **GNSS / RTK** | A GNSS position, and RTK when Ready requires it (where the environment has RTK, section 3.5). | GNSS position, the current quality, whether RTK is required |
+| **GNSS / RTK** | A GNSS position, and RTK when Ready requires it (where the environment has RTK, section 3.5). In a place without RTK the step is called **GNSS** and is grey *No RTK* while the position is SPP: normal there, not a warning. | GNSS position, the current quality, whether RTK is required; without RTK also *RTK corrections: Not used here* |
 | **AIO NAV** | AIO NAV runs and sends output. | AIO NAV, output rate, visual odometry (DSO: not needed for Ready by default) |
-| **Alignment** | All three alignment steps are done. | *Keep still*, *Drive straight*, *Fine alignment* with Done / In progress / Waiting, and the instruction for the current step |
-| **Vehicle link** | The navigation data and the Ready signal are being sent to the vehicle address. | The vehicle address, what is being sent |
+| **Alignment** | All three alignment stages are done. Blue (*Step 1 of 3* …) while in progress. | *Keep still*, *Drive straight*, *Fine alignment* with Done / In progress / Waiting, and the instruction for the current stage |
+| **Recording** | AIO NAV is writing its log files (*Writing*: a file changed within the last 5 s). | *This recording* (how long it has run), *Write rate* (MB/min), *Newest file*, *Folder* |
+| **Storage** | The data disk has room (*32 GB free*, for example). | *Free*, *Recording time left* (at the current write rate), *Folder* |
+| **Vehicle link** (only where a vehicle is connected) | The navigation data and the Ready signal are being sent to the vehicle address. | The vehicle address, what is being sent |
 
-A done step has a green tick, a step still waiting an amber outline, a problem is red, and a step
-that cannot start yet is grey. **Select a step** to see why; select it again to close.
-On a phone the steps are listed one under the other.
+Each step has a mark and a colour: a green tick is done or OK; blue with *…* is in progress
+(alignment); amber with *!* needs attention (Ready or the automatic start still waits for it); red
+is a problem; grey with a dash is not used here, or not started yet. **Select a step** to see its
+details; select it again to close. An open step ends with a link **View in Maintenance (read
+only)** to the matching page of the Maintenance view (section 8): Sensors → ROS 2, GNSS → GNSS /
+RTK, AIO NAV and Alignment → Overview, Recording and Storage → System, Vehicle link → Network.
+The steps say what is wrong, not how to repair it; only the alignment step says what to do next,
+because that is part of operating the system. On a phone the steps are listed one under the other.
+
+**Recording** looks at AIO NAV's log folder (the folder of `fusion_txt_path`, or `output/` next to
+aio-nav-ros; section 7.2). AIO NAV writes its logs once alignment is complete. Red *Not writing*:
+navigation is in use (Ready or Degraded) but nothing is written, so no data is kept. Grey *Not
+started*: navigation is not in use yet. Grey *Off*: `aio_nav.yaml` sets both `save_fusion_txt` and
+`save_parsed_txt` to `false`. Grey *Folder not found*: the log folder does not exist.
+
+**Storage** is the free space of the disk that holds the data folder: amber *Almost full* from
+`system.disk_warn_percent` (default 90 % used), red *Full* at 99 % or with less than 1 GB free.
 
 DSO is needed for Ready only when the administrator adds it to `readiness.require` and AIO NAV uses
 its odometry (`Odometry.vupt` on); otherwise its line is information only.
@@ -165,7 +191,7 @@ Overview), section 3.5. Where there is no RTK, GNSS is an advisory only.
 
 ### 3.4 Pages
 
-- **Overview**: the status panel with the AIO NAV buttons and the start-up steps, a map with the
+- **Overview**: the status panel with the AIO NAV buttons and the steps (section 3.2), a map with the
   last 60 s of track, position, heading (with an arrow; up = north), speed, roll and pitch,
   the status dots, advisories, storage. The bottom line also shows *Ready signal #…, session …,
   updated …*: the numbers in the status packet, for comparing with the vehicle's log.
@@ -186,7 +212,8 @@ Overview), section 3.5. Where there is no RTK, GNSS is an advisory only.
 
 <img src="images/user/overview-phone.png" alt="Overview on a phone" width="300">
 
-*The pages also work on a phone or tablet.*
+*The pages also work on a phone or tablet: the steps are listed one under the other, and the top
+bar shows the environment without the word **Environment**.*
 
 ### 3.5 Settings page
 
@@ -196,7 +223,7 @@ Overview), section 3.5. Where there is no RTK, GNSS is an advisory only.
 | Card | What you can do |
 |------|-----------------|
 | **Wi-Fi** | See the network in use. Choose a network from the list (strongest first; *Other network (hidden)…* to type a name), enter the password, **Connect**. The result is said in plain words: *Connected to …*, or *The password was not accepted. Back on …* (*Still on …* when the device never left its network). A failed attempt always returns to the previous Wi-Fi within about a minute. While the hotspot is on, the card shows *Hotspot: …* and how phones open the pages, and no network can be joined here (the hotspot is switched on Maintenance → Network). |
-| **Environment** | Where the device is: *Detected automatically. Change it only if the detection is wrong.* **Network**: *Cable*, *Wi-Fi*, *None* or *Unknown*, with how it was detected (read only). **RTK corrections** and **Vehicle connected**: each has the buttons *Auto (…)* (with the detected value), *Yes* and *No*, and says how it was detected, or *Set by hand; detected: …*. **Ready** says whether Ready waits for RTK. Choosing *No* for RTK asks first (*No RTK here?*), because Ready can then be given with a position accurate to only a few metres. **GNSS now** shows the receiver's current quality, **Last changed** the time RTK was last set by hand. Every change is recorded in the event log. Vehicle connected is shown only; nothing uses it yet. |
+| **Environment** | Where the device is: *Detected automatically. Change it only if the detection is wrong.* **Network**: *Cable*, *Wi-Fi*, *None* or *Unknown*, with how it was detected (read only). **RTK corrections** and **Vehicle connected**: each has the buttons *Auto (…)* (with the detected value), *Yes* and *No*, and says how it was detected, or *Set by hand; detected: …*. **Ready** says whether Ready waits for RTK. Choosing *No* for RTK asks first (*No RTK here?*), because Ready can then be given with a position accurate to only a few metres. **GNSS now** shows the receiver's current quality, **Last changed** the time RTK was last set by hand. Every change is recorded in the event log. **Vehicle connected** decides what the Overview says: without a vehicle there is no Vehicle link step, and Ready reads *Recording, data usable* (section 3.1). The **Environment** chip in the top bar opens this card. |
 | **Automatic start** | *On*: AIO NAV starts by itself after power-on. *Starting*: it is waiting, and says for what (for example *Waiting for the vehicle to be still*). *Paused*: an operator pressed Stop; it stays stopped until **Resume** (on this card, or on the Overview page) or the next power-on. *Problem*: a sensor it waits for is missing, or it gave up. *Off*: press Start on the Overview page. |
 | **Vehicle link** | The vehicle address, and that the navigation data (0x04) and the Ready signal (0x05) go there on the same port, and how many Ready signals were sent. Read only: the address is set on Maintenance → AIO NAV config. |
 
@@ -273,8 +300,8 @@ The **Start** button is in the status area at the top of the Overview and Naviga
 2. Follow the step shown in the status area ([Alignment SOP](#5-alignment-sop)).
 
 ![Initializing, step 1 of 3](images/user/overview-initializing.png)
-*Initializing: the status area says what to do (Keep still) and names the alignment step; the
-Alignment step of the start-up progress is opened to show the three phases.*
+*Initializing: the status area says what to do (Keep still) and names the alignment stage; the
+Alignment step is blue, **Step 1 of 3**.*
 
 **Automatic start (power-on).** With the shipped settings AIO NAV is fully automatic: nobody
 presses Start. (The built-in default is off; see [configuration manual 4.2b](CONFIG.md).) After
@@ -328,6 +355,9 @@ ask the administrator to enable it. AIO NAV that was started in another way is d
   navigation.
 - If the state becomes **Fault**, follow the reason shown in the status area
   ([Troubleshooting](#9-troubleshooting)).
+- When collecting data: the **Recording** step should be green (*Writing*); red *Not writing* means
+  navigation is in use but no log is kept. **Storage** says how long the free space lasts at the
+  current write rate (section 3.2).
 
 ### 4.4 Restarting or stopping
 
@@ -726,7 +756,8 @@ tab-separated text logs once alignment is complete, in the `output/` folder of a
 | `AIO-NAV.txt` (the name set by `fusion_txt_path`) | Navigation solution at the output rate: time, position, velocity, attitude, accuracy, IMU errors, flags |
 | `AIO-NAV_imu.txt`, `AIO-NAV_gnss.txt`, `AIO-NAV_odom.txt` | The raw sensor inputs, parsed (`save_parsed_txt`) |
 
-Download them from the **Data** page of the product view.
+Download them from the **Data** page of the product view. The **Recording** step of the Overview
+(section 3.2) shows whether they are being written, and **Storage** how much room is left.
 
 ## 8. Maintenance view (engineers)
 
@@ -893,7 +924,9 @@ another network at the same time.
 | **Low rate** / **Stale** | Device overloaded or filter input interrupted | Check the System page (CPU, temperature) and the ROS 2 page. |
 | Camera/LiDAR **Not connected** | Sensor powered off, cable, or wrong IP | Check power and cable; Maintenance → Camera/LiDAR → **Run diagnostic**. |
 | Your application receives nothing, but the **Navigation output** line shows a rate and an address | Destination or firewall | Check that the address on the **Navigation output** line matches your computer; open the UDP port in its firewall (section 6.7). |
-| No files on the Data page | Logging is off or no run has been aligned yet | Enable `save_fusion_txt` in `aio_nav.yaml`; logs start after alignment. |
+| No files on the Data page | Logging is off (the **Recording** step says *Off*) or no run has been aligned yet | Enable `save_fusion_txt` in `aio_nav.yaml`; logs start after alignment. |
+| **Recording**: *Not writing* (red) | Navigation is in use but AIO NAV writes no log file: the disk is full, or the log folder is not the one AIO NAV writes to | Check the **Storage** step; check `fusion_txt_path` and `save_fusion_txt` on Maintenance → AIO NAV config. |
+| **Storage**: *Almost full* (amber) or *Full* (red) | The data disk is filling up; *Recording time left* says how long it lasts | Download the logs you need (Data page) and ask the administrator to clear old ones (Maintenance → System shows the disks). |
 
 ## 10. Glossary
 

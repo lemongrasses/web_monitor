@@ -205,7 +205,7 @@ READY 需要 AIO NAV 正在執行、輸出即時、`nav.ready_requires` 的旗�
 |------|----|----------|
 | 網路 | 網路線／Wi-Fi／沒有／未知 | 對外連線是否正常（`network.internet_check`），以及經由哪個網路介面（預設路由；無線網卡為 Wi-Fi）。尚未檢查，或 `internet_check: []` 時為未知。 |
 | RTK 修正資料 | 是／否／未知 | 這次上電後收到過 RTK 修正資料，或出現過 RTK 浮動解／固定解，就是「是」。維持到下次上電，儀表板重新啟動也不變：在橋下短暫中斷仍算是有 RTK 的地方，所以 READY 後失去 RTK 會變成 DEGRADED。接收機沒有設定 NTRIP（GNSS 診斷資訊：修正資料未啟用），或設定了 NTRIP 但沒有網路時為「否」。其他情況為「未知」（例如沒有診斷資訊的舊版驅動）。 |
-| 連接車輛 | 是／否 | `aio_nav.yaml` 有車端位址（`output_udp`）時為「是」。只是顯示，目前沒有功能使用它。 |
+| 連接車輛 | 是／否 | `aio_nav.yaml` 有車端位址（`output_udp`）時為「是」。使用者頁面依它決定說法：為「否」時，總覽頁面沒有「車端連線」步驟，就緒時顯示「正在記錄，資料可用」（操作手冊第 3.1、3.2 節）。 |
 
 READY 是否需要 RTK，依序決定：頁面上的選擇；沒有時，`require_rtk` 為 `true` 或 `false` 就照它；再沒有時，看偵測到的 RTK（未知視為需要，較保守的選擇）。選擇保存在 `state/environment.json`。RTK 與連接車輛可以手動設定（網路不行）：`POST /api/environment`（使用者頁面）或 `POST /api/maint/environment`（需要密碼），內容為 `{"key": "rtk" | "vehicle", "value": true | false | null, "confirm": bool}`；`null` 表示改回自動，`"rtk"` 設為 `false` 需要 `"confirm": true`。對同一路徑 `GET` 會回傳目前的環境；`/api/settings` 與 `/api/state` 也以 `environment` 包含它。舊的 `POST /api/settings/rtk` 與 `/api/maint/readiness/rtk`（`{"required": bool}`）仍可使用，設定的是 RTK 這一項。
 
@@ -397,7 +397,7 @@ ros2 param get /ouster/os_driver sensor_hostname   # Ouster IP（節點名稱可
 |------|--------|------|
 | `interval_s` | `2` | 讀取 CPU、GPU、記憶體、磁碟與溫度的間隔。 |
 | `disk_paths` | `["/"]` | 要回報的磁碟；資料資料夾會自動加入。 |
-| `disk_warn_percent` | `90` | 磁碟使用率（%）達到此值時，發出「Storage almost full」警告。 |
+| `disk_warn_percent` | `90` | 磁碟使用率（%）達到此值時，發出「Storage almost full」警告，總覽頁面的「**儲存空間**」步驟也變成琥珀色（「快滿了」；操作手冊第 3.2 節）。 |
 | `temp_warn_c` | `85` | 溫度（°C）達到此值時，發出「Temperature high」警告。 |
 
 ### 4.7 `ros`：ROS 2 監看
