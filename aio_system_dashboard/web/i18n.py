@@ -29,7 +29,7 @@ COOKIE = "aio_lang"
 # JSON keys whose string values are words for people (anything else is data: names, addresses...).
 TEXT_KEYS = frozenset({
     "title", "detail", "label", "name", "summary", "reasons", "action_text", "hint", "reason",
-    "client", "risks", "k", "v", "text",
+    "client", "risks", "k", "v", "text", "how",
 })
 
 _TABLES: Dict[str, Tuple[Dict[str, str], List[Tuple["re.Pattern", str]]]] = {

@@ -373,9 +373,8 @@ class GuardWebTest(unittest.TestCase):
         self.assertTrue(r.get_json()["needs_confirm"])
         j = self.post("/api/maint/readiness/rtk", {"required": False, "confirm": True}).get_json()
         self.assertTrue(j["success"])
-        from aio_system_dashboard.state.health import rtk_setting
-        required, source, info = rtk_setting(self.ctx.cfg)
-        self.assertEqual((required, source), (False, "saved setting"))
+        from aio_system_dashboard.state.environment import override
+        self.assertFalse(override(self.ctx.cfg, "rtk")["value"])
         self.assertIn("RTK no longer required for Ready", self.events)
 
     def test_saved_but_restart_failed_is_not_a_success(self):

@@ -88,15 +88,16 @@ DEFAULTS: Dict[str, Any] = {
                      "fast_restarts": 3,      # this many restarts within window_s ...
                      "window_s": 60.0,        # ... and further restarts wait retry_s too
                      "max_memory_mb": "auto"},  # RAM + swap above this: restart DSO. auto: 20% of RAM; 0: off
-    # READY for the vehicle (state/readiness.py): AIO NAV aligned with fresh output and, while
-    # require_rtk is on (the default), GNSS of at least gnss_min_quality. require: extra conditions,
+    # READY (state/readiness.py): AIO NAV aligned with fresh output and, where RTK is required,
+    # GNSS of at least gnss_min_quality. require: extra conditions,
     # each held stable_s before READY counts and lost after failing loss_s: imu, gnss, gnss_quality,
     # dso, vehicle_route, storage.
     "readiness": {"require": [], "stable_s": 2.0, "loss_s": 1.0,
                   "dso_only_with_vupt": True,    # dso in require: only while Odometry.vupt is on
                   # RTK: READY needs a GNSS position of at least gnss_min_quality (gnss + gnss_quality).
-                  # Switchable on Maintenance > Overview (kept in state/readiness.json).
-                  "require_rtk": True,
+                  # auto: where the environment has RTK (state/environment.py); true / false pins it.
+                  # A choice made on a page wins (kept in state/environment.json).
+                  "require_rtk": "auto",
                   "gnss_min_quality": "float",   # for gnss_quality: spp, float or fixed
                   "gnss_stable_s": 3.0,
                   "gnss_loss_s": 3.0,            # GNSS lost this long before READY drops (trees, bridges)

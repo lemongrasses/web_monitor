@@ -2,8 +2,8 @@
 
 Product state depends on the AIO NAV pipeline (process + fresh packets + required alignment
 flags). Camera, LiDAR and network only produce advisories. GNSS is an advisory too unless
-readiness.require_rtk is on (the default): then READY also needs RTK, and losing it after READY
-shows DEGRADED (readiness.py). The 10-state readiness for the vehicle is derived in _readiness.
+RTK is required (state/environment.py: where the environment has RTK, or as set on a page): then
+READY also needs RTK, and losing it after READY shows DEGRADED (readiness.py). The 10-state readiness for the vehicle is derived in _readiness.
 
   STOPPED       not running, and nobody asked it to run: normal, not a problem
   STARTING      asked to start / just started, no output yet (up to nav.startup_timeout_s)
@@ -21,6 +21,7 @@ from typing import Callable, Dict, List, Optional, Tuple
 
 from ..actions import process_control
 from . import readiness as rd
+from .environment import Environment
 from . import still
 from .indicator import DebouncedStatus, FAULT, HEALTHY, UNKNOWN, WARNING
 
@@ -35,29 +36,6 @@ PRODUCT_FAULT = "FAULT"
 PRODUCT_UNKNOWN = "UNKNOWN"
 _PRODUCT_SEVERITY = {PRODUCT_UNKNOWN: 0, STOPPED: 0, READY: 1, STARTING: 1, INITIALIZING: 2, PRODUCT_FAULT: 3}
 IDLE = "idle"                      # lamp level: off on purpose (not unknown, not a problem)
-RTK_FILE = "readiness.json"         # state/: the RTK switch set on the Maintenance page
-
-
-def rtk_setting(cfg) -> Tuple[bool, str, Dict]:
-    """(RTK required for READY, where that comes from, details of the last change)."""
-    try:
-        import json
-        data = json.loads(cfg.state_file(RTK_FILE).read_text(encoding="utf-8"))
-        if isinstance(data.get("require_rtk"), bool):
-            return data["require_rtk"], "saved setting", data
-    except (OSError, ValueError, AttributeError):
-        pass
-    return bool(cfg["readiness"].get("require_rtk", True)), "config", {}
-
-
-def set_rtk_setting(cfg, required: bool, who: str) -> None:
-    import json
-    f = cfg.state_file(RTK_FILE)
-    f.parent.mkdir(parents=True, exist_ok=True)
-    tmp = f.with_name(f.name + ".tmp")
-    tmp.write_text(json.dumps({"require_rtk": bool(required), "changed_by": who,
-                               "changed_at": time.time()}) + "\n", encoding="utf-8")
-    tmp.replace(f)
 START_REQUEST_GRACE_S = 10.0       # a start request with no process yet is "starting" this long
 
 SERVICE_DOWN_STATES = ("stopped", "failed", "not_installed")
@@ -216,6 +194,7 @@ class HealthEngine:
         self.clock_status = None                       # callable -> dict: GNSS time vs the system clock
         self.still_limits = None                       # state/still.StillLimits, set by the app
         self.last_step: Optional[float] = None         # monotonic time of the last step (watchdog)
+        self.environment = Environment(cfg, clock=clock)   # network / RTK / vehicle (state/environment.py)
         # Other layers, set by the app; the core never imports them (vehicle/output.py is one):
         self.snapshot_listeners: List[Callable[[Dict, float], None]] = []   # (snapshot, now), before it is stored
         self.extra_steps: List[Callable[[bool], Dict]] = []   # (nav output fresh) -> a start-up step for the pages
@@ -343,10 +322,13 @@ class HealthEngine:
                     "gnss", f"GNSS {self._gnss_label}",
                     "Inertial navigation remains active." if g_level in (WARNING, FAULT) else "")
 
+        network = self.store.get("network", {}) or {}
+        env = self.environment.evaluate(network, gq, self.store.get("gnss_diag", {}) or {}, now)
+
         aiding = {k: (flag_age.get(k) is not None and flag_age[k] <= ncfg["flag_active_s"] and fresh)
                   for k in ("zupt", "zihr", "nhc", "vupt", "gnss")}
 
-        readiness = self._readiness(now, shown, nav, nav_svc, gq, fresh, latest, in_grace)
+        readiness = self._readiness(now, shown, nav, nav_svc, gq, fresh, latest, in_grace, env)
         for listener in self.snapshot_listeners:
             try:
                 listener(readiness, now)
@@ -356,7 +338,6 @@ class HealthEngine:
 
         checks = self._startup_checks(readiness, services, nav_svc, latest, fresh, health_view["state"],
                                       align_lamps, nav)
-        network = self.store.get("network", {}) or {}
         indicators = {
             **align_lamps,
             "gnss": {"level": g_level, "label": self._gnss_label if g_level != UNKNOWN else "No data",
@@ -421,6 +402,7 @@ class HealthEngine:
             "ts": time.time(),
             "health": health_view,
             "readiness": readiness,
+            "environment": env,
             "checks": checks,
             "nav": nav_out,
             "solution": latest if latest else None,
@@ -437,6 +419,7 @@ class HealthEngine:
                                 if nav.get("session_started_mono") else None,
         })
         self.store.set("readiness", readiness)
+        self.store.set("environment", env)
         maint = self._maintenance(now, services, network, system, shown, u_shown, nav, expected)
         maint["product_state"] = health_view["state"]      # the same state the user pages show
         self.store.set("maint", maint)
@@ -531,10 +514,10 @@ class HealthEngine:
                     f"disable it (sudo systemctl disable {nav_svc.get('unit') or 'aio-nav.service'})")
         return None
 
-    def _readiness(self, now, shown, nav, nav_svc, gq, fresh, latest, in_grace) -> Dict:
+    def _readiness(self, now, shown, nav, nav_svc, gq, fresh, latest, in_grace, env) -> Dict:
         rcfg = self.cfg["readiness"]
         required = set(rcfg.get("require") or [])
-        rtk, rtk_source, _ = rtk_setting(self.cfg)
+        rtk, rtk_source = env["rtk_required"], env["rtk_source"]
         if rtk:
             required |= {"gnss", "gnss_quality"}
         if "dso" in required and rcfg.get("dso_only_with_vupt", True) and not self.cfg.aio_nav.get("vupt"):

@@ -72,6 +72,7 @@ def create_maintenance_app(ctx):
             "gnss": ctx.store.get("gnss", {}),
             "gnss_diag": ctx.store.get("gnss_diag", {}),
             "readiness": ctx.store.get("readiness", {}),
+            "environment": ctx.store.get("environment", {}),
             "status_udp": ctx.store.get("status_udp", {}) or {"enabled": False},
             "product": {k: product.get(k) for k in ("health", "udp", "nav", "indicators", "aiding")},
             "config": {

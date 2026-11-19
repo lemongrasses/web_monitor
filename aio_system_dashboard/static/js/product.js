@@ -247,7 +247,7 @@
       wifi: null, cfg: null, networks: [], scanning: false,
       choice: "", ssid: "", password: "", showPw: false,
       busy: "", result: "", resultClass: "", confirmRisks: [],
-      rtkBusy: false, rtkAsk: false, rtkMsg: "", rtkClass: "",
+      envBusy: false, rtkAsk: false, rtkMsg: "", rtkClass: "",
 
       async init() {
         await Promise.all([this.loadWifi(), this.loadCfg()]);
@@ -320,7 +320,25 @@
         this.scan("auto");
       },
 
-      // ----- RTK requirement
+      // ----- environment (state/environment.py) and the RTK requirement it decides
+      envOptions: [
+        { v: "auto", label: (k, d) => d.envAutoLabel(k) },
+        { v: true, label: () => tr("Yes") },
+        { v: false, label: () => tr("No") },
+      ],
+      envOf(key) { return (this.cfg && this.cfg.environment && this.cfg.environment[key]) || {}; },
+      envChoice(key) { const e = this.envOf(key); return e.auto === false ? e.value : "auto"; },
+      envWord(key, v) {
+        if (key === "network") return { wired: tr("Cable"), wifi: tr("Wi-Fi"), none: tr("None") }[v] || tr("Unknown");
+        return v === true ? tr("Yes") : v === false ? tr("No") : tr("Unknown");
+      },
+      envValue(key) { return this.envWord(key, this.envOf(key).value); },
+      envAutoLabel(key) { return trf("Auto ({0})", this.envWord(key, this.envOf(key).detected)); },
+      envHow(key) {
+        const e = this.envOf(key);
+        if (e.auto === false) return trf("Set by hand; detected: {0}", this.envWord(key, e.detected));
+        return e.how || "";
+      },
       rtkExplain() {
         if (!this.cfg) return "";
         if (!this.cfg.rtk.required) return tr("Ready does not wait for RTK. The position may be accurate to only a few metres.");
@@ -328,15 +346,13 @@
           ? tr("Ready waits for an RTK fix: a position accurate to a few centimetres.")
           : tr("Ready waits for RTK (float or fix): a position accurate to centimetres or decimetres.");
       },
-      toggleRtk() {
-        if (!this.cfg || this.rtkBusy) return;
-        if (this.cfg.rtk.required) { this.rtkAsk = true; return; }
-        this.setRtk(true, false);
-      },
-      async setRtk(required, confirm) {
-        this.rtkBusy = true; this.rtkAsk = false;
-        const { j } = await postJson("/api/settings/rtk", { required, confirm: !!confirm });
-        this.rtkBusy = false;
+      async setEnv(key, v, confirm) {
+        if (!this.cfg || this.envBusy) return;
+        const value = v === "auto" ? null : v;
+        if (key === "rtk" && value === false && !confirm) { this.rtkAsk = true; return; }
+        this.envBusy = true; this.rtkAsk = false;
+        const { j } = await postJson("/api/environment", { key, value, confirm: !!confirm });
+        this.envBusy = false;
         this.rtkMsg = j.summary || ""; this.rtkClass = j.success ? "ok" : "bad";
         await this.loadCfg();
       },

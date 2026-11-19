@@ -122,7 +122,7 @@ ZH = {
     "Ready does not wait for RTK. The position may be accurate to only a few metres.": "不等 RTK 即可就緒，定位準確度可能只有數公尺。",
     "Turn off the RTK requirement?": "要關閉 RTK 要求嗎？",
     "Ready can then be given with a normal GNSS position, accurate to a few metres. Use this only where RTK is not available.":
-        "關閉後，一般 GNSS 定位（準確度數公尺）也可以就緒。請只在無法使用 RTK 的地方使用。",
+        "這樣一般 GNSS 定位（準確度數公尺）也可以就緒。請只在無法使用 RTK 的地方使用。",
     "Turn off": "關閉", "Keep RTK": "保留 RTK",
     "Automatic start": "自動啟動", "Paused": "已暫停",
     "AIO NAV does not start by itself. Press Start on the Overview page.": "AIO NAV 不會自動啟動。請在總覽頁面按「啟動」。",
@@ -253,6 +253,24 @@ ZH = {
     "the settings changed meanwhile (another page?); reload and enter them again": "設定已在其間被變更（其他頁面？）；請重新載入後再輸入",
     "not saved: the vehicle must stand still to restart AIO NAV (it aligns again). Stop, or press Save alone.":
         "未儲存：重新啟動 AIO NAV 需要車輛靜止（它會重新對準）。請停車，或只按「儲存」。",
+    # environment (state/environment.py, Settings page)
+    "Environment": "環境", "Detected automatically. Change it only if the detection is wrong.":
+        "自動偵測。只有偵測錯誤時才需要變更。",
+    "RTK corrections": "RTK 修正資料", "Vehicle connected": "連接車輛", "Yes": "是",
+    "Cable": "網路線", "None": "沒有", "Auto ({0})": "自動（{0}）",
+    "Set by hand; detected: {0}": "手動設定；偵測結果：{0}",
+    "No RTK here?": "這裡沒有 RTK？", "No RTK here": "這裡沒有 RTK",
+    "Not checked yet": "尚未檢查", "Internet check not set up (network.internet_check)": "未設定對外連線檢查（network.internet_check）",
+    "RTK corrections or an RTK position in this power-on": "這次上電已收到 RTK 修正資料或 RTK 定位",
+    "The receiver has no RTK corrections set up (NTRIP)": "接收機沒有設定 RTK 修正服務（NTRIP）",
+    "NTRIP is set up, but there is no network for the corrections": "已設定 NTRIP，但沒有網路可以取得修正資料",
+    "NTRIP is set up and the network works": "已設定 NTRIP，網路正常", "NTRIP is set up": "已設定 NTRIP",
+    "No network for RTK corrections": "沒有網路可以取得 RTK 修正資料",
+    "Waiting for the receiver's diagnostics": "等待接收機的診斷資訊",
+    "No vehicle address (output_udp in aio_nav.yaml is empty)": "沒有車端位址（aio_nav.yaml 的 output_udp 是空的）",
+    "RTK: detected automatically": "RTK：自動偵測", "Vehicle: detected automatically": "車輛：自動偵測",
+    "RTK is required for Ready": "就緒需要 RTK", "Ready no longer waits for RTK": "就緒不再等待 RTK",
+    "No vehicle connected": "沒有連接車輛",
 }
 
 PATTERNS = [
@@ -328,4 +346,7 @@ PATTERNS = [
     (r"Ethernet \((.+)\)", "乙太網路（{0}）"),
     (r"cannot save: (.+)", "無法儲存：{0}"),
     (r"Wi-Fi change to (.+) requested", "已要求將 Wi-Fi 變更為 {0}"),
+    (r"Connection out works, over (.+)", "對外連線正常，經由 {0}"),
+    (r"No connection out \((.+)\)", "沒有對外連線（{0}）"),
+    (r"Vehicle address (\S+) \(output_udp in aio_nav\.yaml\)", "車端位址 {0}（aio_nav.yaml 的 output_udp）"),
 ]

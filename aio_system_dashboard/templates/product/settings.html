@@ -79,17 +79,38 @@
     </div>
   </section>
 
-  <!-- Ready requirement: RTK on (default) or off, with a confirm to turn it off. -->
-  <section class="u-sec" aria-labelledby="rtk-h" x-show="cfg" x-cloak>
-    <h2 id="rtk-h">{{ _("Position accuracy for Ready") }}</h2>
+  <!-- Environment: where the device is (state/environment.py). Detected; a person may correct it.
+       RTK decides whether Ready waits for RTK; saying "no RTK" needs a confirm. -->
+  <section class="u-sec" aria-labelledby="env-h" x-show="cfg" x-cloak>
+    <h2 id="env-h">{{ _("Environment") }}</h2>
+    <p class="u-hint mt-0 ms-1">{{ _("Detected automatically. Change it only if the detection is wrong.") }}</p>
     <div class="u-list">
       <div class="u-item">
         <div class="u-item-main">
-          <div class="u-item-title" id="rtk-label">{{ _("Require RTK before Ready") }}</div>
+          <div class="u-item-title">{{ _("Network") }}</div>
+          <div class="u-item-sub" x-text="envHow('network')"></div>
+        </div>
+        <span class="u-item-end" x-text="envValue('network')"></span>
+      </div>
+      <template x-for="key in ['rtk', 'vehicle']" :key="key">
+        <div class="u-item stack">
+          <div class="u-item-main">
+            <div class="u-item-title" :id="'env-' + key" x-text="key === 'rtk' ? AIO.tr('RTK corrections') : AIO.tr('Vehicle connected')"></div>
+            <div class="u-item-sub" x-text="envHow(key)"></div>
+          </div>
+          <div class="u-seg" role="group" :aria-labelledby="'env-' + key">
+            <template x-for="opt in envOptions" :key="opt.v">
+              <button type="button" :class="{ on: envChoice(key) === opt.v }" :aria-pressed="envChoice(key) === opt.v ? 'true' : 'false'"
+                      :disabled="envBusy" @click="setEnv(key, opt.v, false)" x-text="opt.label(key, $data)"></button>
+            </template>
+          </div>
+        </div>
+      </template>
+      <div class="u-item">
+        <div class="u-item-main">
+          <div class="u-item-title">{{ _("Ready") }}</div>
           <div class="u-item-sub" x-text="rtkExplain()"></div>
         </div>
-        <button type="button" id="rtk-sw" class="u-switch" role="switch" aria-labelledby="rtk-label"
-                :aria-checked="cfg && cfg.rtk.required ? 'true' : 'false'" :disabled="rtkBusy" @click="toggleRtk()"></button>
       </div>
       <div class="u-item">
         <span>{{ _("GNSS now") }}</span>
@@ -101,10 +122,10 @@
       </div>
       <div class="u-item stack" x-show="rtkAsk || rtkMsg" x-cloak>
         <div class="u-callout warn" x-show="rtkAsk" role="alertdialog">
-          <strong>{{ _("Turn off the RTK requirement?") }}</strong>
+          <strong>{{ _("No RTK here?") }}</strong>
           <p class="mb-2">{{ _("Ready can then be given with a normal GNSS position, accurate to a few metres. Use this only where RTK is not available.") }}</p>
           <div class="d-flex gap-2">
-            <button type="button" class="u-btn u-btn-sm" @click="setRtk(false, true)">{{ _("Turn off") }}</button>
+            <button type="button" class="u-btn u-btn-sm" @click="setEnv('rtk', false, true)">{{ _("No RTK here") }}</button>
             <button type="button" class="u-btn u-btn-sm u-btn-quiet" @click="rtkAsk = false">{{ _("Keep RTK") }}</button>
           </div>
         </div>

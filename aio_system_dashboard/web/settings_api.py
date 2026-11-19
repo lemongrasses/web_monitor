@@ -1,17 +1,18 @@
-"""Settings both UIs offer: Wi-Fi and "RTK required for Ready".
+"""Settings both UIs offer: Wi-Fi and the environment (RTK, vehicle; "RTK required for Ready").
 
 The same endpoints are mounted on the user app (no password, /api/...) and on the Maintenance
 app (password, /api/maint/...). Both use the one WifiManager on ctx, so its lock serialises a
 change made from either page. Wi-Fi may only be changed from a browser whose path to this device
 is a cable (or the device itself), so a change can never cut off the page that made it.
-Turning RTK off needs an explicit confirm, from either page. The hotspot (an installer option) is
+Saying "no RTK here" (which lets Ready come without RTK) needs an explicit confirm, from either
+page. The hotspot (an installer option) is
 switched on Maintenance only; the user page shows it and does not change Wi-Fi while it runs.
 """
 
 from flask import jsonify, request
 
 from ..actions import wifi as wifi_mod
-from ..state.health import rtk_setting, set_rtk_setting
+from ..state import environment as env_mod
 
 
 class _NoEvents:
@@ -151,27 +152,56 @@ def register_settings(ctx, app, prefix: str, rtk_path: str, guard=None, where: s
                         "summary": (f"devices on the hotspot get the NAV and status packets on UDP {relay.port}"
                                     if enabled else "no packets to the devices on the hotspot")})
 
+    def set_environment(key: str, value, confirm: bool):
+        """key rtk / vehicle, value True / False or None (automatic). Saying "no RTK" is a safety
+        change: confirmed, logged, kept on disk."""
+        if value is False and key == "rtk" and not confirm:
+            return jsonify({"success": False, "needs_confirm": True,
+                            "summary": "Without RTK, Ready may be reported with a position that is only "
+                                       "accurate to a few metres."}), 409
+        try:
+            env_mod.set_override(ctx.cfg, key, value, f"{where} {request.remote_addr or ''}".strip())
+        except OSError as e:
+            return jsonify({"success": False, "summary": f"cannot save: {e}"}), 500
+        word = {None: "automatic", True: "yes", False: "no"}[value]
+        _events(ctx).add("warning" if key == "rtk" else "info", "readiness",
+                         {"rtk": "RTK here", "vehicle": "Vehicle connected"}[key] + ": " + word,
+                         f"changed on the {where} from {request.remote_addr}")
+        if key == "rtk" and value is not None:          # the words of the old switch, still in the log
+            _events(ctx).add("warning", "readiness", "RTK " + ("required" if value else "no longer required") + " for Ready",
+                             f"changed on the {where} from {request.remote_addr}")
+        return jsonify({"success": True, "key": key, "value": value,
+                        "summary": {("rtk", None): "RTK: detected automatically",
+                                    ("rtk", True): "RTK is required for Ready",
+                                    ("rtk", False): "Ready no longer waits for RTK",
+                                    ("vehicle", None): "Vehicle: detected automatically",
+                                    ("vehicle", True): "Vehicle connected",
+                                    ("vehicle", False): "No vehicle connected"}[(key, value)]})
+
     @protect
     def api_rtk():
-        """Require RTK for READY, or not. A safety setting: confirmed, logged, kept on disk."""
+        """The RTK switch as before: {"required": bool} is the same as the environment's rtk."""
         if bad_request():
             return jsonify({"success": False, "summary": "bad request"}), 400
         b = body()
         required = b.get("required")
         if not isinstance(required, bool):
             return jsonify({"success": False, "summary": "required must be true or false"}), 400
-        if not required and b.get("confirm") is not True:
-            return jsonify({"success": False, "needs_confirm": True,
-                            "summary": "Without RTK, Ready may be reported with a position that is only "
-                                       "accurate to a few metres."}), 409
-        try:
-            set_rtk_setting(ctx.cfg, required, f"{where} {request.remote_addr or ''}".strip())
-        except OSError as e:
-            return jsonify({"success": False, "summary": f"cannot save: {e}"}), 500
-        _events(ctx).add("warning", "readiness", "RTK " + ("required" if required else "no longer required") + " for Ready",
-                       f"changed on the {where} from {request.remote_addr}")
-        return jsonify({"success": True, "required": required,
-                        "summary": "RTK is required for Ready" if required else "Ready no longer waits for RTK"})
+        return set_environment("rtk", required, b.get("confirm") is True)
+
+    @protect
+    def api_environment():
+        """{"key": "rtk" | "vehicle", "value": true | false | null (automatic), "confirm": bool}."""
+        if bad_request():
+            return jsonify({"success": False, "summary": "bad request"}), 400
+        b = body()
+        key, value = b.get("key"), b.get("value", "missing")
+        if key not in env_mod.KEYS or not (value is None or isinstance(value, bool)):
+            return jsonify({"success": False, "summary": "key must be rtk or vehicle, value true, false or null"}), 400
+        return set_environment(key, value, b.get("confirm") is True)
+
+    def api_environment_get():
+        return jsonify(ctx.store.get("environment") or {})
 
     name = prefix.strip("/").replace("/", "_")
     app.add_url_rule(f"{prefix}/wifi", f"{name}_wifi", api_wifi)
@@ -182,11 +212,17 @@ def register_settings(ctx, app, prefix: str, rtk_path: str, guard=None, where: s
         app.add_url_rule(f"{prefix}/wifi/hotspot/relay", f"{name}_wifi_hotspot_relay", api_wifi_hotspot_relay,
                          methods=["POST"])
     app.add_url_rule(rtk_path, f"{name}_rtk", api_rtk, methods=["POST"])
+    app.add_url_rule(f"{prefix}/environment", f"{name}_environment", api_environment, methods=["POST"])
+    app.add_url_rule(f"{prefix}/environment", f"{name}_environment_get", api_environment_get, methods=["GET"])
 
 
-def rtk_view(cfg) -> dict:
-    """What a settings page shows about the RTK requirement."""
-    required, source, data = rtk_setting(cfg)
-    return {"required": required, "source": source, "changed_at": data.get("changed_at"),
-            "changed_by": data.get("changed_by"),
+def rtk_view(cfg, env: dict) -> dict:
+    """What a settings page shows about the RTK requirement (env: the store's environment)."""
+    rtk = (env or {}).get("rtk") or {}
+    required = (env or {}).get("rtk_required")
+    if required is None:                              # before the first health step
+        o = env_mod.override(cfg, "rtk")
+        required = o["value"] if o else cfg["readiness"].get("require_rtk") is not False
+    return {"required": bool(required), "source": (env or {}).get("rtk_source", ""),
+            "changed_at": rtk.get("changed_at"), "changed_by": rtk.get("changed_by"),
             "min_quality": cfg["readiness"].get("gnss_min_quality") or "float"}

@@ -70,7 +70,8 @@ def create_product_app(ctx):
         tx = getattr(ctx, "vehicle", None)       # the vehicle output layer, when there is one
         external = [d for d in ctx.cfg.nav_destinations() if d.get("kind") == "external"]
         return jsonify({
-            "rtk": rtk_view(ctx.cfg),
+            "rtk": rtk_view(ctx.cfg, ctx.store.get("environment")),
+            "environment": ctx.store.get("environment"),
             "autostart": auto.status() if auto is not None else {"enabled": False},
             "vehicle": {"nav": f'{external[0]["host"]}:{external[0]["port"]}' if external else None,
                         "status": tx.status() if tx is not None else {"enabled": False}},

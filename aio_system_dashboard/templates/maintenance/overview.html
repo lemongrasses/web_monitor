@@ -82,7 +82,12 @@
             <span class="muted" x-text="rd.rtk_source ? ' · ' + rd.rtk_source : ''"></span>
             <button type="button" class="btn btn-sm btn-outline-secondary ms-2 py-0" :disabled="rtkBusy"
                     @click="setRtk(!rd.rtk_required)" x-text="rd.rtk_required ? 'Turn off' : 'Turn on'"></button>
+            <button type="button" class="btn btn-sm btn-outline-secondary ms-1 py-0" :disabled="rtkBusy"
+                    x-show="env.rtk && env.rtk.auto === false" @click="setEnvAuto('rtk')">Automatic</button>
           </span></div>
+        <div class="vrow"><span class="k">Environment</span>
+          <span class="v small" :title="['network', 'rtk', 'vehicle'].map(k => k + ': ' + ((env[k] || {}).how || '')).join('\n')"
+                x-text="envText()"></span></div>
         <div class="small muted mb-1" x-show="rtkMsg" x-text="rtkMsg"></div>
         <div class="small muted mb-1" x-text="(rd.required || []).length ? 'Required for Ready: ' + rd.required.join(', ') : 'Extra Ready conditions: none required (readiness.require)'"></div>
         <template x-for="c in (rd.conditions || [])" :key="c.name">

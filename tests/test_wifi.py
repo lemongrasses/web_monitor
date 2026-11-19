@@ -469,15 +469,29 @@ class UserPageSettingsTest(unittest.TestCase):
         self.assertEqual(nm.active, "u-hs")
 
     def test_rtk_off_needs_a_confirm(self):
-        from aio_system_dashboard.state.health import rtk_setting
+        from aio_system_dashboard.state.environment import override
+        rtk_setting = lambda cfg: (override(cfg, "rtk") or {"value": True})["value"]
         r = self.post("/api/settings/rtk", {"required": False})
         self.assertEqual(r.status_code, 409)
-        self.assertTrue(rtk_setting(self.ctx.cfg)[0])                       # unchanged
+        self.assertTrue(rtk_setting(self.ctx.cfg))                          # unchanged
         self.assertTrue(self.post("/api/settings/rtk", {"required": False, "confirm": True}).get_json()["success"])
-        self.assertFalse(rtk_setting(self.ctx.cfg)[0])
+        self.assertFalse(rtk_setting(self.ctx.cfg))
         self.assertFalse(self.c.get("/api/settings").get_json()["rtk"]["required"])
         self.assertTrue(self.post("/api/settings/rtk", {"required": True}).get_json()["success"])   # on: no confirm
-        self.assertTrue(rtk_setting(self.ctx.cfg)[0])
+        self.assertTrue(rtk_setting(self.ctx.cfg))
+
+    def test_environment_can_be_set_by_hand_and_back_to_automatic(self):
+        from aio_system_dashboard.state.environment import override
+        self.assertEqual(self.post("/api/environment", {"key": "network", "value": True}).status_code, 400)
+        self.assertEqual(self.post("/api/environment", {"key": "rtk", "value": "no"}).status_code, 400)
+        self.assertEqual(self.post("/api/environment", {"key": "rtk", "value": False}).status_code, 409)
+        self.assertIsNone(override(self.ctx.cfg, "rtk"))                    # not without a confirm
+        self.assertTrue(self.post("/api/environment", {"key": "rtk", "value": False, "confirm": True}).get_json()["success"])
+        self.assertFalse(override(self.ctx.cfg, "rtk")["value"])
+        self.assertTrue(self.post("/api/environment", {"key": "rtk", "value": None}).get_json()["success"])
+        self.assertIsNone(override(self.ctx.cfg, "rtk"))                    # automatic again
+        self.assertTrue(self.post("/api/environment", {"key": "vehicle", "value": False}).get_json()["success"])
+        self.assertFalse(override(self.ctx.cfg, "vehicle")["value"])
 
     def test_chinese_pages_and_answers_english_machine_interface(self):
         self.c.set_cookie("aio_lang", "zh-TW")

@@ -454,18 +454,40 @@ class EngineTest(unittest.TestCase):
         self.assertNotEqual(r["inhibit"], [])
 
     def test_rtk_is_required_by_default_and_can_be_switched_off(self):
-        from aio_system_dashboard.state.health import set_rtk_setting
-        eng = self.engine()                                          # defaults: require_rtk true
+        from aio_system_dashboard.state.environment import set_override
+        eng = self.engine()                    # nothing detected yet: RTK required, the careful choice
         self.aligned()
         self.gnss("spp")
         r = self.run_for(eng, 6)
         self.assertEqual(r["state"], "REFINING")
         self.assertIn("GNSS_QUALITY_LOW", r["inhibit"])
-        self.assertEqual((r["rtk_required"], r["rtk_source"]), (True, "config"))
-        set_rtk_setting(self.cfg, False, "192.0.2.1")                # the Maintenance switch
+        self.assertEqual((r["rtk_required"], r["rtk_source"]), (True, "environment not known yet"))
+        set_override(self.cfg, "rtk", False, "192.0.2.1")            # "no RTK here", set on a page
         r = self.run_for(eng, 1)
         self.assertEqual(r["state"], "READY")
-        self.assertEqual((r["rtk_required"], r["rtk_source"]), (False, "saved setting"))
+        self.assertEqual((r["rtk_required"], r["rtk_source"]), (False, "set on a page"))
+
+    def test_the_environment_decides_whether_ready_needs_rtk(self):
+        """A place without NTRIP: READY on SPP. A place with RTK: losing it after READY is DEGRADED."""
+        eng = self.engine()
+        self.aligned()
+        self.gnss("spp")
+        self.store.set("gnss_diag", {"available": True, "corrections": {"level": 3}})   # no NTRIP set up
+        r = self.run_for(eng, 6)
+        self.assertEqual((r["state"], r["rtk_required"], r["rtk_source"]), ("READY", False, "environment"))
+        self.assertEqual(self.store.get("product")["environment"]["rtk"]["value"], False)
+
+        eng = self.engine()                                          # a place with RTK corrections
+        self.aligned()
+        self.store.set("gnss_diag", {"available": True, "corrections": {"level": 0}})
+        self.store.set("network", {"internet": {"reachable": True}, "default_route": {"interface": "eno1"}})
+        r = self.run_for(eng, 6)
+        self.assertEqual((r["state"], r["rtk_required"]), ("READY", True))
+        self.gnss("spp")
+        self.store.set("gnss_diag", {"available": True, "corrections": {"level": 2}})   # corrections lost
+        self.store.set("network", {"internet": {"reachable": False}})
+        r = self.run_for(eng, 20)
+        self.assertEqual((r["state"], r["rtk_required"]), ("DEGRADED", True))     # not "no RTK here"
 
     def test_startup_checklist_follows_the_sequence(self):
         self.data["autostart"]["start_services"] = ["drivers"]

@@ -110,6 +110,18 @@
       },
       hex(v) { return v == null ? "—" : "0x" + Number(v).toString(16).padStart(5, "0"); },
       rtkMsg: "", rtkBusy: false,
+      get env() { return (this.d && this.d.environment) || {}; },
+      envText() {
+        const e = this.env, w = (v) => v === true ? "yes" : v === false ? "no" : (v || "unknown");
+        const one = (k, name) => name + " " + w((e[k] || {}).value) + ((e[k] || {}).auto === false ? " (set by hand)" : "");
+        return e.network ? [one("network", "network"), one("rtk", "RTK"), one("vehicle", "vehicle")].join(" · ") : "—";
+      },
+      async setEnvAuto(key) {
+        this.rtkBusy = true;
+        const j = await this.toolFetch("/api/maint/environment", { method: "POST", body: JSON.stringify({ key, value: null }) });
+        this.rtkBusy = false;
+        this.rtkMsg = j.summary || "";
+      },
       async setRtk(required) {
         const q = required ? "Require RTK for Ready?" :
           "Stop requiring RTK? Ready will then be given with SPP accuracy.";
