@@ -75,9 +75,11 @@ fi
 mkdir -p "$STAGE/config" "$STAGE/deploy" "$STAGE/docs"
 cp config/dashboard.yaml "$STAGE/config/"
 cp -r wheels "$STAGE/"
-cp deploy/aio-dashboard deploy/aio-dashboard.service deploy/aio-nav.service deploy/aio-hotspot-dispatcher "$STAGE/deploy/"
+cp deploy/aio-dashboard deploy/aio-dashboard.service deploy/aio-nav.service deploy/aio-hotspot-dispatcher \
+   deploy/uninstall.sh "$STAGE/deploy/"
 cp deploy/install.sh "$STAGE/install.sh"
-cp docs/CONFIG.md docs/CONFIG.zh-TW.md docs/OPERATION.md docs/OPERATION.zh-TW.md "$STAGE/docs/"
+cp docs/USER_GUIDE.md docs/MAINTENANCE.md docs/INSTALL.md docs/INTEGRATION.md \
+   docs/CONFIG.md docs/CONFIG.zh-TW.md docs/OPERATION.md docs/OPERATION.zh-TW.md "$STAGE/docs/"
 mkdir -p "$STAGE/dev" && cp dev/fake_state.json "$STAGE/dev/"   # data for --fake demos, not code
 echo "$VERSION" > "$STAGE/VERSION"
 cat > "$STAGE/README.txt" <<EOF
@@ -86,8 +88,9 @@ AIO System Dashboard $VERSION ($ARCH, Python $PYV) — compiled release, no sour
 Install:   sudo ./install.sh --user <ros-user>      (add --reset-config to replace settings)
 $( [[ $WITH_REPLAY -eq 1 ]] && echo "           add --with-replay for the replay module (Live / Bag replay, bag player)" || echo "Modules:   none (Live only)")
 Then:      aio-dashboard status | config | logs | restart
-Operation: docs/OPERATION.md  /  docs/OPERATION.zh-TW.md
-Settings:  docs/CONFIG.md  /  docs/CONFIG.zh-TW.md
+Guides:    docs/USER_GUIDE.md, MAINTENANCE.md, INSTALL.md, INTEGRATION.md, CONFIG.md
+           (繁體中文: docs/OPERATION.zh-TW.md, docs/CONFIG.zh-TW.md)
+Remove:    sudo /opt/aio-dashboard/uninstall.sh
 After installing, this folder can be deleted.
 EOF
 

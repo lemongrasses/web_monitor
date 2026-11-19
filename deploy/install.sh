@@ -253,8 +253,11 @@ else
   git -c safe.directory="$SRC" -C "$SRC" describe --tags --always --dirty 2>/dev/null > "$PREFIX/VERSION" \
     || echo "source" > "$PREFIX/VERSION"
 fi
-cp "$SRC"/docs/CONFIG*.md "$SRC"/docs/OPERATION*.md "$PREFIX/docs/" 2>/dev/null || true
+cp "$SRC"/docs/USER_GUIDE.md "$SRC"/docs/MAINTENANCE.md "$SRC"/docs/INSTALL.md "$SRC"/docs/INTEGRATION.md \
+   "$SRC"/docs/CONFIG*.md "$SRC"/docs/OPERATION*.md "$PREFIX/docs/" 2>/dev/null || true
 install -m 0755 "$SRC/deploy/aio-dashboard" "$PREFIX/bin/aio-dashboard"
+# The way out, also for a release package (whose folder is deleted after installing).
+[[ -f "$SRC/deploy/uninstall.sh" ]] && install -m 0755 "$SRC/deploy/uninstall.sh" "$PREFIX/uninstall.sh"
 ln -sf "$PREFIX/bin/aio-dashboard" /usr/local/bin/aio-dashboard
 if [[ -f "$PREFIX/config/dashboard.yaml" && $RESET_CONFIG -eq 1 ]]; then
   cp "$PREFIX/config/dashboard.yaml" "$PREFIX/config/dashboard.yaml.bak"

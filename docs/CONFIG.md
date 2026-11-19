@@ -1,9 +1,9 @@
-# AIO System Dashboard — Configuration Manual
+# AIO Navigation — Configuration Reference
 
-[繁體中文版](CONFIG.zh-TW.md)
+[繁體中文版](CONFIG.zh-TW.md) (older edition)
 
-This manual explains where the dashboard's settings live, how to change them safely, and
-what every setting means.
+Where the dashboard's settings live, how to change them safely, and what every setting means. To
+install a device and set it up the first time, start with the [Installation Guide](INSTALL.md).
 
 **Short version:** the shipped configuration works without edits. Most values are `auto`
 (detected at start-up) or optional. The camera's IP address is pre-set. You usually only add
@@ -60,52 +60,10 @@ cd ~/web_monitor && sudo deploy/install.sh --user jetson
 ```
 A `user_unit` needs no re-run: it is restarted with `systemctl --user`, without sudo.
 
-### Two ways to set up a new device
-
-- **Install first, then adjust (recommended).** Run the installer, then edit
-  `/opt/aio-dashboard/config/dashboard.yaml` only if something needs changing.
-- **Edit first, then install.** Edit `~/web_monitor/config/dashboard.yaml` before the
-  first install, and it gets copied in. On a device that already has the dashboard, run
-  `sudo deploy/install.sh --user jetson --reset-config` to copy your edited template
-  over the installed config. The old one is kept as `dashboard.yaml.bak`.
-
-Updating the code (`git pull`, then running the installer without `--reset-config`)
-never overwrites your installed config.
-
-### What the installer changes on the system
-
-Besides `/opt/aio-dashboard` and its service, `install.sh` makes the device run unattended
-(the optional parts are in the next table; the installer's other options are in the README,
-*Deployment*):
-
-| Change | File | Why |
-|--------|------|-----|
-| System clock from GNSS time | `/etc/chrony/conf.d/aio-gnss.conf` (`refclock SHM 2`; only if chrony is installed) | The device keeps no time over a power-off and has no NTP in the field (section 4.2d). |
-| Reboot 10 s after a kernel panic | `/etc/sysctl.d/90-aio-unattended.conf` (`kernel.panic = 10`) | Instead of waiting 2 minutes for the hardware watchdog. |
-| systemd watchdog for the dashboard | `aio-dashboard.service` (`WatchdogSec=60`, `Restart=always`) | A dashboard that stops answering for 60 s is restarted; AIO NAV keeps running. |
-| The dashboard survives an out-of-memory kill | `aio-dashboard.service` (`OOMPolicy=continue`) | When the kernel kills AIO NAV or DSO, the automatic start and the DSO watchdog bring them back. |
-| Lingering for the service user | `loginctl enable-linger` | The sensor drivers (a user unit) can start at power-on with nobody logged in (`autostart.start_services`). |
-| Restart permission | `/etc/sudoers.d/aio-dashboard` | Only `systemctl restart` of the `restartable` units. |
-| Wi-Fi / hotspot permission (parts `wifi`, `hotspot`) | polkit rule `50-aio-dashboard-wifi` | The service user may manage NetworkManager (section 4.5a). |
-| Closed hotspot (part `hotspot`) | `/etc/NetworkManager/dispatcher.d/50-aio-hotspot` | Nothing is forwarded to or from the hotspot (section 4.5a). |
-| System journal kept on disk (part `sysmon`) | `/etc/systemd/journald.conf.d/aio-persistent.conf` (`Storage=persistent`, 300 MB) | The kernel's messages survive a freeze, a reboot or a power cut ([SYSMON.md](SYSMON.md)). |
-
-`sudo deploy/uninstall.sh` removes all of these except lingering and the persistent journal (the
-kernel-panic setting returns to the default at the next boot).
-
-### Optional parts
-
-The installer has four optional parts. Choose them in its menu (shown the first time, or with
-`--choose`), or with `--with-<part>` / `--without-<part>`. The choice is kept in
-`config/installed-options`, and later runs install the same parts. Only `replay` is a module
-(section 4.12); the other three are system changes.
-
-| Part | Installer | What it installs | Config switch | Release package |
-|------|-----------|------------------|---------------|-----------------|
-| `replay` | `--with-replay` / `--without-replay` | The `aio_dashboard_replay/` package in `/opt/aio-dashboard` | `modules.replay.enabled` (default `true`) | Only if built with `tools/build_release.sh --with-replay` |
-| `sysmon` | `--with-sysmon` / `--without-sysmon` | `aio-sysmon.service`, `/var/log/aio-sysmon`, the persistent journal (kept by uninstall), the `aio-sysmon` command | None: it is its own service ([SYSMON.md](SYSMON.md)) | Never (install from a source checkout) |
-| `wifi` | `--with-wifi` / `--without-wifi` | Only the polkit rule; the Wi-Fi code is always in the dashboard | `wifi.enabled` (default `true`, independent of the part: without the part the panel shows, but changes are refused) | Code always included |
-| `hotspot` | `--with-hotspot` / `--without-hotspot` (switches `wifi` on; needs `dnsmasq`, and `nft` or `iptables`) | The polkit right to share a connection, the NetworkManager dispatcher, the word `hotspot` in `config/installed-options` | `wifi.hotspot.enabled: auto` (= installed) | Code always included |
+Installing, the installer's options, its optional parts and what it changes on the system are in
+the [Installation Guide](INSTALL.md). Updating the code (or installing a newer release) never
+overwrites your installed settings; `--reset-config` replaces them with the shipped ones (the old
+file is kept as `dashboard.yaml.bak`).
 
 ## 3. YAML rules that matter
 
@@ -697,7 +655,7 @@ data:
 ### 4.12 `modules`: optional modules
 
 A module is a separate package that not every machine needs. Only `replay` is a module; the
-installer's other optional parts (section 2, *Optional parts*) are not, and have no entry here. A
+installer's other optional parts ([Installation Guide](INSTALL.md#3-optional-parts)) are not, and have no entry here. A
 module is **not installed by default**: it is added with an installer flag and is then on, unless
 switched off here with `modules.<name>.enabled: false`.
 
