@@ -1,224 +1,395 @@
 # Architecture
 
-For developers: how the dashboard is built, the rules between its parts, and how it is tested.
-What each feature does and how features relate is in [FEATURES.md](FEATURES.md) (Traditional
-Chinese); the main sequences are drawn in [FLOWS.md](FLOWS.md); where the project is going is in
-[DIRECTION.md](DIRECTION.md).
+For developers: how the dashboard is built, as diagrams first. Each section starts with a picture,
+then the few rules it shows, then **Details** links to the documents and code to read when
+something is unclear. What each feature does and how features relate is in
+[FEATURES.md](FEATURES.md) (Traditional Chinese); the run-time sequences are in [FLOWS.md](FLOWS.md).
+
+The diagrams are [Mermaid](https://mermaid.js.org/): GitHub draws them, and they are plain text, so
+they change in the same commit as the code they describe.
 
 Contents:
 
-1. [Layers and packages](#1-layers-and-packages)
-2. [The health step: state, readiness, environment](#2-the-health-step-state-readiness-environment)
-3. [Collectors, actions and watchers](#3-collectors-actions-and-watchers)
-4. [Decoder notes](#4-decoder-notes)
-5. [Live view](#5-live-view)
-6. [Optional modules](#6-optional-modules)
-7. [Tests and documentation checks](#7-tests-and-documentation-checks)
-8. [Not included](#8-not-included)
+1. [The device at a glance](#1-the-device-at-a-glance)
+2. [Layers](#2-layers)
+3. [Packages and who imports whom](#3-packages-and-who-imports-whom)
+4. [Inside the dashboard process](#4-inside-the-dashboard-process)
+5. [One health step](#5-one-health-step)
+6. [States](#6-states)
+7. [Who restarts what](#7-who-restarts-what)
+8. [Where a setting comes from](#8-where-a-setting-comes-from)
+9. [A request from a page](#9-a-request-from-a-page)
+10. [Optional modules](#10-optional-modules)
+11. [Tests that check the documents](#11-tests-that-check-the-documents)
+12. [Notes](#12-notes)
 
 ---
 
-## 1. Layers and packages
+## 1. The device at a glance
 
-One process, shared state, two HTTP servers: the user pages on `:8080` and the Maintenance view on
-`:8081`. AIO NAV (`aio_nav_node`, from `../aio-nav-ros`) always sends its 0x04 packet to
-`127.0.0.1:9000`; that is the dashboard's main input.
+What runs on the device, what it talks to, and over what.
 
+```mermaid
+flowchart LR
+  SENS["IMU / GNSS receiver<br/>camera"] --> DRV
+  NTRIP[("RTK corrections<br/>NTRIP, via Internet")] -.-> DRV
+  subgraph DEV["AIO device (Jetson)"]
+    DRV["Sensor drivers<br/>systemd user unit"]
+    NAV["AIO NAV<br/>navigation filter"]
+    DSO["DSO<br/>visual odometry"]
+    DASH["Dashboard<br/>aio-dashboard.service"]
+    CHR["chrony<br/>system clock"]
+    REC["aio-sysmon<br/>(optional)"]
+  end
+  DRV -- "ROS 2" --> NAV
+  DRV -- "camera" --> DSO
+  DSO -- "odometry" --> NAV
+  NAV -- "0x04, 127.0.0.1:9000" --> DASH
+  DRV -- "ROS 2 (watched)" --> DASH
+  DASH -- "IMU time stamps" --> CHR
+  DASH -. "start / stop" .-> NAV
+  DASH -. "start / stop" .-> DSO
+  DASH -. "start / restart" .-> DRV
+  NAV -- "0x04, output_udp" --> VEH[("Vehicle or<br/>your application")]
+  DASH -- "0x05, same port" --> VEH
+  U["Browser :8080<br/>user pages"] --> DASH
+  E["Browser :8081<br/>Maintenance, password"] --> DASH
+  DASH -. "copies of 0x04 / 0x05" .-> PH["Phones on<br/>the hotspot"]
 ```
-aio_system_dashboard/
-  __main__.py          wiring: builds every part, connects the layers, starts the two servers
-  config.py            config/dashboard.yaml + the active aio-nav-ros config file (re-read when it changes)
-  modules.py           optional modules (installed only with --with-<name>; today: replay)
-  nav/                 decoder.py (0x04), trajectory.py (last 60 s @10 Hz + older @1 Hz)
-  collectors/          nav_udp (raw rate), system, services, network, ros2 (sampled), gnss_monitor
-                       (GNSS lamp), gnss_diag (GNSS / RTK page), gnss_time (clock -> chrony), speed,
-                       recording (is AIO NAV writing its logs), dso_watchdog, ros_guard, hotspot_relay, fake
-  media/               on-demand camera image / point-cloud preview (tap.py), decoders, fake frames
-  state/               health.py (the 5 Hz step), readiness.py (states, actions, reasons, by name),
-                       environment.py (network / RTK / vehicle), still.py (still detection),
-                       indicator.py (debounced lamps), store.py (shared state, event log)
-  actions/             fixed actions only: process_control (AIO NAV / DSO), service_control (drivers),
-                       autostart, driver_watchdog, diagnostics, aionav_config (config editor),
-                       terminal (shell sessions), wifi (NetworkManager, with rollback; hotspot)
-  data_access/         read-only browse / download inside the configured roots
-  web/                 Flask apps: product.py, setup.py, maintenance.py, still.py, tools.py (editor,
-                       terminal), auth.py, access.py, settings_api.py (Wi-Fi / environment on both
-                       apps), server.py, i18n.py + i18n_zh.py (user-page languages)
-  templates/, static/  Bootstrap + Alpine.js + Leaflet + xterm.js (vendored, offline)
-  vehicle/             output to the vehicle: output.py, protocol.py, packet.py (0x05), sender.py,
-                       gate.py (reference receiver)
-aio_dashboard_replay/  optional module: Live / Bag replay switch and bag player
-aio_sysmon/            optional system recorder (a separate service)
+
+- AIO NAV computes the navigation; the dashboard watches it and everything it depends on. AIO NAV
+  sends its output to the vehicle by itself; the dashboard adds the 0x05 readiness packet.
+- AIO NAV, DSO and the drivers run in their own processes: a dashboard restart never stops them.
+- Dotted arrows are control; solid arrows are data.
+
+**Details:** [Integration Guide](../INTEGRATION.md) (0x04, 0x05), [Installation Guide 5](../INSTALL.md#5-what-the-installer-changes-on-the-system)
+(services and system changes), [FLOWS.md 1](FLOWS.md#1-system-and-data-flow).
+
+## 2. Layers
+
+The parts are layered after what the program is for: monitoring first.
+
+```mermaid
+flowchart TB
+  L5["5. Output to the vehicle<br/>vehicle/ · 0x05, protocol numbers, reference receiver"]
+  L4["4. Running unattended<br/>autostart · DSO watchdog · driver watchdog · ROS guard"]
+  L3["3. Repair and settings<br/>process / driver control · config editor · Wi-Fi · Setup · still detection"]
+  L2["2. Diagnosis<br/>Maintenance pages · GNSS / RTK · live view · event log"]
+  L1["1. Monitoring (core)<br/>collectors · health step · readiness · environment · user pages"]
+  L5 --> L4 --> L3 --> L2 --> L1
 ```
 
-The parts are layered after what the program is for (monitoring first; see
-[DIRECTION.md](DIRECTION.md)):
+- An arrow means "uses". **A layer only uses the layers below it**: without layers 4 and 5 the
+  dashboard still monitors and diagnoses.
+- Layer 5 may move to another project one day; that is why it is a package of its own
+  ([section 3](#3-packages-and-who-imports-whom)).
 
-| Layer | Purpose | Code |
-|-------|---------|------|
-| 1. Monitoring (core) | See what is happening | `collectors/`, `nav/`, `state/`, the pages |
-| 2. Diagnosis | Find the cause | Maintenance pages, `gnss_diag`, `media/`, the event log |
-| 3. Repair and settings | Fix and adjust | `actions/` (process and driver control, config editor, Wi-Fi), Setup, Still detection |
-| 4. Running unattended | Act when nobody is there | `actions/autostart.py`, the watchers ([section 3](#3-collectors-actions-and-watchers)) |
-| 5. Output to the vehicle | Tell a vehicle when it may use the data | `vehicle/` |
+**Details:** [DIRECTION.md 2](DIRECTION.md) (why these layers, Traditional Chinese).
 
-**The rules between them:**
+## 3. Packages and who imports whom
 
-- A lower layer never depends on a higher one: without layers 4 and 5 the dashboard still monitors
-  and diagnoses.
-- **The core never imports `vehicle/`.** The health step hands its snapshot to listeners
-  (`HealthEngine.snapshot_listeners`) and asks other layers for their start-up steps
-  (`extra_steps`); `__main__.py` connects the vehicle layer to both. A test checks the rule
-  (`tests/test_vehicle_layer.py`), so the layer can be left out or moved to another project.
-- **The core never imports an optional module directly**; it asks `modules.py` ([section 6](#6-optional-modules)).
-- **The web requests never carry commands.** Actions are fixed names; each target comes from a list
-  built from the settings. The terminal is the one exception, behind the password.
+The import graph of `aio_system_dashboard/`, as it is in the code.
 
-Rates: packets are processed at the raw rate (100 Hz); the health step runs at 5 Hz; the browser
-polls `/api/state` at 5 Hz and the trajectory every 2 s.
+```mermaid
+flowchart TB
+  subgraph W["Wiring"]
+    MAIN["#95;#95;main#95;#95;.py"]
+  end
+  subgraph APPS["Pages"]
+    WEB["web/<br/>Flask apps"]
+    REPLAY["aio_dashboard_replay<br/>optional module"]
+  end
+  subgraph L5["Layer 5"]
+    VEH["vehicle/<br/>0x05"]
+  end
+  subgraph CHG["Changes"]
+    ACT["actions/"]
+  end
+  subgraph CORE["Health step"]
+    ST["state/"]
+  end
+  subgraph READ["Readers"]
+    COL["collectors/"]
+    MED["media/"]
+    DATA["data_access/"]
+  end
+  subgraph BASE["Base"]
+    NAVP["nav/<br/>0x04 decoder"]
+    MODS["modules.py"]
+  end
+  MAIN --> WEB
+  MAIN --> VEH
+  MAIN --> MODS
+  WEB --> ACT
+  WEB --> ST
+  WEB --> MED
+  WEB --> DATA
+  REPLAY --> ACT
+  VEH --> ST
+  VEH --> NAVP
+  ACT <--> ST
+  ACT --> COL
+  MED --> COL
+  COL --> NAVP
+  MODS -. "imports only if installed" .-> REPLAY
+  classDef layer5 fill:#fde8d8,stroke:#c05621
+  class VEH layer5
+```
 
-## 2. The health step: state, readiness, environment
+- Arrows point from the importer to what it imports. Not drawn: almost every package imports
+  `config`, and `__main__.py` imports everything (it builds the parts).
+- **Only `__main__.py` imports `vehicle/`.** The health step hands its snapshot to listeners; the
+  wiring connects the vehicle layer to them. `tests/test_vehicle_layer.py` fails if any other module
+  imports `vehicle/`.
+- **The core never imports an optional module**; it asks `modules.py`
+  ([section 10](#10-optional-modules)).
+- `state` and `actions` use each other: the health step asks `process_control` whether AIO NAV is
+  wanted, and the automatic start uses the readiness conditions. Known; keep it to those two uses.
 
-Every 0.2 s `HealthEngine.step()` (`state/health.py`) reads the store and produces one snapshot.
-The pages, `/api/readiness`, the automatic start and the 0x05 packet all read that snapshot, so
-they never disagree. [FLOWS.md 2](FLOWS.md#2-one-health-tick-5-hz) draws the step.
+**Details:** the package list in [section 12](#12-notes).
 
-### 2.1 The environment
+## 4. Inside the dashboard process
 
-`state/environment.py` decides, from the store's `network`, `gnss` and `gnss_diag` sections, where
-the device is: network (wired / Wi-Fi / none), RTK (yes once corrections or an RTK position arrived
-in this power-on; no without NTRIP or without a network; unknown otherwise) and vehicle (a vehicle
-address in `aio_nav.yaml`). A detected change must hold 10 s. A choice made on a page wins
-(`state/environment.json`). It decides whether READY needs RTK, and what the user pages say.
+One process. Readers write the shared store; the health step turns it into one snapshot; everyone
+else reads.
 
-### 2.2 The page state
+```mermaid
+flowchart LR
+  subgraph IN["Collectors (one thread each)"]
+    C1["nav_udp<br/>100 Hz"]
+    C2["system · services<br/>network · recording"]
+    C3["ros2<br/>GNSS · DSO · speed · IMU"]
+  end
+  STORE[("Store<br/>one section per writer")]
+  C1 & C2 & C3 --> STORE
+  STORE --> HS["Health step<br/>every 0.2 s"]
+  HS -- "snapshot" --> STORE
+  HS -- "snapshot" --> VO["vehicle/ listener<br/>0x05 sender"]
+  STORE --> PAGES["Web apps<br/>:8080 · :8081"]
+  STORE --> AUTO["Automatic start<br/>every 1 s"]
+  STORE --> WD["Watchers<br/>driver · DSO · ROS guard"]
+  PAGES -- "fixed actions" --> REG["Action registry"]
+  AUTO & WD --> REG
+  REG -- "start / stop / restart" --> PROC["AIO NAV · DSO · drivers"]
+```
 
-| State | Condition |
-|-------|-----------|
-| **STOPPED** | AIO NAV not running and nobody asked it to run (normal, not a fault) |
-| **STARTING** | asked to start, or running without output yet (up to `startup_timeout_s`, 60 s); also while the automatic start waits |
-| **INITIALIZING** | packets fresh but the `ready_requires` flags (default `alignment`, `heading_valid`, `fine_alignment`) not all set |
-| **READY** | process up, packets fresh, alignment complete, and the required conditions held: RTK where the environment has it, plus anything in `readiness.require` |
-| **DEGRADED** | was READY in this AIO NAV run, and a required condition or the alignment was lost |
-| **FAULT** | AIO NAV stopped although it should run, no output after the start-up time, output stopped for `stale_fault_s` (2 s) or frozen, the UDP listener failed, AIO NAV running twice, or the automatic start gave up |
+- **One writer per store section.** Readers get copies, so no reader can change another part's data.
+- **Every change goes through the action registry**: fixed action names, targets from the settings,
+  a time-out, an event in the log.
+- The browser asks for `/api/state` five times a second and for the trajectory every 2 s.
 
-A state gets worse after about 0.5 s and recovers after about 2 s (`state/indicator.py`), so a
-single missed sample does not flicker. Camera / LiDAR not connected, the sensor link down and low
-disk are advisories: they never change READY.
+**Details:** `state/store.py`, `actions/registry.py`, [FLOWS.md 2 and 4](FLOWS.md).
 
-### 2.3 Readiness
+## 5. One health step
 
-`state/readiness.py` is a pure function of the step's inputs. It gives a finer state (BOOTING,
-CHECKING, NAV_STARTING, KEEP_STILL, MOVE_STRAIGHT, REFINING, READY, DEGRADED, FAULT, MAINTENANCE),
-a requested action (HOLD_STILL, SAFE_STOP, …), the conditions that hold (`health`) and every reason
-not to use the output (`inhibit`; never empty unless READY). **Everything is by name**; the numbers
-on the wire are in `vehicle/protocol.py` ([section 2.5](#25-the-vehicle-layer)).
-[FLOWS.md 3](FLOWS.md#3-readiness-states) draws the transitions.
+What `HealthEngine.step()` (`state/health.py`) does five times a second.
 
-### 2.4 The steps of the user pages
+```mermaid
+flowchart TD
+  A["Read the store<br/>services · NAV packets · GNSS · ROS · network · system"] --> B
+  B["Environment<br/>network · RTK · vehicle<br/>state/environment.py"] --> C
+  C["Page state<br/>STOPPED … READY … FAULT<br/>debounced: worse 0.5 s, better 2 s"] --> D
+  D["Readiness<br/>10 phases, action, health and inhibit names<br/>state/readiness.py, pure"] --> E
+  E["Listeners<br/>vehicle/: add the numbers, send 0x05"] --> F
+  F["User-page view<br/>headline · steps · lamps · advisories"] --> G
+  G[("Store<br/>product · readiness · environment · maint")]
+```
 
-`_startup_checks` turns the snapshot into the steps under the status: Sensors, GNSS / RTK, AIO NAV,
-Alignment, Recording (from `collectors/recording.py`), Storage, and the steps of other layers (the
-vehicle link). Levels: healthy, busy (blue, in progress), warning, fault, idle (grey: not used here
-or not started). Each step names a Maintenance page (`maint`) for its link.
+- **One snapshot for everything**: the pages, `/api/readiness`, the automatic start and the 0x05
+  packet read the same one, so they never disagree.
+- Readiness works **by name**; the numbers on the wire are added by the vehicle layer.
+- A listener that fails is logged and skipped; it cannot stop the step.
 
-### 2.5 The vehicle layer
+**Details:** [FLOWS.md 2](FLOWS.md#2-one-health-tick-5-hz), [User Guide 3](../USER_GUIDE.md#3-reading-the-status)
+(what the pages show).
 
-`vehicle/output.py` is a snapshot listener. For each snapshot it adds the wire numbers
-(`protocol.wire_fields`: state and action codes, health and inhibit masks, GNSS quality code) and
-the packet's session, sequence and uptime, then sends the 0x05 packet (`sender.py`, `packet.py`).
-It also gives the user pages their *Vehicle link* step where a vehicle is connected. The numbers
-are a contract with the vehicle ([Integration Guide](../INTEGRATION.md)): append, never renumber.
+## 6. States
 
-## 3. Collectors, actions and watchers
+The six states the pages show. Readiness splits them into ten phases for the vehicle
+([FLOWS.md 3](FLOWS.md#3-readiness-states)).
 
-- **Collectors** (`collectors/`) only read: each runs on its own thread at its own interval and
-  writes one section of the store. The ROS collectors share one node in `ros2.py`; high-rate topics
-  are listened to only in sampling windows (`ros.sampling`).
-- **Actions** (`actions/`) change things, through `actions/registry.py`: fixed names, targets from
-  the settings, a time-out, and an event for every run.
-- **Watchers** act on their own. Each touches only its own part:
+```mermaid
+stateDiagram-v2
+  [*] --> STOPPED
+  STOPPED --> STARTING: Start, or automatic start
+  STARTING --> INITIALIZING: first output
+  INITIALIZING --> READY: aligned and required conditions held
+  READY --> DEGRADED: a required condition or the alignment lost
+  DEGRADED --> READY: back and stable
+  STARTING --> FAULT: no output in 60 s
+  READY --> FAULT: AIO NAV stopped by itself
+  INITIALIZING --> FAULT: output stopped or frozen
+  FAULT --> STARTING: restarted
+  READY --> STOPPED: operator Stop
+  FAULT --> STOPPED: operator Stop
+```
 
-| Watcher | Code | Restarts |
-|---------|------|----------|
-| Automatic start | `actions/autostart.py` | AIO NAV + DSO (and starts the drivers first) |
-| DSO watchdog | `collectors/dso_watchdog.py` | DSO only |
-| Driver watchdog | `actions/driver_watchdog.py` | the sensor driver unit |
-| ROS isolation guard | `collectors/ros_guard.py` | the dashboard |
-| systemd watchdog | `deploy/aio-dashboard.service` | the dashboard |
+| State | Means |
+|-------|-------|
+| STOPPED | Not running, nobody asked it to: normal |
+| STARTING | Being started, or the automatic start waits |
+| INITIALIZING | Running and aligning |
+| READY | Aligned, output fresh, required conditions held (RTK where the environment has it) |
+| DEGRADED | Was READY in this run; something required was lost |
+| FAULT | AIO NAV has a problem (the reason is shown) |
 
-When and how often is in [FLOWS.md 7](FLOWS.md#7-who-restarts-what), with the one known overlap
-(the driver watchdog and the guard react to the same symptom). Add a watcher only after checking
-that table.
+**Details:** [User Guide 3.1](../USER_GUIDE.md#31-the-headline), [Integration Guide 6.3](../INTEGRATION.md#63-states)
+(the phases on the wire).
 
-AIO NAV and DSO run in their own sessions (`start_new_session`, `KillMode=process`), so a dashboard
-crash or restart never stops them; the dashboard adopts them when it comes back.
+## 7. Who restarts what
 
-## 4. Decoder notes
+Five watchers act on their own. Each touches only its own target.
 
-`nav/decoder.py` started from setup_env's decoder, with these fixes:
+```mermaid
+flowchart LR
+  AS["Automatic start<br/>AIO NAV should run but does not,<br/>or sends nothing"] --> NAVT["AIO NAV + DSO"]
+  AS -. "first, if not running" .-> DRVT["Sensor drivers"]
+  DW["DSO watchdog<br/>NaN · gone · too much memory"] --> DSOT["DSO only"]
+  DRW["Driver watchdog<br/>IMU silent 45 s"] --> DRVT
+  RG["ROS isolation guard<br/>no other ROS node visible 30 s"] --> DASHT["The dashboard"]
+  SD["systemd watchdog<br/>dashboard silent 60 s"] --> DASHT
+  OP(["Operator Stop"]) -. "holds" .-> AS
+  OP -. "holds" .-> DRW
+```
 
-- After the wire bit reversal, wire flag bit 3 is **VUPT** (odometry update), not `imu_valid`.
-- The third velocity on the wire is **Up** (`-vel_d`). It is exposed as `velocity_up`.
-- The packet is 156 bytes: 5 header, 150 payload `<Qdd28fH3f`, 1 checksum.
+- Every watcher waits longer after each failure and respects an operator Stop.
+- **Known overlap:** when the dashboard's own ROS connection is stuck, the IMU also looks silent, so
+  the driver watchdog and the ROS guard can both act on the same symptom.
+- Check this picture before adding a watcher.
 
-The packet itself is described for integrators in the [Integration Guide](../INTEGRATION.md).
+**Details:** [FLOWS.md 7](FLOWS.md#7-who-restarts-what) (timings), [Maintenance Guide 3](../MAINTENANCE.md#3-how-the-device-runs-on-its-own).
 
-## 5. Live view
+## 8. Where a setting comes from
 
-The Camera and LiDAR pages each have a view-only preview of the ROS topic set in
-`devices.<name>.preview` (`media/tap.py`):
+Some answers can come from three places. The first that has one wins. RTK, as the example:
 
-- **Camera** (`kind: image`): about 2 frames/s. `sensor_msgs/CompressedImage` is passed through
-  unchanged; `sensor_msgs/Image` is downscaled to `max_width` and sent as JPEG (with OpenCV) or PNG.
-- **LiDAR** (`kind: pointcloud`): `sensor_msgs/PointCloud2` is randomly downsampled to `max_points`
-  and drawn on a canvas, top view or tilted 3D view, coloured by height or intensity.
+```mermaid
+flowchart TD
+  Q{"Does READY need RTK?"} --> P{"Set by hand on a page?<br/>state/environment.json"}
+  P -- "yes" --> PV["Use that choice"]
+  P -- "no" --> C{"readiness.require_rtk<br/>true or false in dashboard.yaml?"}
+  C -- "yes" --> CV["Use the config"]
+  C -- "no, auto" --> D{"Detected?"}
+  D -- "RTK here" --> Y["Required"]
+  D -- "no RTK here" --> N["Not required"]
+  D -- "not known yet" --> Y
+```
 
-The dashboard subscribes only while a page asks for frames, and unsubscribes 10 s after the last
-request. Messages are received without deserialization; only the latest one is converted, at the
-rate the browser asks for it, so the dashboard is never a permanent consumer of heavy sensor
-streams. The preview needs numpy, which ships with ROS 2.
+- The same pattern for the other page choices: the page's choice is kept in `state/` and wins over
+  `dashboard.yaml`; some last until the next power-on (Live / Bag replay, operator Stop).
+- *Not known* counts as required: the careful choice for a vehicle.
 
-## 6. Optional modules
+**Details:** [FLOWS.md 8](FLOWS.md#8-where-a-setting-comes-from) (every such setting),
+[Configuration Reference](../CONFIG.md), `state/environment.py`.
 
-A **module** is an optional part that is a separate Python package next to
-`aio_system_dashboard` (today only `aio_dashboard_replay/`). It provides `NAME`, `TITLE`,
-`DEFAULTS` and `register(ctx, app)`, and is listed in `aio_system_dashboard/modules.py`. The core
-never imports it directly: it asks `modules.py` whether the module is installed and on
-(`modules.<name>.enabled`), and the module adds its own Maintenance page, routes, templates and
-static files. `deploy/install.sh --with-<name>` copies it; `tools/build_release.sh --with-<name>`
-compiles it into a release.
+## 9. A request from a page
 
-The installer's other optional parts (`sysmon`, `wifi`, `hotspot`) are system changes, not modules
-([Installation Guide](../INSTALL.md#3-optional-parts)).
+What happens when someone presses a button, for example **Stop** on the user pages.
 
-New optional features follow the module pattern where they can (own folder, own flag, own
-`enabled` setting) and are developed on a short-lived `feature/<name>` branch merged into `main`.
+```mermaid
+sequenceDiagram
+  participant B as Browser
+  participant S as Web server (port)
+  participant A as Flask app
+  participant G as Guard
+  participant R as Action registry
+  participant P as AIO NAV
+  B->>S: POST /api/nav/control {"action": "stop"}
+  S->>S: allowed client? (access.allowed_clients)
+  S->>A: only this port's routes
+  A->>A: JSON and X-Requested-With header?
+  A->>G: Maintenance only: signed in?
+  A->>R: fixed action "stop_process", target from the settings
+  R->>P: SIGTERM, then SIGKILL after a grace period
+  R-->>A: result, with a time-out
+  R->>R: event in the log
+  A-->>B: {"success": true, "summary": "AIO NAV stopped"}
+```
 
-## 7. Tests and documentation checks
+- **No commands from the web**: a request names a fixed action; its target comes from the settings.
+  The Maintenance terminal is the one exception, behind the password.
+- The user pages need no password; what they can change is listed in
+  [Installation Guide 7](../INSTALL.md#7-security).
+
+**Details:** `web/server.py`, `web/access.py`, `web/auth.py`, `actions/registry.py`.
+
+## 10. Optional modules
+
+How a module plugs in without the core knowing it.
+
+```mermaid
+sequenceDiagram
+  participant I as install.sh --with-replay
+  participant M as __main__
+  participant MO as modules.py
+  participant R as aio_dashboard_replay
+  participant W as Maintenance app
+  I->>R: copy the package next to the dashboard
+  M->>MO: load(settings)
+  MO->>MO: installed? (find_spec) and modules.replay.enabled?
+  MO->>R: import
+  M->>R: register(ctx, app)
+  R->>W: its page, routes, templates, static files
+```
+
+- A module provides `NAME`, `TITLE`, `DEFAULTS` and `register(ctx, app)`, and is listed in
+  `modules.py`. A module that fails to load is logged and skipped.
+- The installer's other optional parts (`sysmon`, `wifi`, `hotspot`) are system changes, not
+  modules.
+
+**Details:** `aio_system_dashboard/modules.py`, [Installation Guide 3](../INSTALL.md#3-optional-parts).
+
+## 11. Tests that check the documents
+
+Some tests read the documents, so the documents cannot drift away from the code.
+
+```mermaid
+flowchart LR
+  T1["test_status_packet"] --> D1["Integration Guide<br/>golden 0x05 packet"]
+  T2["test_vehicle_layer"] --> D2["Published codes and bits<br/>core never imports vehicle/"]
+  T3["test_i18n"] --> D3["zh-TW manuals and pages<br/>TERMINOLOGY.zh-TW.md words"]
+  T4["test_environment"] --> D4["Environment texts translated"]
+  CODE[("The code")] --- T1 & T2 & T3 & T4
+```
 
 ```bash
 python3 -m pip install --target .devdeps flask pyyaml psutil   # once
 PYTHONPATH=.devdeps python3 -m unittest discover -s tests -t .
 ```
 
-The tests need no ROS and no sensors. One test (`test_tools`, the isolated test start of the
-config editor) needs `unshare -rn`; it fails in containers that do not allow it.
+- The tests need no ROS and no sensors. One test (the config editor's isolated test start) needs
+  `unshare -rn` and fails in containers that do not allow it.
+- A change that alters what a page shows or what a setting does updates the matching guide in the
+  same commit ([DOCS_PLAN.md](DOCS_PLAN.md) lists the guides and their readers).
 
-Some tests check the documents against the code, so the two cannot drift apart:
+## 12. Notes
 
-| Test | Checks |
-|------|--------|
-| `test_status_packet` | The golden 0x05 packet in the Integration Guide (and the older zh-TW operation manual) is what the code encodes |
-| `test_vehicle_layer` | The published codes and bit numbers; every core name has a number; the core never imports `vehicle/` |
-| `test_i18n` | Every phrase of the user pages has a translation; the zh-TW manuals use the words of `TERMINOLOGY.zh-TW.md` |
-| `test_environment` | The texts the Settings page shows about the environment are translated |
+**Packages.**
 
-A change that alters what a page shows or what a setting does updates the matching guide in the
-same commit ([docs/dev/DOCS_PLAN.md](DOCS_PLAN.md) lists the guides and their readers).
+| Package | Holds |
+|---------|-------|
+| `__main__.py` | The wiring: builds every part, connects the layers, starts the two servers |
+| `config.py` | `dashboard.yaml` and the active aio-nav-ros settings file (re-read when it changes) |
+| `nav/` | `decoder.py` (0x04), `trajectory.py` (last 60 s at 10 Hz, older at 1 Hz) |
+| `collectors/` | `nav_udp`, `system`, `services`, `network`, `recording`, `ros2` (sampled), `gnss_monitor`, `gnss_diag`, `gnss_time`, `speed`, `dso_watchdog`, `ros_guard`, `hotspot_relay`, `fake` |
+| `state/` | `health.py` (the step), `readiness.py`, `environment.py`, `still.py`, `indicator.py`, `store.py` |
+| `actions/` | `registry`, `process_control`, `service_control`, `autostart`, `driver_watchdog`, `diagnostics`, `aionav_config`, `terminal`, `wifi` |
+| `media/` | The live view: `tap.py`, image and point-cloud decoders, fake frames |
+| `data_access/` | Read-only browse and download inside the data folders |
+| `web/` | The Flask apps and their helpers; `i18n.py` + `i18n_zh.py` for the user-page languages |
+| `vehicle/` | `output.py` (the listener), `protocol.py` (numbers), `packet.py`, `sender.py`, `gate.py` |
+| `templates/`, `static/` | Bootstrap, Alpine.js, Leaflet, xterm.js, all vendored (no Internet needed) |
 
-## 8. Not included
+**Decoder fixes compared with setup_env** (`nav/decoder.py`): after the wire bit reversal, wire flag
+bit 3 is **VUPT**, not `imu_valid`; the third velocity on the wire is **Up** (`-vel_d`), exposed as
+`velocity_up`; the packet is 156 bytes (5 header, 150 payload `<Qdd28fH3f`, 1 checksum).
 
-Offline map tiles, trend charts (except the GNSS page's last 10 minutes), deep IMU / camera /
-LiDAR diagnostics, ROS message browsing, and recording bags. The shipped settings have no LiDAR; add
-a `lidar` device to use the LiDAR page. Ideas kept for later are in [IDEAS.md](IDEAS.md).
+**Live view** (`media/tap.py`): the dashboard subscribes to a camera or LiDAR topic only while a
+page asks for frames, and unsubscribes 10 s after the last request. Messages are received without
+deserialization; only the latest one is converted, at the rate the browser asks for. Camera images
+are passed through (CompressedImage) or downscaled (Image); point clouds are downsampled to
+`max_points`. Needs numpy, which ships with ROS 2.
+
+**Not included:** offline map tiles, trend charts (except the GNSS page's last 10 minutes), deep
+IMU / camera / LiDAR diagnostics, ROS message browsing, recording bags. Ideas kept for later:
+[IDEAS.md](IDEAS.md).

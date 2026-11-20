@@ -98,7 +98,7 @@ stateDiagram-v2
   READY --> FAULT: AIO NAV stopped by itself
   CHECKING --> FAULT: prerequisites missing 120 s
   NAV_STARTING --> FAULT: no output in 60 s
-  FAULT --> NAV_STARTING: Start or automatic retry (after READY: vehicle still)
+  FAULT --> NAV_STARTING: Start or automatic retry (after READY, with the vehicle still)
   READY --> MAINTENANCE: operator Stop
 ```
 
