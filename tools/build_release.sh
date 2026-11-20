@@ -3,6 +3,8 @@
 #
 #   tools/build_release.sh [--with-replay]
 #
+# Always included: the system recorder (aio-sysmon, the computer's black box; docs/SYSMON.md),
+# compiled like the dashboard. ./install.sh installs and starts it on every device.
 # Optional modules are left out unless asked for: --with-replay adds the replay module (Live / Bag
 # replay switch and bag player); install it on the device with ./install.sh --with-replay.
 #
@@ -31,7 +33,7 @@ ARCH="$(uname -m)"
 PYV="$(python3 -c 'import sys; print(f"{sys.version_info[0]}.{sys.version_info[1]}")')"
 VERSION="$(git describe --tags --always --dirty 2>/dev/null || date +%Y%m%d)"
 NAME="aio-dashboard-${VERSION}-${ARCH}-py${PYV}"
-BUILD="build/release"
+BUILD="$PWD/build/release"                     # absolute: the smoke test runs from /
 STAGE="$BUILD/$NAME"
 
 need() { echo "missing: $1" >&2; echo "install with: $2" >&2; exit 1; }
@@ -54,6 +56,13 @@ python3 -m nuitka "${MODE[@]}" aio_system_dashboard \
   --no-pyi-file --remove-output --quiet --assume-yes-for-downloads \
   --output-dir="$BUILD/compile"
 
+echo "==> compiling the system recorder (aio-sysmon)"
+python3 -m nuitka "${MODE[@]}" aio_sysmon \
+  --include-package=aio_sysmon \
+  --python-flag=no_docstrings \
+  --no-pyi-file --remove-output --quiet --assume-yes-for-downloads \
+  --output-dir="$BUILD/compile"
+
 if [[ $WITH_REPLAY -eq 1 ]]; then
   echo "==> compiling the replay module"
   python3 -m nuitka "${MODE[@]}" aio_dashboard_replay \
@@ -67,17 +76,19 @@ fi
 echo "==> staging $NAME"
 cp "$BUILD"/compile/aio_system_dashboard*.so "$STAGE/"
 cp -r aio_system_dashboard/templates aio_system_dashboard/static "$STAGE/aio_system_dashboard/"
+cp "$BUILD"/compile/aio_sysmon*.so "$STAGE/"
 if [[ $WITH_REPLAY -eq 1 ]]; then
   cp "$BUILD"/compile/aio_dashboard_replay*.so "$STAGE/"
   mkdir -p "$STAGE/aio_dashboard_replay"
   cp -r aio_dashboard_replay/templates aio_dashboard_replay/static "$STAGE/aio_dashboard_replay/"
 fi
 mkdir -p "$STAGE/config" "$STAGE/deploy" "$STAGE/docs"
-cp config/dashboard.yaml "$STAGE/config/"
+cp config/dashboard.yaml config/sysmon.yaml "$STAGE/config/"
 cp -r wheels "$STAGE/"
-cp deploy/aio-dashboard deploy/aio-dashboard.service deploy/aio-nav.service deploy/aio-hotspot-dispatcher "$STAGE/deploy/"
+cp deploy/aio-dashboard deploy/aio-dashboard.service deploy/aio-nav.service deploy/aio-hotspot-dispatcher \
+  deploy/aio-sysmon deploy/aio-sysmon.service "$STAGE/deploy/"
 cp deploy/install.sh "$STAGE/install.sh"
-cp docs/CONFIG.md docs/CONFIG.zh-TW.md docs/OPERATION.md docs/OPERATION.zh-TW.md "$STAGE/docs/"
+cp docs/CONFIG.md docs/CONFIG.zh-TW.md docs/OPERATION.md docs/OPERATION.zh-TW.md docs/SYSMON.md docs/SYSMON.zh-TW.md "$STAGE/docs/"
 mkdir -p "$STAGE/dev" && cp dev/fake_state.json "$STAGE/dev/"   # data for --fake demos, not code
 echo "$VERSION" > "$STAGE/VERSION"
 cat > "$STAGE/README.txt" <<EOF
@@ -86,6 +97,7 @@ AIO System Dashboard $VERSION ($ARCH, Python $PYV) — compiled release, no sour
 Install:   sudo ./install.sh --user <ros-user>      (add --reset-config to replace settings)
 $( [[ $WITH_REPLAY -eq 1 ]] && echo "           add --with-replay for the replay module (Live / Bag replay, bag player)" || echo "Modules:   none (Live only)")
 Then:      aio-dashboard status | config | logs | restart
+Recorder:  aio-sysmon status | last-crash   (the computer's black box, always installed; docs/SYSMON.md)
 Operation: docs/OPERATION.md  /  docs/OPERATION.zh-TW.md
 Settings:  docs/CONFIG.md  /  docs/CONFIG.zh-TW.md
 After installing, this folder can be deleted.
@@ -104,6 +116,10 @@ if python3 -m pip install --quiet --no-warn-conflicts --no-index --find-links wh
      --target "$SMOKE_LIB" flask pyyaml psutil >/dev/null 2>&1; then
   (cd / && PYTHONPATH="$STAGE:$SMOKE_LIB" python3 -c \
     'import aio_system_dashboard.__main__ as m, aio_system_dashboard.web.common as c; assert (c.PKG_DIR / "templates").is_dir(); print("    ok")')
+  # the way aio-sysmon.service starts it (deploy/aio-sysmon), on a folder with no records yet
+  (cd / && PYTHONPATH="$STAGE:$SMOKE_LIB" python3 -c \
+    'import sys; del sys.path[0]; from aio_sysmon.__main__ import main; raise SystemExit(main())' \
+    status --dir "$BUILD/smoke-sysmon" >/dev/null && echo "    recorder ok")
   if [[ $WITH_REPLAY -eq 1 ]]; then
     (cd / && PYTHONPATH="$STAGE:$SMOKE_LIB" python3 -c \
       'import os, aio_dashboard_replay.web as w; assert os.path.isdir(os.path.join(os.path.dirname(os.path.abspath(w.__file__)), "templates")); print("    replay module ok")')

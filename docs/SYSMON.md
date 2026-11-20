@@ -177,15 +177,14 @@ Everything is optional. The most useful keys:
   window. A hardware clock kept in local time (`timedatectl` shows "RTC in local TZ: yes") makes the
   time wrong the other way (on this Orin NX it ran 8 hours ahead); `last-crash` / `events` still find
   those records, and `sudo timedatectl set-local-rtc 0` keeps the hardware clock in UTC.
-- **Release packages.** The compiled release made by `tools/build_release.sh` does not include the
-  recorder yet; it is installed from a source checkout.
 
 ## 6. Install, permissions and removal
 
-It is optional: choose *Black-box recorder (aio-sysmon)* in the installer's menu (shown the first
-time, or with `--choose`), or add `--with-sysmon` to `sudo deploy/install.sh --user <you>`. The
-installer remembers the choice, so later runs keep it updated; `--without-sysmon` removes the service
-(the records are kept). It also keeps the
+It is installed with the dashboard on every device, and is not a choice in the installer's menu: a
+device in the field can freeze, slow down or lose power without warning, and without its records
+there is nothing to trace afterwards. Every run of `sudo deploy/install.sh` (or `./install.sh` of a
+release package, which carries it compiled, without source) installs or updates it and starts it.
+The old flags `--with-sysmon` / `--without-sysmon` change nothing. The installer also keeps the
 system journal on disk (`/etc/systemd/journald.conf.d/aio-persistent.conf`, 300 MB), so the
 kernel's own log survives a reboot too.
 

@@ -80,6 +80,7 @@ Besides `/opt/aio-dashboard` and its service, `install.sh` makes the device run 
 |--------|------|-----|
 | System clock from GNSS time | `/etc/chrony/conf.d/aio-gnss.conf` (`refclock SHM 2`; only if chrony is installed) | The device keeps no time over a power-off and has no NTP in the field (section 4.2d). |
 | Reboot 10 s after a kernel panic | `/etc/sysctl.d/90-aio-unattended.conf` (`kernel.panic = 10`) | Instead of waiting 2 minutes for the hardware watchdog. |
+| System recorder, the computer's black box (always installed) | `aio-sysmon.service`, `/var/log/aio-sysmon`; the journal kept on disk: `/etc/systemd/journald.conf.d/aio-persistent.conf` (300 MB) | After a freeze, a slowdown or a power cut, the cause can still be traced ([SYSMON.md](SYSMON.md)). |
 | systemd watchdog for the dashboard | `aio-dashboard.service` (`WatchdogSec=60`, `Restart=always`) | A dashboard that stops answering for 60 s is restarted; AIO NAV keeps running. |
 | The dashboard survives an out-of-memory kill | `aio-dashboard.service` (`OOMPolicy=continue`) | When the kernel kills AIO NAV or DSO, the automatic start and the DSO watchdog bring them back. |
 | Lingering for the service user | `loginctl enable-linger` | The sensor drivers (a user unit) can start at power-on with nobody logged in (`autostart.start_services`). |
@@ -87,8 +88,9 @@ Besides `/opt/aio-dashboard` and its service, `install.sh` makes the device run 
 | Wi-Fi / hotspot permission (parts `wifi`, `hotspot`) | polkit rule `50-aio-dashboard-wifi` | The service user may manage NetworkManager (section 4.5a). |
 | Closed hotspot (part `hotspot`) | `/etc/NetworkManager/dispatcher.d/50-aio-hotspot` | Nothing is forwarded to or from the hotspot (section 4.5a). |
 
-`sudo deploy/uninstall.sh` removes all of these except lingering (the kernel-panic setting returns
-to the default at the next boot).
+`sudo deploy/uninstall.sh` removes all of these except lingering, the recorder's records and the
+journal setting (the evidence about past freezes; the kernel-panic setting returns to the default
+at the next boot).
 
 ## 3. YAML rules that matter
 

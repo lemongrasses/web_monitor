@@ -8,10 +8,14 @@
 #   deploy/install.sh --list            what is installed and chosen (no sudo needed)
 #   deploy/install.sh --dry-run         what an install would add or remove, then stop (no sudo)
 #
-# Optional parts: sysmon (black-box recorder), replay (Live / Bag switch), wifi (Wi-Fi from the
-# pages), hotspot (Wi-Fi hotspot on Maintenance > Network; needs wifi). For scripts, instead of the
-# menu: --with-<part> / --without-<part>, and --yes (never ask). The choice is kept in
-# PREFIX/config/installed-options; a part switched off is removed.
+# Always installed: the system recorder (aio-sysmon), the computer's black box. It is not a
+# choice: a device in the field can freeze, slow down or lose power at any time, and without its
+# records there is nothing to trace afterwards.
+# Optional parts: replay (Live / Bag switch), wifi (Wi-Fi from the pages), hotspot (Wi-Fi hotspot
+# on Maintenance > Network; needs wifi). For scripts, instead of the menu: --with-<part> /
+# --without-<part>, and --yes (never ask). The choice is kept in PREFIX/config/installed-options;
+# a part switched off is removed. (--with-sysmon is accepted and changes nothing; --without-sysmon
+# and --no-sysmon are ignored, with a note.)
 # Other options: [--user nvidia] [--prefix /opt/aio-dashboard] [--with-aio-nav PATH_TO_aio-nav]
 #                [--reset-config]
 #
@@ -27,11 +31,12 @@
 #   AIO NAV by itself at boot (autostart.enabled), the unit is installed but NOT enabled, and an
 #   already enabled one is disabled: two boot-time managers for one program fight. Otherwise it
 #   is enabled as before, with a warning if the Overview page can also start/stop it.
-# - optional parts (see above): sysmon installs aio-sysmon.service, the computer's black box
-#   (docs/SYSMON.md), and keeps the system journal across reboots; replay installs the replay
-#   module (without it the machine always runs Live); wifi lets the dashboard's user manage
-#   NetworkManager (polkit); hotspot adds the right to run a Wi-Fi hotspot, and a NetworkManager
-#   dispatcher script that keeps it a closed network (nothing forwarded to or from it).
+# - installs and starts aio-sysmon.service and the `aio-sysmon` command, the computer's black box
+#   (docs/SYSMON.md), and keeps the system journal across reboots
+# - optional parts (see above): replay installs the replay module (without it the machine always
+#   runs Live); wifi lets the dashboard's user manage NetworkManager (polkit); hotspot adds the
+#   right to run a Wi-Fi hotspot, and a NetworkManager dispatcher script that keeps it a closed
+#   network (nothing forwarded to or from it).
 set -euo pipefail
 
 HERE="$(cd "$(dirname "$0")" && pwd)"
@@ -45,10 +50,10 @@ MODE=install                                     # install | list | dry-run
 CHOOSE=0
 ASSUME_YES=0
 declare -A ASKED=()                              # part -> 1 / 0 from --with-<part> / --without-<part>
+SYSMON_FLAG=""                                   # an old --with-/--without-/--no-sysmon, if given
 
-PARTS=(sysmon replay wifi hotspot)
+PARTS=(replay wifi hotspot)
 declare -A TITLE=(
-  [sysmon]="Black-box recorder (aio-sysmon)"
   [replay]="Replay: Live / Bag switch and bag player"
   [wifi]="Wi-Fi from the pages"
   [hotspot]="Wi-Fi hotspot (Maintenance > Network)"
@@ -63,9 +68,9 @@ while [[ $# -gt 0 ]]; do
     --prefix) PREFIX="$2"; shift 2 ;;
     --with-aio-nav) AIO_NAV_BIN="$2"; shift 2 ;;
     --reset-config) RESET_CONFIG=1; shift ;;
-    --with-sysmon|--with-replay|--with-wifi|--with-hotspot) ASKED[${1#--with-}]=1; shift ;;
-    --without-sysmon|--without-replay|--without-wifi|--without-hotspot) ASKED[${1#--without-}]=0; shift ;;
-    --no-sysmon) shift ;;                        # old flag: the recorder is off unless chosen
+    --with-replay|--with-wifi|--with-hotspot) ASKED[${1#--with-}]=1; shift ;;
+    --without-replay|--without-wifi|--without-hotspot) ASKED[${1#--without-}]=0; shift ;;
+    --with-sysmon|--without-sysmon|--no-sysmon) SYSMON_FLAG="$1"; shift ;;   # old flags: always installed now
     --choose) CHOOSE=1; shift ;;
     --yes|-y) ASSUME_YES=1; shift ;;
     --list) MODE=list; shift ;;
@@ -87,7 +92,6 @@ checkable() {                                    # the polkit folder is readable
 }
 installed_now() {                                # is the part on this machine now?
   case "$1" in
-    sysmon) [[ -f /etc/systemd/system/aio-sysmon.service ]] ;;
     replay) [[ -d "$PREFIX/aio_dashboard_replay" ]] || compgen -G "$PREFIX/aio_dashboard_replay*.so" >/dev/null ;;
     wifi) [[ -f "$PKLA" ]] ;;
     hotspot) [[ "$(chosen_words)" == *" hotspot "* ]] ;;
@@ -105,11 +109,27 @@ needs() {                                        # what this system lacks for th
 }
 available() {                                    # can this package install the part on this system?
   case "$1" in
-    sysmon) [[ -d "$SRC/aio_sysmon" ]] ;;
     replay) [[ -d "$SRC/aio_dashboard_replay" ]] || compgen -G "$SRC/aio_dashboard_replay*.so" >/dev/null ;;
     wifi|hotspot) [[ -z "$(needs "$1")" ]] ;;
   esac
 }
+# The system recorder is not one of the parts: every install adds or updates it.
+SYSMON_TITLE="Black-box recorder (aio-sysmon)"
+sysmon_installed() { [[ -f /etc/systemd/system/aio-sysmon.service ]]; }
+sysmon_in_package() { [[ -d "$SRC/aio_sysmon" ]] || compgen -G "$SRC/aio_sysmon*.so" >/dev/null; }
+sysmon_plan() {                                  # what this install does with it
+  if ! sysmon_in_package; then
+    if sysmon_installed; then echo "not in this package: the installed one stays as it is"
+    else echo "not in this package: NOT installed"; fi
+  elif sysmon_installed; then echo "update"
+  else echo "add"; fi
+}
+case "$SYSMON_FLAG" in
+  --without-sysmon|--no-sysmon)
+    echo "    note: $SYSMON_FLAG ignored: the $SYSMON_TITLE is always installed, so that a freeze," >&2
+    echo "    a slowdown or a power cut can be traced afterwards (docs/SYSMON.md)" >&2 ;;
+  --with-sysmon) echo "    note: --with-sysmon is no longer needed: the $SYSMON_TITLE is always installed" >&2 ;;
+esac
 declare -A WANT=()
 if [[ -f "$OPTIONS_FILE" ]]; then                # the choice made last time
   CHOSEN_BEFORE=1
@@ -148,10 +168,11 @@ show_parts() {
 menu() {
   local line n p
   echo "AIO System Dashboard installer: optional parts"
+  echo "(always installed, not in the menu: the $SYSMON_TITLE)"
   while true; do
     echo
     show_parts
-    printf 'Numbers to switch on/off (e.g. 4 or 2 4), Enter to continue, q to quit: '
+    printf 'Numbers to switch on/off (e.g. 3 or 1 3), Enter to continue, q to quit: '
     IFS= read -r line || line=""
     case "$line" in
       "") return 0 ;;
@@ -177,15 +198,16 @@ chosen_text() {
 }
 
 if [[ $MODE == list ]]; then
+  echo "Always installed in $PREFIX"
+  printf '  - [x] %-42s%s\n' "$SYSMON_TITLE" "$(sysmon_installed && echo "  * installed now" || echo "  (not yet: the next install adds it)")"
   echo "Optional parts in $PREFIX ($([[ $CHOSEN_BEFORE -eq 1 ]] && echo "chosen: $OPTIONS_FILE" || echo "not chosen yet: shown as found"))"
   show_parts
   echo "Change them: sudo $0 --choose"
   exit 0
 fi
-if [[ $CHOOSE -eq 1 || ( $CHOSEN_BEFORE -eq 0 && ${#ASKED[@]} -eq 0 && $ASSUME_YES -eq 0 ) ]] && [[ -t 0 ]]; then
+if [[ $CHOOSE -eq 1 || ( $CHOSEN_BEFORE -eq 0 && ${#ASKED[@]} -eq 0 && -z $SYSMON_FLAG && $ASSUME_YES -eq 0 ) ]] && [[ -t 0 ]]; then
   menu
 fi
-WITH_SYSMON=${WANT[sysmon]}
 WITH_REPLAY=${WANT[replay]}
 WITH_WIFI=${WANT[wifi]}
 WITH_HOTSPOT=${WANT[hotspot]}
@@ -195,6 +217,7 @@ for p in "${PARTS[@]}"; do
   if [[ ${WANT[$p]} -eq 1 ]] && ! installed_now "$p"; then CHANGES+=("add $p"); fi
   if [[ ${WANT[$p]} -eq 0 ]] && installed_now "$p"; then CHANGES+=("remove $p"); fi
 done
+echo "==> always installed: $SYSMON_TITLE ($(sysmon_plan))"
 echo "==> optional parts: $(chosen_text)$( (( ${#CHANGES[@]} )) && printf ' (%s)' "$(IFS='|'; echo "${CHANGES[*]}" | sed 's/|/, /g')" )"
 if [[ $MODE == dry-run ]]; then
   echo "    dry run: nothing installed"
@@ -448,12 +471,24 @@ if systemctl is-enabled --quiet aio-nav.service 2>/dev/null; then
   fi
 fi
 
-if [[ $WITH_SYSMON -eq 1 && -d "$SRC/aio_sysmon" ]]; then
-  echo "==> system recorder (aio-sysmon): a black box for the computer"
+# The system recorder, always: a device in the field can freeze, slow down or lose power at any
+# time, and only its records (and the persistent journal) say afterwards what happened.
+SYSMON_OK=0
+if sysmon_in_package; then
+  echo "==> system recorder (aio-sysmon): a black box for the computer (always installed)"
   SYSMON_DIR=/var/log/aio-sysmon
-  rm -rf "$PREFIX/aio_sysmon"
-  cp -r "$SRC/aio_sysmon" "$PREFIX/"
-  find "$PREFIX/aio_sysmon" -name __pycache__ -type d -prune -exec rm -rf {} +
+  # Replace it completely, so switching between source and a compiled release leaves nothing behind.
+  rm -rf "$PREFIX/aio_sysmon" "$PREFIX"/aio_sysmon*.so
+  shopt -s nullglob
+  SCOMPILED=("$SRC"/aio_sysmon*.so)
+  shopt -u nullglob
+  if (( ${#SCOMPILED[@]} )); then
+    echo "    compiled (no Python source)"
+    cp "${SCOMPILED[@]}" "$PREFIX/"
+  else
+    cp -r "$SRC/aio_sysmon" "$PREFIX/"
+    find "$PREFIX/aio_sysmon" -name __pycache__ -type d -prune -exec rm -rf {} +
+  fi
   install -d -m 0755 "$SYSMON_DIR"
   if [[ ! -f "$PREFIX/config/sysmon.yaml" || $RESET_CONFIG -eq 1 ]]; then
     install -m 0644 "$SRC/config/sysmon.yaml" "$PREFIX/config/sysmon.yaml"
@@ -470,19 +505,18 @@ if [[ $WITH_SYSMON -eq 1 && -d "$SRC/aio_sysmon" ]]; then
   printf '[Journal]\nStorage=persistent\nSystemMaxUse=300M\n' > /etc/systemd/journald.conf.d/aio-persistent.conf
   systemctl restart systemd-journald 2>/dev/null || true
   journalctl --flush 2>/dev/null || true
-elif installed_now sysmon; then
-  # Its records (/var/log/aio-sysmon) and the persistent journal stay: they are the evidence about
-  # past freezes (as deploy/uninstall.sh).
-  echo "==> removing the system recorder (not chosen); its records in /var/log/aio-sysmon are kept"
-  systemctl disable --now aio-sysmon.service 2>/dev/null || true
-  rm -f /etc/systemd/system/aio-sysmon.service /usr/local/bin/aio-sysmon "$PREFIX/bin/aio-sysmon"
-  rm -rf "$PREFIX/aio_sysmon"
+  SYSMON_OK=1
+else
+  # An old release package (tools/build_release.sh before the recorder was always included).
+  echo "    warning: this package has no system recorder (aio_sysmon): $(sysmon_installed && echo "the installed one is left as it is" || echo "it is NOT installed")." >&2
+  echo "    Install from a source checkout or a newer release package, so a freeze can be traced." >&2
+  if sysmon_installed; then SYSMON_OK=1; fi
 fi
 
 systemctl daemon-reload
 systemctl enable aio-dashboard.service
 systemctl restart aio-dashboard.service
-if [[ $WITH_SYSMON -eq 1 && -d "$SRC/aio_sysmon" ]]; then
+if [[ $SYSMON_OK -eq 1 ]]; then
   systemctl enable aio-sysmon.service
   systemctl restart aio-sysmon.service
 fi
@@ -501,7 +535,7 @@ echo "  optional parts: $(chosen_text)   (the next run installs the same; change
 echo "  aio-dashboard status    service state and web addresses"
 echo "  aio-dashboard config    edit settings ($PREFIX/config/dashboard.yaml) and restart"
 echo "  aio-dashboard logs      follow the log"
-if [[ $WITH_SYSMON -eq 1 && -d "$SRC/aio_sysmon" ]]; then
+if [[ $SYSMON_OK -eq 1 ]]; then
   echo "  aio-sysmon status       the computer's black box (after a freeze: aio-sysmon last-crash)"
 fi
 if [[ $WITH_REPLAY -eq 1 ]]; then

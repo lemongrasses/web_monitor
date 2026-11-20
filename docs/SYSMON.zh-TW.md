@@ -135,11 +135,10 @@ aio-sysmon snapshots stall       # 開啟名稱含 "stall" 的最新一份
 - **斷電前最後幾秒。** 環狀檔每 5 秒才寫入磁碟，所以最多可能少 5 秒；樣本則是每次寫入都會同步。
 - **數值正常的卡死。** 如果直到最後一筆紀錄數值都正常，核心也沒有記錄任何東西，判斷會老實地這樣說：這指向電源、硬體或核心的問題，紀錄器無法再細分。
 - **時鐘問題。** 機器若斷電後不保留時間（時鐘電池沒有作用），每次上電都從 1970 年開始，直到 GNSS 時間或 NTP 設定時鐘為止（儀表板的安裝程式會以 GNSS 時間設定）。每筆紀錄也都帶有開機後經過的時間，時鐘跳變會記成 `clock_step`，因此這次上電的紀錄會顯示為實際時間，並標示 *(clock set later)*。時鐘設定前就斷電的那次執行，會保留當時寫下的時間，並標示 *(clock not set yet: time unknown)*；`events` 與 `report` 不論時間範圍都會列出這些紀錄。硬體時鐘存的是當地時間時（`timedatectl` 顯示「RTC in local TZ: yes」），時間會往另一個方向錯（這台 Orin NX 曾快了 8 小時）；`last-crash` 與 `events` 仍找得到這些紀錄，`sudo timedatectl set-local-rtc 0` 會讓硬體時鐘改存 UTC。
-- **發行包。** `tools/build_release.sh` 產生的編譯版發行包目前不含紀錄器，要從原始碼目錄安裝。
 
 ## 6. 安裝、權限與移除
 
-這是選配功能：在安裝程式的選單（第一次執行，或加上 `--choose` 時出現）中選擇 *Black-box recorder (aio-sysmon)*，或在 `sudo deploy/install.sh --user <使用者>` 加上 `--with-sysmon`。安裝程式會記住選擇，之後再執行會自動更新它；`--without-sysmon` 會移除服務（紀錄會保留）。它也會讓系統 journal 保存在磁碟上（`/etc/systemd/journald.conf.d/aio-persistent.conf`，300 MB），這樣核心自己的日誌在重開機後也還在。
+它在每台裝置上都會和儀表板一起安裝，不是安裝程式選單裡的選項：現場的裝置隨時可能卡死、變慢或斷電，事前沒有預兆，沒有它的紀錄，事後就無從排查。每次執行 `sudo deploy/install.sh`（或發行包的 `./install.sh`，發行包內含編譯版、不含原始碼）都會安裝或更新它並啟動。舊的參數 `--with-sysmon`／`--without-sysmon` 不會改變任何事。安裝程式也會讓系統 journal 保存在磁碟上（`/etc/systemd/journald.conf.d/aio-persistent.conf`，300 MB），這樣核心自己的日誌在重開機後也還在。
 
 服務以 root 身分執行，是為了讀取核心訊息和卡住工作的堆疊，但有沙箱限制：系統對它是唯讀、看不到家目錄，只有 `/var/log/aio-sysmon` 可以寫入。快照裡有程序的命令列，所以只有 root 與 `adm` 群組可以讀。
 

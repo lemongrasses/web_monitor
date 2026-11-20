@@ -63,6 +63,7 @@ cd ~/web_monitor && sudo deploy/install.sh --user jetson
 |------|------|------|
 | 以 GNSS 時間設定系統時鐘 | `/etc/chrony/conf.d/aio-gnss.conf`（`refclock SHM 2`；只在有安裝 chrony 時） | 裝置斷電後不保留時間，野外也沒有 NTP（第 4.2d 節）。 |
 | 核心 panic 後 10 秒重開機 | `/etc/sysctl.d/90-aio-unattended.conf`（`kernel.panic = 10`） | 不必等硬體 watchdog 的 2 分鐘。 |
+| 系統紀錄器，電腦的黑盒子（一定安裝） | `aio-sysmon.service`、`/var/log/aio-sysmon`；journal 保存在磁碟：`/etc/systemd/journald.conf.d/aio-persistent.conf`（300 MB） | 卡死、變慢或斷電之後，仍能追查原因（[SYSMON.zh-TW.md](SYSMON.zh-TW.md)）。 |
 | 儀表板的 systemd watchdog | `aio-dashboard.service`（`WatchdogSec=60`、`Restart=always`） | 儀表板 60 秒沒有回應就重新啟動；AIO NAV 繼續執行。 |
 | 記憶體不足時儀表板不受影響 | `aio-dashboard.service`（`OOMPolicy=continue`） | 核心終止 AIO NAV 或 DSO 時，由自動啟動與 DSO watchdog 把它們帶回來。 |
 | 服務使用者的 lingering | `loginctl enable-linger` | 感測器驅動（user unit）在沒有人登入時也能於上電時啟動（`autostart.start_services`）。 |
@@ -70,7 +71,7 @@ cd ~/web_monitor && sudo deploy/install.sh --user jetson
 | Wi-Fi／熱點權限（`wifi`、`hotspot` 部分） | polkit 規則 `50-aio-dashboard-wifi` | 服務使用者可以管理 NetworkManager（第 4.5a 節）。 |
 | 封閉的熱點（`hotspot` 部分） | `/etc/NetworkManager/dispatcher.d/50-aio-hotspot` | 不轉送任何進出熱點的封包（第 4.5a 節）。 |
 
-`sudo deploy/uninstall.sh` 會移除以上全部，lingering 除外（核心 panic 的設定在下次開機時回到預設）。
+`sudo deploy/uninstall.sh` 會移除以上全部，但 lingering、紀錄器的紀錄與 journal 的設定除外（紀錄是過去卡死的證據；核心 panic 的設定在下次開機時回到預設）。
 
 ## 3. 需要注意的 YAML 規則
 

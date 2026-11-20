@@ -14,6 +14,14 @@ from aio_sysmon.store import CRITICAL, LOW, OK, Store
 from aio_sysmon.triggers import TriggerEngine
 
 
+DEPLOY = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "deploy")
+
+
+def deploy_file(name):
+    with open(os.path.join(DEPLOY, name)) as f:
+        return f.read()
+
+
 def small_cfg(d, **over):
     cfg = copy.deepcopy(cfgmod.DEFAULTS)
     cfg.update(dir=d, kmsg=False, min_free_mb=2048, ring_mb=1, **over)
@@ -431,12 +439,30 @@ class CommandLineTest(unittest.TestCase):
     """The exact command lines used by the service file and by people."""
 
     def test_the_service_command_line_parses(self):
+        # The service runs the aio-sysmon command, which puts --config PREFIX/config/sysmon.yaml first.
         import re
         from aio_sysmon.__main__ import build_parser
-        unit = open(os.path.join(os.path.dirname(__file__), "..", "deploy", "aio-sysmon.service")).read()
-        exec_line = re.search(r"^ExecStart=/usr/bin/python3 -m aio_sysmon (.*)$", unit, re.M).group(1)
-        args = build_parser().parse_args(exec_line.replace("@PREFIX@", "/opt/x").split())
+        unit = deploy_file("aio-sysmon.service")
+        exec_args = re.search(r"^ExecStart=@PREFIX@/bin/aio-sysmon (.*)$", unit, re.M).group(1).split()
+        self.assertIn('--config "$APP_DIR/config/sysmon.yaml" "$@"', deploy_file("aio-sysmon"))
+        args = build_parser().parse_args(["--config", "/opt/x/config/sysmon.yaml"] + exec_args)
         self.assertEqual((args.cmd, args.config), ("run", "/opt/x/config/sysmon.yaml"))
+
+    def test_the_command_imports_main_and_runs(self):
+        # Neither "python3 -m aio_sysmon" nor runpy can start the compiled recorder of a release
+        # package ("No code object available"); importing main can, as for the dashboard.
+        import subprocess
+        wrapper = os.path.join(DEPLOY, "aio-sysmon")
+        text = deploy_file("aio-sysmon")
+        self.assertIn("from aio_sysmon.__main__ import main", text)
+        self.assertNotIn("runpy", text)
+        if not os.path.exists("/usr/bin/python3"):
+            self.skipTest("no /usr/bin/python3 here")
+        with tempfile.TemporaryDirectory() as tmp:
+            r = subprocess.run(["bash", wrapper, "status", "--dir", os.path.join(tmp, "none")], cwd=tmp,
+                               capture_output=True, text=True, timeout=30)
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.assertIn("no records yet", r.stdout)
 
     def test_options_work_before_and_after_the_command(self):
         from aio_sysmon.__main__ import build_parser
@@ -445,6 +471,63 @@ class CommandLineTest(unittest.TestCase):
         self.assertEqual(p.parse_args(["status", "--config", "/b", "--dir", "/d"]).config, "/b")
         self.assertEqual(p.parse_args(["status"]).dir, None)
         self.assertEqual(p.parse_args(["report", "--hours", "2"]).hours, 2.0)
+
+
+class InstallerTest(unittest.TestCase):
+    """The recorder is always installed: it is not one of the installer's optional parts."""
+
+    ALWAYS = r"==> always installed: Black-box recorder \(aio-sysmon\) \((add|update)\)"
+
+    def run_installer(self, *args, installer=None, options=None):
+        import subprocess
+        with tempfile.TemporaryDirectory() as tmp:
+            if options is not None:
+                os.makedirs(os.path.join(tmp, "opt", "config"))
+                with open(os.path.join(tmp, "opt", "config", "installed-options"), "w") as f:
+                    f.write(options)
+            r = subprocess.run(["bash", installer or os.path.join(DEPLOY, "install.sh"), "--prefix", f"{tmp}/opt",
+                                *args], capture_output=True, text=True, timeout=30, stdin=subprocess.DEVNULL)
+        return r.returncode, r.stdout + r.stderr
+
+    def test_a_fresh_install_adds_it_without_being_asked(self):
+        rc, out = self.run_installer("--dry-run")
+        self.assertEqual(rc, 0, out)
+        self.assertRegex(out, self.ALWAYS)
+        self.assertNotRegex(out, r"optional parts: .*sysmon")
+
+    def test_a_choice_made_without_it_still_installs_it(self):
+        # an installed-options file from before, written when the recorder was a part left off
+        rc, out = self.run_installer("--dry-run", options="# chosen\nreplay\n")
+        self.assertEqual(rc, 0, out)
+        self.assertRegex(out, self.ALWAYS)
+        self.assertNotIn("remove sysmon", out)
+
+    def test_the_old_flags_do_not_remove_it(self):
+        for flag in ("--without-sysmon", "--no-sysmon"):
+            rc, out = self.run_installer("--dry-run", flag)
+            self.assertEqual(rc, 0, out)
+            self.assertIn(f"note: {flag} ignored: the Black-box recorder (aio-sysmon) is always installed", out)
+            self.assertRegex(out, self.ALWAYS)
+        rc, out = self.run_installer("--dry-run", "--with-sysmon")
+        self.assertEqual(rc, 0, out)
+        self.assertRegex(out, self.ALWAYS)
+
+    def test_list_shows_it_outside_the_menu(self):
+        rc, out = self.run_installer("--list")
+        self.assertEqual(rc, 0, out)
+        self.assertIn("Always installed in", out)
+        self.assertIn("- [x] Black-box recorder (aio-sysmon)", out)
+        self.assertNotRegex(out, r"\d \[.\] Black-box recorder")
+
+    def test_a_package_without_it_says_so(self):
+        # a release package from before the recorder was always included: install.sh next to wheels/
+        import shutil
+        with tempfile.TemporaryDirectory() as pkg:
+            os.mkdir(os.path.join(pkg, "wheels"))
+            shutil.copy(os.path.join(DEPLOY, "install.sh"), pkg)
+            rc, out = self.run_installer("--dry-run", installer=os.path.join(pkg, "install.sh"))
+        self.assertEqual(rc, 0, out)
+        self.assertIn("==> always installed: Black-box recorder (aio-sysmon) (not in this package:", out)
 
 
 class KmsgRepeatTest(unittest.TestCase):

@@ -273,7 +273,7 @@ class InstallerTest(unittest.TestCase):
                 (bin_ / t).chmod(0o755)
             env = dict(os.environ, PATH=f"{bin_}:/usr/bin:/bin")
             r = subprocess.run(["bash", str(ROOT / "deploy" / "install.sh"), "--dry-run", "--prefix", f"{tmp}/opt",
-                                "--with-hotspot", "--without-sysmon", "--without-replay"],
+                                "--with-hotspot", "--without-replay"],
                                env=env, capture_output=True, text=True, timeout=30, stdin=subprocess.DEVNULL)
         return r.returncode, r.stdout + r.stderr
 

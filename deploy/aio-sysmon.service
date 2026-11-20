@@ -9,8 +9,9 @@ Wants=time-sync.target
 
 [Service]
 Type=simple
-ExecStart=/usr/bin/python3 -m aio_sysmon run --config @PREFIX@/config/sysmon.yaml
-Environment=PYTHONPATH=@PREFIX@:@PREFIX@/lib
+# The aio-sysmon command (with --config @PREFIX@/config/sysmon.yaml); it also starts the compiled
+# recorder of a release package, which "python3 -m aio_sysmon" cannot.
+ExecStart=@PREFIX@/bin/aio-sysmon run
 Environment=PYTHONUNBUFFERED=1
 Restart=always
 RestartSec=5

@@ -16,7 +16,7 @@ their own sessions, so a dashboard crash or restart never stops them.
 **Manuals:** operation, alignment SOP and UDP output format:
 [English](docs/OPERATION.md) · [繁體中文](docs/OPERATION.zh-TW.md).
 Settings: [English](docs/CONFIG.md) · [繁體中文](docs/CONFIG.zh-TW.md).
-Optional system recorder (a black box for the computer, to trace freezes and power cuts; install with `sudo deploy/install.sh --with-sysmon`): [English](docs/SYSMON.md) · [繁體中文](docs/SYSMON.zh-TW.md).
+System recorder, installed with the dashboard on every device (a black box for the computer, to trace freezes, slowdowns and power cuts afterwards): [English](docs/SYSMON.md) · [繁體中文](docs/SYSMON.zh-TW.md).
 Engineering flowcharts (system data flow, health tick, readiness states, automatic start, Wi-Fi, vehicle side): [docs/FLOWS.md](docs/FLOWS.md).
 繁體中文 terminology, shared word for word with the vehicle-side aio-nav-receiver: [docs/TERMINOLOGY.zh-TW.md](docs/TERMINOLOGY.zh-TW.md).
 Ideas discussed and kept for later (in Traditional Chinese): [docs/IDEAS.md](docs/IDEAS.md).
@@ -43,7 +43,7 @@ aio_system_dashboard/
                        settings_api.py (Wi-Fi / RTK on both apps), i18n.py + i18n_zh.py (user-page languages)
   templates/, static/  Bootstrap + Alpine.js + Leaflet + xterm.js (vendored, offline)
 aio_dashboard_replay/  optional module: Live / Bag replay switch and bag player
-aio_sysmon/            optional system recorder (separate service)
+aio_sysmon/            system recorder, the computer's black box (separate service, always installed)
 ```
 
 Packet processing runs at the raw rate (100 Hz). Health is evaluated at 5 Hz. The browser
@@ -117,9 +117,9 @@ sudo apt install -y gcc python3-dev && python3 -m pip install --user nuitka   # 
 tools/build_release.sh            # -> dist/aio-dashboard-<version>-aarch64-py3.10.tar.gz
 ```
 
-The backend is compiled with Nuitka into one native module (`aio_system_dashboard*.so`).
-The package contains no `.py` files. The HTML, JS and CSS stay readable, because browsers
-download them anyway. Copy the package to each device, then:
+The backend is compiled with Nuitka into one native module (`aio_system_dashboard*.so`), and the
+system recorder into another (`aio_sysmon*.so`). The package contains no `.py` files. The HTML,
+JS and CSS stay readable, because browsers download them anyway. Copy the package to each device, then:
 
 ```bash
 tar xzf aio-dashboard-*.tar.gz && cd aio-dashboard-*/
@@ -149,27 +149,31 @@ sudo deploy/install.sh --user nvidia \
   --with-aio-nav /home/nvidia/aio-nav-ros/install/aio_nav_ros/lib/aio_nav_ros/aio-nav
 ```
 
+**Always installed: the system recorder.** Every run installs or updates `aio-sysmon.service`, the
+computer's black box, with the `aio-sysmon` command, `/var/log/aio-sysmon` and a persistent journal
+(300 MB) ([docs/SYSMON.md](docs/SYSMON.md)). It is not in the menu: a device in the field can freeze,
+slow down or lose power without warning, and without its records there is nothing to trace
+afterwards. `--with-sysmon` / `--without-sysmon` from older scripts change nothing.
+
 **Optional parts.** The first run (or any run with `--choose`) shows a menu of the optional parts;
 type their numbers to switch them on or off, Enter to continue, `q` to quit without changes:
 
 | Part | Menu title | What it adds |
 |------|------------|--------------|
-| `sysmon` | Black-box recorder (aio-sysmon) | `aio-sysmon.service`, `/var/log/aio-sysmon`, a persistent journal (300 MB), the `aio-sysmon` command ([docs/SYSMON.md](docs/SYSMON.md)) |
 | `replay` | Replay: Live / Bag switch and bag player | Maintenance > Replay ([operation 4.6](docs/OPERATION.md)) |
 | `wifi` | Wi-Fi from the pages | a polkit rule so the service user can manage NetworkManager (Settings page and Maintenance > Network) |
 | `hotspot` | Wi-Fi hotspot (Maintenance > Network) | the right to share the Wi-Fi as a hotspot, and a dispatcher script that keeps it a closed network (nothing forwarded); needs `wifi` (choosing it switches `wifi` on), `dnsmasq` and nft or iptables |
 
 The choice is saved in `/opt/aio-dashboard/config/installed-options`, and later runs install the
-same parts without asking. A part switched off is removed (the sysmon records in
-`/var/log/aio-sysmon` are kept; switching off `hotspot` deletes the hotspot profile). Without a
-terminal, the first run uses the parts found in the package.
+same parts without asking. A part switched off is removed (switching off `hotspot` deletes the
+hotspot profile). Without a terminal, the first run uses the parts found in the package.
 
 | Option | Does |
 |--------|------|
 | `--choose` | show the menu again |
 | `--list` | what is installed and chosen (no sudo needed) |
 | `--dry-run` | what an install would add or remove, then stop (no sudo needed) |
-| `--with-<part>` / `--without-<part>` | switch a part on or off without the menu (`sysmon`, `replay`, `wifi`, `hotspot`) |
+| `--with-<part>` / `--without-<part>` | switch a part on or off without the menu (`replay`, `wifi`, `hotspot`) |
 | `--yes`, `-y` | never ask (for scripts) |
 | `--user U` | the service user (default: the user running sudo) |
 | `--prefix P` | install folder (default `/opt/aio-dashboard`) |
@@ -187,6 +191,8 @@ terminal, the first run uses the parts found in the package.
   fed from the IMU time stamps, so the clock is right in the field without NTP (if chrony is installed)
 - reboots the device 10 s after a kernel panic (`/etc/sysctl.d/90-aio-unattended.conf`, `kernel.panic = 10`)
   instead of waiting for the hardware watchdog
+- installs and starts the system recorder `aio-sysmon.service` and keeps the system journal on disk
+  (`/etc/systemd/journald.conf.d/aio-persistent.conf`), so the kernel's own log survives a reboot too
 - enables *lingering* for the service user when the automatic start must start the sensor drivers (a user unit) at power-on
 - installs the optional parts chosen above
 - reminds you to run `aio-dashboard password` if no maintenance password is set
@@ -242,10 +248,11 @@ Features that not every machine needs are separate modules that are **not instal
 
 | Module | Install flag | What it is |
 |--------|--------------|------------|
-| System recorder (`aio_sysmon`) | `--with-sysmon` | a power-loss-safe black box, see above |
 | Replay (`aio_dashboard_replay`) | `--with-replay` | Live / Bag replay switch and a bag player on Maintenance > Replay ([operation 4.6](docs/OPERATION.md)); without it the machine runs Live only |
 | Wi-Fi | `--with-wifi` | joining a Wi-Fi network from the Settings page and Maintenance > Network |
 | Hotspot | `--with-hotspot` | the Wi-Fi as a hotspot for phones and tablets, with copies of the NAV and status packets (needs `wifi`) |
+
+The system recorder (`aio_sysmon`) is not one of them: every device gets it (see Deployment).
 
 The installer's menu (see Deployment) chooses the same parts.
 

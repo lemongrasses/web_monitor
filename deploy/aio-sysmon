@@ -1,9 +1,11 @@
 #!/usr/bin/env bash
-# aio-sysmon: read the computer's black box (the recorder itself runs as aio-sysmon.service).
+# aio-sysmon: read the computer's black box (the recorder itself runs as aio-sysmon.service, which
+# starts it through this command: "aio-sysmon run").
 #   aio-sysmon status | last-crash | report | ring | events | snapshots     (aio-sysmon --help)
 APP_DIR="$(cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")/.." && pwd)"
 export PYTHONPATH="$APP_DIR:$APP_DIR/lib${PYTHONPATH:+:$PYTHONPATH}"
 # Not "python3 -m": that puts the current folder first, and run inside the source checkout
-# (~/web_monitor) it ran the checkout's code instead of the installed one (seen 2026-10-21).
-exec /usr/bin/python3 -c 'import runpy, sys; del sys.path[0]; runpy.run_module("aio_sysmon", run_name="__main__", alter_sys=True)' \
+# (~/web_monitor) it ran the checkout's code instead of the installed one (seen 2026-10-21); it
+# also cannot start the compiled recorder of a release package ("No code object available").
+exec /usr/bin/python3 -c 'import sys; del sys.path[0]; from aio_sysmon.__main__ import main; raise SystemExit(main())' \
   --config "$APP_DIR/config/sysmon.yaml" "$@"

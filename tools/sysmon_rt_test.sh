@@ -20,10 +20,10 @@ echo
 echo "== 3. the recorder itself: forced stall trigger, same limits as the service"
 D=$(mktemp -d); printf "dir: $D/out\nkmsg: false\ntriggers: {sched_stall_ms: 0}\nescalate_s: 4\n" > $D/c.yaml
 systemd-run -q --collect --unit=aio-sysmon-rttest -p Nice=-5 -p LimitMEMLOCK=infinity -p LimitRTTIME=1000000 -p CPUQuota=15% -p MemoryMax=96M \
-  -E PYTHONPATH=/opt/aio-dashboard:/opt/aio-dashboard/lib python3 -m aio_sysmon run --config $D/c.yaml
+  /opt/aio-dashboard/bin/aio-sysmon run --config $D/c.yaml     # the installed command, source or compiled
 sleep 3; P=$(systemctl show -p MainPID --value aio-sysmon-rttest)
 echo "   scheduler class while raised (RR = real-time):  $(ps -L -o cls= -p $P | sort | uniq -c | tr '\n' ' ')"
 sleep 7; echo "   scheduler class 7 s later (TS = back to normal): $(ps -L -o cls= -p $P | sort | uniq -c | tr '\n' ' ')"
 systemctl stop aio-sysmon-rttest; sleep 1
-PYTHONPATH=/opt/aio-dashboard:/opt/aio-dashboard/lib python3 -m aio_sysmon events --dir $D/out | grep -E "priority|memory_lock"
+/opt/aio-dashboard/bin/aio-sysmon events --dir $D/out | grep -E "priority|memory_lock"
 rm -rf $D; echo "done"
