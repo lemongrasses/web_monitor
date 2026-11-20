@@ -79,7 +79,7 @@ cp deploy/aio-dashboard deploy/aio-dashboard.service deploy/aio-nav.service depl
    deploy/uninstall.sh "$STAGE/deploy/"
 cp deploy/install.sh "$STAGE/install.sh"
 cp docs/USER_GUIDE.md docs/MAINTENANCE.md docs/INSTALL.md docs/INTEGRATION.md \
-   docs/CONFIG.md docs/CONFIG.zh-TW.md docs/OPERATION.md docs/OPERATION.zh-TW.md "$STAGE/docs/"
+   docs/CONFIG.md docs/CONFIG.zh-TW.md docs/OPERATION.zh-TW.md "$STAGE/docs/"
 mkdir -p "$STAGE/dev" && cp dev/fake_state.json "$STAGE/dev/"   # data for --fake demos, not code
 echo "$VERSION" > "$STAGE/VERSION"
 cat > "$STAGE/README.txt" <<EOF

@@ -1,6 +1,8 @@
 # AIO 導航系統操作手冊
 
-[English version](OPERATION.md) · 設定說明：[設定手冊](CONFIG.zh-TW.md)
+> **舊版。** 英文手冊已依讀者重新分成：[User Guide](USER_GUIDE.md)、[Maintenance Guide](MAINTENANCE.md)、[Installation Guide](INSTALL.md)、[Integration Guide](INTEGRATION.md)。本手冊將由它們的中文翻譯取代；在那之前內容仍然有效。
+
+設定說明：[設定手冊](CONFIG.zh-TW.md)
 
 本手冊寫給兩類讀者：**操作**AIO 導航系統的人（啟動、對準、監看、收資料），以及要把導航輸出**串接**到自己軟體的人。安裝與設定請見[設定手冊](CONFIG.zh-TW.md)。
 

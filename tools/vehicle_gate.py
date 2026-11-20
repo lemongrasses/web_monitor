@@ -7,7 +7,7 @@ navigation becomes usable or blocked.
     python3 tools/vehicle_gate.py --port 9000 --status-port 9001   # 0x05 sent elsewhere
     python3 tools/vehicle_gate.py --port 9000 --verbose        # also every status packet
 
-The rules are in aio_system_dashboard/vehicle/gate.py (docs/OPERATION.md, "Status packet").
+The rules are in aio_system_dashboard/vehicle/gate.py (docs/INTEGRATION.md, Part B).
 Exit with Ctrl+C; a summary of packets, losses and time spent usable is printed.
 """
 

@@ -18,7 +18,7 @@ from tests import manuals
 GOLDEN_FIELDS = dict(state=6, requested_action=0, gnss_quality=3, session_id=0x12345678, sequence=482,
                      uptime_ms=123456789, health_flags=0x00010FFF, inhibit_flags=0, nav_flags=0xE8,
                      nav_rate_dhz=1000, nav_age_ms=12)
-# Shared with the vehicle team (docs/OPERATION.md): any implementation must produce these bytes.
+# Shared with the vehicle team (docs/INTEGRATION.md): any implementation must produce these bytes.
 GOLDEN_HEX = "55aa0524000106000378563412e201000015cd5b0700000000ff0f010000000000e800e8030c0000005c"
 
 
@@ -32,7 +32,7 @@ class CodecTest(unittest.TestCase):
             self.assertEqual(d[k], v, k)
 
     def test_manuals_publish_the_same_golden_vector(self):
-        for name in ("docs/INTEGRATION.md", "docs/OPERATION.md", "docs/OPERATION.zh-TW.md"):
+        for name in ("docs/INTEGRATION.md", "docs/OPERATION.zh-TW.md"):
             self.assertIn(GOLDEN_HEX, manuals.read(name), name)
 
     def test_rejects_corrupt_short_and_unknown(self):

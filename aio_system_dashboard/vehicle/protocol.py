@@ -1,7 +1,7 @@
 """The numbers of the 0x05 status packet: state and action codes, bit positions, GNSS quality codes.
 
 The core (state/readiness.py) works by name only. This table turns a readiness snapshot into the
-fields the vehicle reads. The numbers are a contract with the vehicle (docs/OPERATION.md, "Status
+fields the vehicle reads. The numbers are a contract with the vehicle (docs/INTEGRATION.md, "Status
 packet", and the vehicle-side aio-nav-receiver): append, never renumber.
 """
 

@@ -135,7 +135,7 @@ DEFAULTS: Dict[str, Any] = {
                         "service": "auto",       # a services key with user_unit; auto: drivers_service()
                         "stale_s": 45.0,         # IMU missing/stale this long, unit active: restart
                         "retry_backoff_s": [60, 120, 300]},   # between restarts; the last repeats
-    # 0x05 status packet (docs/OPERATION.md): readiness for the vehicle, next to the 0x04 data.
+    # 0x05 status packet (docs/INTEGRATION.md, Part B): readiness for the vehicle, next to the 0x04 data.
     "status_udp": {"enabled": True,
                    "destination": "auto",       # host:port; auto: output_udp of aio_nav.yaml
                    "message_id": 5, "rate_hz": 2.0},

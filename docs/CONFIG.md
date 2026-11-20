@@ -214,7 +214,7 @@ A detected change must hold 10 s before it counts.
 |--------|--------|--------------------|
 | Network | Cable / Wi-Fi / None / Unknown | A connection out works (`network.internet_check`), and over which interface (the default route; Wi-Fi = a wireless interface). Unknown while not checked, or with `internet_check: []`. |
 | RTK corrections | Yes / No / Unknown | Yes once RTK corrections arrived or an RTK float / fix position was seen in this power-on. Kept until the next power-on, also across a dashboard restart: a short loss under a bridge stays an RTK place, so losing RTK after READY gives DEGRADED. No when the receiver has no NTRIP set up (GNSS diagnostics: corrections not enabled), or NTRIP is set up but there is no network. Unknown otherwise (for example an older driver without diagnostics). |
-| Vehicle connected | Yes / No | Yes when `aio_nav.yaml` has a vehicle address (`output_udp`). The user pages follow it: with No, the Overview has no Vehicle link step and Ready reads *Recording, data usable* (operation manual 3.1, 3.2). |
+| Vehicle connected | Yes / No | Yes when `aio_nav.yaml` has a vehicle address (`output_udp`). The user pages follow it: with No, the Overview has no Vehicle link step and Ready reads *Recording, data usable* ([User Guide 3](USER_GUIDE.md#3-reading-the-status)). |
 
 Whether READY needs RTK, in this order: a choice made on a page; else `require_rtk` when it is
 `true` or `false`; else the detected RTK answer (Unknown = required, the careful choice). The
@@ -278,7 +278,7 @@ Rules that always apply:
 
 | Key | Default | Meaning |
 |-----|---------|---------|
-| `enabled` | `true` | Send the readiness snapshot as a 42-byte 0x05 packet (format: [Operation manual, section 6.8](OPERATION.md#68-status-packet-0x05)). `false` = no 0x05. |
+| `enabled` | `true` | Send the readiness snapshot as a 42-byte 0x05 packet (format: [Integration Guide 6](INTEGRATION.md#6-status-packet-0x05)). `false` = no 0x05. |
 | `destination` | `auto` | IPv4 `address:port`. `auto` = the `output_udp` address **and port** of `aio_nav.yaml`: 0x05 arrives on the same socket as 0x04 and the receiver tells them apart by the message ID. Write an address only if the vehicle wants 0x05 on its own port. Host names are refused (no DNS lookups on the 5 Hz path), and so is the dashboard's own listener (`nav.udp_bind`). |
 | `message_id` | `5` | 0x05 is reserved for this packet (AIO NAV only sends 0x04). |
 | `rate_hz` | `2.0` | Packets per second; a change of state, action or inhibit mask is sent at once. It keeps sending after READY. |
@@ -463,7 +463,7 @@ until it is stopped there. Phones open `http://10.42.0.1:8080`.
 |-----|---------|---------|
 | `interval_s` | `2` | How often CPU, GPU, RAM, disk and temperature are read. |
 | `disk_paths` | `["/"]` | Disks to report. Data folders are added automatically. |
-| `disk_warn_percent` | `90` | Disk usage (%) that raises a "Storage almost full" warning, and turns the **Storage** step of the Overview amber (*Almost full*; operation manual 3.2). |
+| `disk_warn_percent` | `90` | Disk usage (%) that raises a "Storage almost full" warning, and turns the **Storage** step of the Overview amber (*Almost full*; [User Guide 3.2](USER_GUIDE.md#32-the-steps)). |
 | `temp_warn_c` | `85` | Temperature (°C) that raises a "Temperature high" warning. |
 
 ### 4.7 `ros`: ROS 2 monitoring
@@ -666,7 +666,7 @@ modules:
 ```
 
 **`replay`**: the Live / Bag replay switch and the bag player on **Maintenance > Replay**
-(OPERATION section 4.6). Install with `sudo deploy/install.sh --user <you> --with-replay`. A
+([Maintenance Guide 6](MAINTENANCE.md#6-bag-replay)). Install with `sudo deploy/install.sh --user <you> --with-replay`. A
 release package has it only if it was built with `tools/build_release.sh --with-replay`. Without it
 the machine always runs Live.
 

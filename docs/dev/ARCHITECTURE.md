@@ -209,7 +209,7 @@ Some tests check the documents against the code, so the two cannot drift apart:
 
 | Test | Checks |
 |------|--------|
-| `test_status_packet` | The golden 0x05 packet in the Integration Guide (and the old operation manuals) is what the code encodes |
+| `test_status_packet` | The golden 0x05 packet in the Integration Guide (and the older zh-TW operation manual) is what the code encodes |
 | `test_vehicle_layer` | The published codes and bit numbers; every core name has a number; the core never imports `vehicle/` |
 | `test_i18n` | Every phrase of the user pages has a translation; the zh-TW manuals use the words of `TERMINOLOGY.zh-TW.md` |
 | `test_environment` | The texts the Settings page shows about the environment are translated |

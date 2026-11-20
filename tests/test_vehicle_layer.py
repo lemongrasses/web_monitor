@@ -25,7 +25,7 @@ PACKAGE = Path(__file__).resolve().parent.parent / "aio_system_dashboard"
 
 class ProtocolTest(unittest.TestCase):
     def test_numbers_are_the_published_ones(self):
-        """docs/OPERATION.md 6.8 and the vehicle's aio-nav-receiver use these: append, never renumber."""
+        """docs/INTEGRATION.md 6 and the vehicle's aio-nav-receiver use these: append, never renumber."""
         self.assertEqual(proto.STATE_CODE, {
             "BOOTING": 0, "CHECKING": 1, "NAV_STARTING": 2, "KEEP_STILL": 3, "MOVE_STRAIGHT": 4,
             "REFINING": 5, "READY": 6, "DEGRADED": 7, "FAULT": 8, "MAINTENANCE": 9})
