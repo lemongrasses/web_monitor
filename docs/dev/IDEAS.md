@@ -56,7 +56,7 @@
 - 網頁:Maintenance 的 ROS 頁、Overview 的 GNSS 燈與感測器燈要能隱藏。
 - GNSS 燈:目前依賴 `NavSatFix`。沒有 ROS 時可考慮改用導航 UDP 封包的旗標,但語意不完全相同,要另外定義。
 
-**做法:** 照 README「Optional parts」裡模組的模式,做成獨立資料夾、`--with-ros` 安裝旗標、`enabled` 設定,在 `feature/optional-ros` 短期分支上開發。模組的骨架已經有了(`aio_system_dashboard/modules.py`,第一個模組是 2026-10-08 的 replay),ROS 模組可以照同樣方式接上。
+**做法:** 照 [ARCHITECTURE.md 第 6 節](ARCHITECTURE.md#6-optional-modules)的模組模式,做成獨立資料夾、`--with-ros` 安裝旗標、`enabled` 設定,在 `feature/optional-ros` 短期分支上開發。模組的骨架已經有了(`aio_system_dashboard/modules.py`,第一個模組是 2026-10-08 的 replay),ROS 模組可以照同樣方式接上。
 
 ---
 
